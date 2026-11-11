@@ -759,3 +759,39 @@ def test_ctrl_drag_paints_without_moving_the_view(workbench):
     assert not cloud.cloud.dirty
     window.close_all(ask=False)
     assert not dialogs
+
+
+def test_large_cloud_is_thinned_far_away_and_edits_touch_few_chunks(workbench):
+    from mapbarber.formats import CLOUD
+    window, _folder, pump, dialogs = workbench
+    rng = np.random.default_rng(4)
+    xyz = np.column_stack([rng.uniform(0, 40, 600_000), rng.uniform(0, 40, 600_000), rng.normal(0, 0.01, 600_000)])
+    editor = window.show_document(CLOUD, (xyz, None))
+    pump(0.4)
+    editor.finish_levels()
+    assert len(editor.chunks) > 20 and editor.visible_count == len(xyz)
+    editor.viewport.zoom(0.1)
+    editor.update_levels()
+    editor.finish_levels()
+    assert editor.view.drawn() < len(xyz) / 4 and max(editor.view.levels.values()) >= 1
+    editor.viewport.zoom(150.0)
+    editor.update_levels()
+    editor.finish_levels()
+    assert min(editor.view.levels.values()) == 0
+    width, height = editor.viewport.renderer.GetSize()
+    window.set_tool("delete")
+    editor.radius.setValue(0.2)
+    centre = editor._pick(width // 2, height // 2)
+    assert centre is not None
+    expected = int((np.linalg.norm(xyz - centre, axis=1) <= 0.2).sum())
+    editor._click(width // 2, height // 2, False)
+    assert editor.cloud.removed() == expected > 0
+    assert len(editor.chunks.touched(editor.cloud.touched)) <= 8
+    editor.undo()
+    assert not editor.cloud.dirty and editor.visible_count == len(xyz)
+    editor.select_all()
+    assert int(editor.selected.sum()) == len(xyz)
+    editor.selection_back()
+    assert not editor.selected.any()
+    window.close_all(ask=False)
+    assert not dialogs

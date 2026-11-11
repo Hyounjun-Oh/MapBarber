@@ -10,6 +10,7 @@ class PointCloud:
         self.table = table
         self.alive = np.all(np.isfinite(self.xyz), axis=1)
         self.saved = self.alive.copy()
+        self.touched = EMPTY
         self._undo, self._redo = [], []
 
     def __len__(self):
@@ -24,6 +25,7 @@ class PointCloud:
         if not len(ids):
             return 0
         self.alive[ids] = False
+        self.touched = ids
         self._undo.append(ids)
         self._redo.clear()
         return len(ids)
@@ -41,6 +43,7 @@ class PointCloud:
             return False
         ids = self._undo.pop()
         self.alive[ids] = True
+        self.touched = ids
         self._redo.append(ids)
         return True
 
@@ -49,6 +52,7 @@ class PointCloud:
             return False
         ids = self._redo.pop()
         self.alive[ids] = False
+        self.touched = ids
         self._undo.append(ids)
         return True
 
@@ -109,3 +113,48 @@ def pick_along_ray(origin, direction, points, angle):
     if not len(hits):
         return None
     return int(hits[np.argmin(along[hits])])
+
+
+class PointChunks:
+    """Fixed spatial partition of a cloud into grid cells, so work can be limited to the cells it concerns."""
+
+    TARGET = 40_000
+
+    def __init__(self, xyz, alive):
+        ids = np.flatnonzero(alive)
+        self.of = np.full(len(xyz), -1, np.int32)
+        self.ids, self.low, self.high = [], np.zeros((0, 3)), np.zeros((0, 3))
+        if not len(ids):
+            return
+        points = xyz[ids]
+        low, high = points.min(axis=0), points.max(axis=0)
+        per_axis = int(np.clip(round(2 * (len(ids) / self.TARGET) ** (1 / 3)), 1, 64))
+        cell = max(float((high - low).max()) / per_axis, 1e-9)
+        index = np.minimum(((points - low) / cell).astype(np.int64), per_axis - 1)
+        code = (index[:, 0] * per_axis + index[:, 1]) * per_axis + index[:, 2]
+        order = np.argsort(code, kind="stable")
+        starts = np.concatenate([[0], np.flatnonzero(np.diff(code[order])) + 1, [len(order)]])
+        lows, highs = [], []
+        for number, (start, end) in enumerate(zip(starts[:-1], starts[1:])):
+            members = ids[order[start:end]]
+            self.ids.append(members)
+            self.of[members] = number
+            inside = xyz[members]
+            lows.append(inside.min(axis=0))
+            highs.append(inside.max(axis=0))
+        self.low, self.high = np.array(lows), np.array(highs)
+
+    def __len__(self):
+        return len(self.ids)
+
+    def touched(self, ids):
+        """Chunk numbers that hold any of the given points."""
+        return set(np.unique(self.of[ids]).tolist()) - {-1}
+
+    def near(self, centre, radius):
+        """Chunk numbers whose box comes within `radius` of a point."""
+        gap = np.maximum(np.maximum(self.low - centre, centre - self.high), 0.0)
+        return np.flatnonzero(np.einsum("ij,ij->i", gap, gap) <= radius * radius)
+
+    def overlapping(self, low, high):
+        return np.flatnonzero(np.all((self.high >= low) & (self.low <= high), axis=1))

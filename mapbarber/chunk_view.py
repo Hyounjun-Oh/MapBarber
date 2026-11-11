@@ -124,3 +124,84 @@ class ChunkView:
         by_level[level] = (data, actor)
         self.cached += len(centres)
         self.show(chunk_key, level)
+
+
+class PointChunkView:
+    """One actor per cloud chunk and thinning level; levels built once are kept so switching back is instant."""
+
+    def __init__(self, renderer):
+        self.renderer = renderer
+        self.point_size = 3
+        self.actors = {}
+        self.levels = {}
+        self.cached = 0
+
+    def clear(self):
+        for chunk in list(self.actors):
+            self.forget(chunk)
+
+    def forget(self, chunk):
+        for data, actor in self.actors.pop(chunk, {}).values():
+            self.cached -= data.GetNumberOfPoints()
+            self.renderer.RemoveActor(actor)
+        self.levels.pop(chunk, None)
+
+    def drawn(self):
+        return sum(self.actors[chunk][level][0].GetNumberOfPoints() for chunk, level in self.levels.items())
+
+    def has(self, chunk, level):
+        return level in self.actors.get(chunk, {})
+
+    def show(self, chunk, level):
+        for other, (_, actor) in self.actors[chunk].items():
+            actor.SetVisibility(other == level)
+        self.levels[chunk] = level
+
+    def trim(self, limit):
+        if self.cached <= limit:
+            return
+        for chunk, by_level in self.actors.items():
+            for level in [level for level in by_level if level != self.levels.get(chunk)]:
+                data, actor = by_level.pop(level)
+                self.cached -= data.GetNumberOfPoints()
+                self.renderer.RemoveActor(actor)
+            if self.cached <= limit:
+                return
+
+    def set_point_size(self, size):
+        self.point_size = size
+        for by_level in self.actors.values():
+            for _, actor in by_level.values():
+                actor.GetProperty().SetPointSize(size)
+
+    def build(self, chunk, points, colours, level):
+        """Create the actor for one level of a chunk from the points to draw and their colours, and show it."""
+        if not len(points):
+            self.forget(chunk)
+            return
+        data = vtk.vtkPolyData()
+        vtk_points = vtk.vtkPoints()
+        vtk_points.SetData(numpy_support.numpy_to_vtk(np.ascontiguousarray(points, np.float32), deep=True))
+        cells = vtk.vtkCellArray()
+        cells.SetData(numpy_support.numpy_to_vtkIdTypeArray(np.arange(len(points) + 1, dtype=np.int64), deep=True),
+                      numpy_support.numpy_to_vtkIdTypeArray(np.arange(len(points), dtype=np.int64), deep=True))
+        data.SetPoints(vtk_points)
+        data.SetVerts(cells)
+        array = numpy_support.numpy_to_vtk(np.ascontiguousarray(colours), deep=True, array_type=vtk.VTK_UNSIGNED_CHAR)
+        array.SetName("rgb")
+        data.GetPointData().SetScalars(array)
+        mapper = vtk.vtkPolyDataMapper()
+        mapper.SetInputData(data)
+        mapper.SetScalarModeToUsePointData()
+        actor = vtk.vtkActor()
+        actor.SetMapper(mapper)
+        actor.GetProperty().SetPointSize(self.point_size)
+        actor.GetProperty().SetRenderPointsAsSpheres(True)
+        self.renderer.AddActor(actor)
+        by_level = self.actors.setdefault(chunk, {})
+        if level in by_level:
+            self.cached -= by_level[level][0].GetNumberOfPoints()
+            self.renderer.RemoveActor(by_level[level][1])
+        by_level[level] = (data, actor)
+        self.cached += len(points)
+        self.show(chunk, level)

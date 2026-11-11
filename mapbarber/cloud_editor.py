@@ -1,9 +1,12 @@
 """Editor for point clouds: points are removed, never moved, and every per-point field is kept on save."""
+import time
+
 import numpy as np
 import vtk
 from vtk.util import numpy_support
 
 from . import cloud, convert, formats
+from .chunk_view import PointChunkView
 from .editor import Editor
 from .formats import CLOUD, GRID, VOXEL
 from .gizmo import AXIS_NAMES, SLICE_DEFAULTS, BoxGizmo, SliceControls, SliceGizmo, Snap
@@ -11,12 +14,16 @@ from .qt import QtCore, QtWidgets
 from .measure_panel import MeasureOverlay
 from .ruler import RULER_RGB, Ruler3D, measure
 from .scene import VIEWS, Viewport, ramp
+from .voxels import ray_boxes
 from .widgets import ask_numbers, AxisRanges, button, danger_button, int_spin, RANGE_LIMIT, Section, select_button, spin
 
 Qt = QtCore.Qt
 SELECTED_RGB = np.array([255, 40, 200], np.uint8)
 TOOL_RGB = {"select": (1.0, 0.2, 0.8), "delete": (1.0, 0.15, 0.1)}
 PICK_PIXELS = 6
+MAX_LEVEL = 4
+POINT_BUDGET = 8_000_000
+CACHE_BUDGET = 40_000_000
 COLOUR_FIELDS_SKIPPED = {"x", "y", "z", "rgb", "rgba", "red", "green", "blue", "alpha", "r", "g", "b", "a"}
 DEFAULTS = {"radius": 0.10, "point_size": 3, "colour": "height", "front_only": True, "tolerance": 0.10,
             "neighbours": 16, "ratio": 2.0, "sparse_radius": 0.10, "sparse_min": 4, "leaf": 0.05,
@@ -52,22 +59,26 @@ class CloudEditor(Editor):
         super().__init__(window)
         self.cloud = cloud.PointCloud(np.zeros((0, 3)))
         self.colours = None
-        self.selection = np.zeros(0, np.int64)
-        self.visible_ids = np.zeros(0, np.int64)
-        self.visible_points = np.zeros((0, 3))
-        self._tree = None
+        self.selected = np.zeros(0, bool)
+        self.chunks = cloud.PointChunks(self.cloud.xyz, self.cloud.alive)
+        self.shown_counts = {}
         self.panel_values = dict(DEFAULTS)
         self.viewport = Viewport(window, self._click, self._hover, self._rectangle, self._right_click)
         self.widget = self.viewport.widget
-        self.polydata = vtk.vtkPolyData()
-        mapper = vtk.vtkPolyDataMapper()
-        mapper.SetInputData(self.polydata)
-        mapper.SetScalarModeToUsePointData()
-        self.actor = vtk.vtkActor()
-        self.actor.SetMapper(mapper)
-        self.actor.GetProperty().SetPointSize(DEFAULTS["point_size"])
-        self.actor.GetProperty().SetRenderPointsAsSpheres(True)
-        self.viewport.renderer.AddActor(self.actor)
+        self.view = PointChunkView(self.viewport.renderer)
+        self._colour_range = (0.0, 1.0)
+        self._pending = []
+        self._closed = False
+        self._level_timer = QtCore.QTimer()
+        self._level_timer.setSingleShot(True)
+        self._level_timer.setInterval(30)
+        self._level_timer.timeout.connect(self.update_levels)
+        self._slice_timer = QtCore.QTimer()
+        self._slice_timer.setSingleShot(True)
+        self._slice_timer.setInterval(0)
+        self._slice_timer.timeout.connect(self._refine)
+        self._camera_watch = self.viewport.renderer.GetActiveCamera().AddObserver(
+            "ModifiedEvent", lambda *_: None if self._closed else self._level_timer.start())
         self.hover_source, self.hover_actor = self.viewport.wire_sphere((1, 1, 1))
         self.hover_actor.GetProperty().SetRepresentationToSurface()
         self.hover_actor.GetProperty().SetOpacity(0.22)
@@ -96,7 +107,6 @@ class CloudEditor(Editor):
         self._stroke = None
         self.measurement = None
         self.data_bounds = (np.zeros(3), np.ones(3))
-        self.hidden = 0
         self._previous_mode = (False, 2)
         self._refresh_timer = QtCore.QTimer()
         self._refresh_timer.setSingleShot(True)
@@ -115,10 +125,13 @@ class CloudEditor(Editor):
         self.cloud = cloud.PointCloud(xyz, table)
         self.colours = point_colours(table)
         self.path, self.format = path, fmt
-        self.selection = np.zeros(0, np.int64)
+        self.selected = np.zeros(len(self.cloud.xyz), bool)
         self._selection_steps = []
-        alive = self.cloud.xyz[self.cloud.alive]
-        extent = float(np.ptp(alive, axis=0).max()) if len(alive) else 1.0
+        self.chunks = cloud.PointChunks(self.cloud.xyz, self.cloud.alive)
+        self.view.clear()
+        if len(self.chunks):
+            self.data_bounds = (self.chunks.low.min(axis=0), self.chunks.high.max(axis=0))
+        extent = float((self.data_bounds[1] - self.data_bounds[0]).max()) if len(self.chunks) else 1.0
         self.viewport.set_axes_length(max(0.08 * extent, 1e-3))
         self.clear_ruler()
         self.panel_values["range"] = DEFAULTS["range"]
@@ -127,7 +140,7 @@ class CloudEditor(Editor):
         if self.panel_alive:
             self.ranges.reset()
             self._fill_colour_modes()
-        self.refresh(render=False)
+        self.refresh(render=False, progress=progress)
 
     def export(self, path, fmt=None):
         xyz, table = self.cloud.surviving()
@@ -139,17 +152,69 @@ class CloudEditor(Editor):
         self.cloud.mark_saved()
         self.changed()
 
+    def _after_change(self):
+        """Redraw the chunks the last removal or undo touched."""
+        ids = self.cloud.touched
+        self.selected[ids] &= self.cloud.alive[ids]
+        self.refresh(self.chunks.touched(ids))
+
     def undo(self):
         if self.cloud.undo():
-            self.refresh()
+            self._after_change()
 
     def redo(self):
         if self.cloud.redo():
-            self.refresh()
+            self._after_change()
 
     def summary(self):
-        return self.tr("cloud_counts", n=len(self.cloud), v=len(self.visible_ids), r=self.cloud.removed(),
-                       s=len(self.selection))
+        return self.tr("cloud_counts", n=len(self.cloud), v=self.visible_count, r=self.cloud.removed(),
+                       s=int(self.selected.sum()))
+
+    @property
+    def selection(self):
+        """Indices of the selected points."""
+        return np.flatnonzero(self.selected)
+
+    @property
+    def visible_count(self):
+        return sum(self.shown_counts.values())
+
+    @property
+    def hidden(self):
+        return len(self.cloud) - self.visible_count
+
+    @property
+    def visible_ids(self):
+        """Indices of every point that is alive and not hidden by the range or slice (a pass over the cloud)."""
+        ids = self.cloud.ids()
+        return ids[self.shown(self.cloud.xyz[ids])]
+
+    @property
+    def visible_points(self):
+        return self.cloud.xyz[self.visible_ids]
+
+    def _filters(self):
+        """(low, high) when a range or slice hides something, else None."""
+        if not self.panel_alive:
+            return None
+        low, high = self.ranges.bounds()
+        if not self.slice.values()["on"] and (low <= -RANGE_LIMIT).all() and (high >= RANGE_LIMIT).all():
+            return None
+        return low, high
+
+    def shown(self, points, filters="unset"):
+        """Mask of points that are visible, and therefore editable."""
+        filters = self._filters() if isinstance(filters, str) else filters
+        if filters is None or not len(points):
+            return np.ones(len(points), bool)
+        low, high = filters
+        return np.all((points >= low) & (points <= high), axis=1) & self.slice.mask(points)
+
+    def chunk_ids(self, chunk, filters="unset"):
+        """Indices of a chunk's points that are alive and visible."""
+        ids = self.chunks.ids[chunk]
+        ids = ids[self.cloud.alive[ids]]
+        return ids[self.shown(self.cloud.xyz[ids], filters)]
 
     def colour_modes(self):
         modes = ["height"]
@@ -297,7 +362,12 @@ class CloudEditor(Editor):
         return [(self.tr("to_voxels"), self.to_voxels), (self.tr("to_grid"), self.to_grid)]
 
     def shutdown(self):
-        self._refresh_timer.stop()
+        self._closed = True
+        self._pending = []
+        for timer in (self._refresh_timer, self._level_timer, self._slice_timer):
+            timer.stop()
+        self.viewport.renderer.GetActiveCamera().RemoveObserver(self._camera_watch)
+        self.view.clear()
 
     def activate(self):
         self.viewport.initialize()
@@ -306,57 +376,141 @@ class CloudEditor(Editor):
     def capture(self):
         return self.viewport.capture()
 
-    def refresh(self, render=True):
-        ids = self.cloud.ids()
-        points = self.cloud.xyz[ids]
-        if len(points):
-            self.data_bounds = (points.min(axis=0), points.max(axis=0))
-        total = len(ids)
-        if self.panel_alive and len(points):
-            low, high = self.ranges.bounds()
-            inside = np.all((points >= low) & (points <= high), axis=1) & self.slice.mask(points)
-            ids, points = ids[inside], points[inside]
-        self.hidden = total - len(ids)
-        self.visible_ids, self.visible_points = ids, np.ascontiguousarray(points)
-        self.selection = self.selection[np.isin(self.selection, ids, assume_unique=True)]
-        self._tree = None
-        vtk_points = vtk.vtkPoints()
-        cells = vtk.vtkCellArray()
-        if len(points):
-            vtk_points.SetData(numpy_support.numpy_to_vtk(self.visible_points, deep=True))
-            cells.SetData(numpy_support.numpy_to_vtkIdTypeArray(np.arange(len(points) + 1, dtype=np.int64), deep=True),
-                          numpy_support.numpy_to_vtkIdTypeArray(np.arange(len(points), dtype=np.int64), deep=True))
-        self.polydata.SetPoints(vtk_points)
-        self.polydata.SetVerts(cells)
-        self.recolor(render)
-
-    def recolor(self, render=True):
+    def _colour_setup(self):
+        """Colour mode and the value range its ramp spans, taken from a sample of the cloud."""
         mode = self.colour_box.currentData() if self.panel_alive else "height"
-        colours = np.zeros((0, 3), np.uint8)
-        if len(self.visible_ids):
-            if mode == "rgb" and self.colours is not None:
-                colours = self.colours[self.visible_ids].copy()
-            else:
-                values = (self.visible_points[:, 2] if mode in (None, "height")
-                          else self.cloud.table[mode][self.visible_ids].astype(np.float64))
-                low, high = np.percentile(values, [1, 99])
-                colours = ramp(values, low, high)
-            colours[np.isin(self.visible_ids, self.selection, assume_unique=True)] = SELECTED_RGB
-        array = numpy_support.numpy_to_vtk(np.ascontiguousarray(colours), deep=True, array_type=vtk.VTK_UNSIGNED_CHAR)
-        array.SetName("rgb")
-        self.polydata.GetPointData().SetScalars(array)
-        self.polydata.Modified()
+        mode = mode or "height"
+        if mode != "rgb":
+            sample = self.cloud.ids()[::max(1, len(self.cloud) // 200_000)]
+            values = self.cloud.xyz[sample, 2] if mode == "height" else self.cloud.table[mode][sample].astype(np.float64)
+            if len(values):
+                self._colour_range = tuple(np.percentile(values, [1, 99]))
+        return mode
+
+    def _levels(self, chunks):
+        """Thinning level per chunk: no more points than the pixels it covers, and within the point budget."""
+        if not len(chunks) or not len(self.chunks):
+            return {}
+        low, high = self.chunks.low, self.chunks.high
+        centres, size = (low + high) / 2, np.linalg.norm(high - low, axis=1)
+        camera = self.viewport.renderer.GetActiveCamera()
+        eye = np.array(camera.GetPosition())
+        angle = max(self.viewport.pixel_angle(), 1e-9)
+        distance = np.maximum(np.linalg.norm(centres - eye, axis=1), 1e-6)
+        counts = np.array([self.shown_counts.get(chunk, len(self.chunks.ids[chunk])) for chunk in range(len(self.chunks))],
+                          float)
+        pixels = np.maximum(size / (np.maximum(distance - size / 2, 1e-6) * angle), 1.0) ** 2
+        levels = np.clip(np.ceil(np.log(np.maximum(counts / (2.0 * pixels), 1.0)) / np.log(4.0)), 0, MAX_LEVEL).astype(int)
+        sx, sy, ahead = self.viewport.project(centres)
+        width, height = self.viewport.renderer.GetSize()
+        margin = size / (distance * angle)
+        outside = (sx < -margin) | (sx > width + margin) | (sy < -margin) | (sy > height + margin)
+        levels[(outside | ~ahead) & (distance > size)] = MAX_LEVEL
+        far_first = np.argsort(-distance)
+        for _ in range(MAX_LEVEL):
+            drawn = counts / 4.0 ** levels
+            excess = drawn.sum() - POINT_BUDGET
+            if excess <= 0:
+                break
+            candidates = far_first[levels[far_first] < MAX_LEVEL]
+            saved = np.cumsum(drawn[candidates] * 0.75)
+            levels[candidates[:int(np.searchsorted(saved, excess)) + 1]] += 1
+        return {chunk: int(levels[chunk]) for chunk in chunks}
+
+    def _draw(self, chunk, level, filters, mode):
+        """Build one thinning level of one chunk from the current points, selection and filters."""
+        ids = self.chunk_ids(chunk, filters)
+        self.shown_counts[chunk] = len(ids)
+        if level:
+            keep = np.zeros(len(ids), bool)
+            keep[::4 ** level] = True
+            ids = ids[keep | self.selected[ids]]
+        points = self.cloud.xyz[ids]
+        if mode == "rgb" and self.colours is not None:
+            colours = self.colours[ids].copy()
+        else:
+            values = points[:, 2] if mode == "height" else self.cloud.table[mode][ids].astype(np.float64)
+            colours = ramp(values, *self._colour_range)
+        colours[self.selected[ids]] = SELECTED_RGB
+        self.view.build(chunk, points, colours, level)
+
+    def refresh(self, chunks=None, render=True, progress=None):
+        """Redraw the given chunks (all of them by default) after points, the selection or the filters changed."""
+        everything = chunks is None
+        if everything:
+            chunks = range(len(self.chunks))
+            self.shown_counts = {}
+            self.view.clear()
+        chunks = list(chunks)
+        filters = self._filters()
+        mode = self._colour_setup() if everything else self._mode
+        self._mode = mode
+        levels = self._levels(chunks)
+        for done, chunk in enumerate(chunks):
+            if progress and done % 16 == 0:
+                progress(done, len(chunks))
+            self.view.forget(chunk)
+            self._draw(chunk, levels[chunk], filters, mode)
         self.changed()
         if render:
             self.viewport.render()
 
+    def update_levels(self):
+        """Move chunks to the thinning level that suits the camera: cached levels at once, the rest in small slices."""
+        if self._closed or not len(self.chunks):
+            return
+        chunks = list(range(len(self.chunks)))
+        wanted = self._levels(chunks)
+        pending = []
+        for chunk in chunks:
+            level = wanted[chunk]
+            if self.view.levels.get(chunk, level) == level:
+                continue
+            if self.view.has(chunk, level):
+                self.view.show(chunk, level)
+            else:
+                pending.append(chunk)
+        if pending:
+            centres = (self.chunks.low[pending] + self.chunks.high[pending]) / 2
+            eye = np.array(self.viewport.renderer.GetActiveCamera().GetPosition())
+            order = np.argsort(np.linalg.norm(centres - eye, axis=1))
+            pending = [(pending[i], wanted[pending[i]]) for i in order]
+        self._pending = pending
+        self.viewport.render()
+        if pending:
+            self._slice_timer.start()
+
+    def _refine(self, budget=0.012):
+        """Build queued thinning levels, nearest chunks first, for a few milliseconds at a time."""
+        if self._closed or not self._pending:
+            return
+        filters = self._filters()
+        started = time.perf_counter()
+        while self._pending and time.perf_counter() - started < budget:
+            chunk, level = self._pending.pop(0)
+            if not self.view.has(chunk, level):
+                self._draw(chunk, level, filters, self._mode)
+        self.view.trim(CACHE_BUDGET)
+        self.viewport.render()
+        if self._pending:
+            self._slice_timer.start()
+
+    def finish_levels(self):
+        """Build every queued thinning level now (used by tests and screenshots)."""
+        while self._pending:
+            self._refine(1.0)
+
+    def recolor(self, render=True):
+        """Recolour everything, for example after the colour mode changed."""
+        self.refresh(render=render)
+
     def _style_changed(self, *_):
-        self.actor.GetProperty().SetPointSize(self.point_size.value())
+        self.view.set_point_size(self.point_size.value())
         self.viewport.render()
 
     def look_from(self, direction, up):
-        bounds = self.polydata.GetBounds() if len(self.visible_ids) else (-1, 1, -1, 1, -1, 1)
-        self.viewport.look_from(direction, up, bounds)
+        low, high = self.data_bounds if len(self.chunks) else (-np.ones(3), np.ones(3))
+        self.viewport.look_from(direction, up, (low[0], high[0], low[1], high[1], low[2], high[2]))
 
     def reset_range(self):
         self.ranges.reset()
@@ -372,34 +526,56 @@ class CloudEditor(Editor):
     def remove(self, ids, label):
         removed = self.cloud.remove(ids)
         if removed:
-            self.refresh()
+            self._after_change()
             self.status(self.tr("status_removed", what=label, n=removed))
         else:
             self.status(self.tr("status_no_change", what=label))
 
     def select(self, ids, mode="add"):
-        ids = np.intersect1d(np.asarray(ids, np.int64), self.visible_ids)
-        before = self.selection
+        """Change the selection with alive, visible points: 'add', 'remove' or 'replace'."""
+        ids = np.asarray(ids, np.int64)
+        if len(ids):
+            ids = ids[self.cloud.alive[ids]]
+            ids = ids[self.shown(self.cloud.xyz[ids])]
         if mode == "remove":
-            self.selection = np.setdiff1d(self.selection, ids)
+            changed = ids[self.selected[ids]]
+            self.selected[changed] = False
+            step = ("remove", changed)
         elif mode == "replace":
-            self.selection = ids
+            before = self.selection
+            self.selected[:] = False
+            self.selected[ids] = True
+            changed = np.union1d(before, ids)
+            step = ("replace", before)
         else:
-            self.selection = np.union1d(self.selection, ids)
-        if not np.array_equal(before, self.selection):
-            self._selection_steps = self._selection_steps[-63:] + [before]
-        self.recolor()
+            changed = ids[~self.selected[ids]]
+            self.selected[changed] = True
+            step = ("add", changed)
+        if len(changed):
+            self._selection_steps = self._selection_steps[-63:] + [step]
+            self.refresh(self.chunks.touched(changed))
+        else:
+            self.changed()
 
     def selection_back(self):
         """Take back the most recent selection step (one click, rectangle or filter)."""
         if not self._selection_steps:
             return
-        self.selection = np.intersect1d(self._selection_steps.pop(), self.visible_ids)
-        self.recolor()
-        self.status(self.tr("selection_back") + f": {len(self.selection)}")
+        kind, ids = self._selection_steps.pop()
+        changed = ids
+        if kind == "add":
+            self.selected[ids] = False
+        elif kind == "remove":
+            self.selected[ids] = self.cloud.alive[ids]
+        else:
+            changed = np.union1d(self.selection, ids)
+            self.selected[:] = False
+            self.selected[ids] = self.cloud.alive[ids]
+        self.refresh(self.chunks.touched(changed))
+        self.status(self.tr("selection_back") + f": {int(self.selected.sum())}")
 
     def delete_selection(self):
-        if len(self.selection):
+        if self.selected.any():
             self.remove(self.selection, self.tr("delete_selection"))
 
     def clear_selection(self):
@@ -409,31 +585,34 @@ class CloudEditor(Editor):
         self.select(self.visible_ids, "replace")
 
     def invert_selection(self):
-        self.select(np.setdiff1d(self.visible_ids, self.selection, assume_unique=True), "replace")
+        ids = self.visible_ids
+        self.select(ids[~self.selected[ids]], "replace")
 
-    def _select_filtered(self, local):
-        self.select(self.visible_ids[local], "replace")
-        self.status(self.tr("status_filter", n=len(self.selection)), 10000)
+    def _select_filtered(self, ids):
+        self.select(ids, "replace")
+        self.status(self.tr("status_filter", n=int(self.selected.sum())), 10000)
 
     def select_outliers(self):
         QtWidgets.QApplication.setOverrideCursor(Qt.WaitCursor)
         try:
-            local = cloud.statistical_outliers(self.visible_points, self.neighbours.value(), self.ratio.value())
+            ids = self.visible_ids
+            local = cloud.statistical_outliers(self.cloud.xyz[ids], self.neighbours.value(), self.ratio.value())
         finally:
             QtWidgets.QApplication.restoreOverrideCursor()
-        self._select_filtered(local)
+        self._select_filtered(ids[local])
 
     def select_sparse(self):
         QtWidgets.QApplication.setOverrideCursor(Qt.WaitCursor)
         try:
-            local = cloud.sparse_points(self.visible_points, self.sparse_radius.value(), self.sparse_min.value())
+            ids = self.visible_ids
+            local = cloud.sparse_points(self.cloud.xyz[ids], self.sparse_radius.value(), self.sparse_min.value())
         finally:
             QtWidgets.QApplication.restoreOverrideCursor()
-        self._select_filtered(local)
+        self._select_filtered(ids[local])
 
     def thin_out(self):
-        local = cloud.downsample_surplus(self.visible_points, self.leaf.value())
-        self.remove(self.visible_ids[local], self.tr("thin_out"))
+        ids = self.visible_ids
+        self.remove(ids[cloud.downsample_surplus(self.cloud.xyz[ids], self.leaf.value())], self.tr("thin_out"))
 
     def _box_changed(self, *_):
         low, high = self.box.bounds()
@@ -485,14 +664,18 @@ class CloudEditor(Editor):
         self.refresh()
         self.status(self.tr("status_view_restored"))
 
-    def _inside_box(self):
+    def _ids_in_box(self):
         low, high = self.box.bounds()
-        if not len(self.visible_points):
-            return np.zeros(0, bool)
-        return np.all((self.visible_points >= low) & (self.visible_points <= high), axis=1)
+        filters = self._filters()
+        parts = []
+        for chunk in self.chunks.overlapping(low, high):
+            ids = self.chunk_ids(chunk, filters)
+            points = self.cloud.xyz[ids]
+            parts.append(ids[np.all((points >= low) & (points <= high), axis=1)])
+        return np.concatenate(parts) if parts else np.zeros(0, np.int64)
 
     def box_from_selection(self):
-        if len(self.selection):
+        if self.selected.any():
             points = self.cloud.xyz[self.selection]
             self.box.set(points.min(axis=0), points.max(axis=0))
             self.show_box.setChecked(True)
@@ -500,15 +683,15 @@ class CloudEditor(Editor):
 
     def box_select(self):
         self.show_box.setChecked(True)
-        self.select(self.visible_ids[self._inside_box()])
+        self.select(self._ids_in_box())
 
     def box_delete(self):
         self.show_box.setChecked(True)
-        self.remove(self.visible_ids[self._inside_box()], self.tr("box_delete"))
+        self.remove(self._ids_in_box(), self.tr("box_delete"))
 
     def box_delete_outside(self):
         self.show_box.setChecked(True)
-        self.remove(self.visible_ids[~self._inside_box()], self.tr("box_delete_outside"))
+        self.remove(np.setdiff1d(self.visible_ids, self._ids_in_box(), assume_unique=True), self.tr("box_delete_outside"))
 
     def _ask_size(self):
         xyz, _ = self.cloud.surviving()
@@ -536,15 +719,36 @@ class CloudEditor(Editor):
         return GRID, convert.voxels_to_grid(convert.points_to_voxels(xyz, size), size, *sorted(band))
 
     def _pick(self, x, y):
+        """Nearest visible point close to the cursor ray, searching only the chunks the ray passes."""
+        if not len(self.chunks):
+            return None
         origin, direction = self.viewport.eye_ray(x, y)
-        index = cloud.pick_along_ray(origin, direction, self.visible_points, PICK_PIXELS * self.viewport.pixel_angle())
-        return None if index is None else self.visible_points[index]
+        angle = PICK_PIXELS * self.viewport.pixel_angle()
+        reach = np.linalg.norm(self.chunks.high - origin, axis=1).max() * angle
+        hits, entry = ray_boxes(origin, direction, self.chunks.low - reach, self.chunks.high + reach)
+        order = np.argsort(entry)
+        filters = self._filters()
+        best, best_distance = None, np.inf
+        for chunk, distance in zip(hits[order], entry[order]):
+            if distance > best_distance:
+                break
+            points = self.cloud.xyz[self.chunk_ids(int(chunk), filters)]
+            index = cloud.pick_along_ray(origin, direction, points, angle)
+            if index is not None:
+                along = float((points[index] - origin) @ direction)
+                if along < best_distance:
+                    best, best_distance = points[index], along
+        return best
 
     def _brush_ids(self, centre):
-        if self._tree is None:
-            from scipy.spatial import cKDTree
-            self._tree = cKDTree(self.visible_points)
-        return self.visible_ids[np.asarray(self._tree.query_ball_point(centre, self.radius.value()), np.int64)]
+        radius = self.radius.value()
+        filters = self._filters()
+        parts = []
+        for chunk in self.chunks.near(centre, radius):
+            ids = self.chunk_ids(int(chunk), filters)
+            offset = self.cloud.xyz[ids] - centre
+            parts.append(ids[np.einsum("ij,ij->i", offset, offset) <= radius * radius])
+        return np.concatenate(parts) if parts else np.zeros(0, np.int64)
 
     def clear_ruler(self):
         """Remove the ruler from the view and forget every stored measurement."""
@@ -624,7 +828,7 @@ class CloudEditor(Editor):
 
     def measure_point(self, x, y):
         """Point under the cursor, marked with a small sphere so it is clear what will be measured."""
-        point = self._pick(x, y) if len(self.visible_points) else None
+        point = self._pick(x, y) if self.visible_count else None
         if point is not None:
             self.hover_source.SetCenter(*point)
             self.hover_source.SetRadius(self._marker_size() * 2.5)
@@ -642,7 +846,7 @@ class CloudEditor(Editor):
         if self.tool == "measure":
             self._measure_hover(x, y)
             return
-        centre = None if not len(self.visible_points) else self._pick(x, y)
+        centre = None if not self.visible_count else self._pick(x, y)
         if centre is None:
             if self.hover_actor.GetVisibility():
                 self.hover_actor.VisibilityOff()
@@ -676,7 +880,7 @@ class CloudEditor(Editor):
         self.preview_actor.SetVisibility(bool(len(points)))
 
     def _click(self, x, y, ctrl):
-        if self.tool == "view" or not len(self.visible_points):
+        if self.tool == "view" or not self.visible_count:
             return
         if self.tool == "measure":
             self._measure_click(x, y)
@@ -695,7 +899,7 @@ class CloudEditor(Editor):
         """Ctrl + drag: keep applying the brush under the cursor while the view stays still."""
         if self._stroke is None:
             self._stroke = (len(self._selection_steps), self.cloud.undo_depth())
-        centre = self._pick(x, y) if len(self.visible_points) else None
+        centre = self._pick(x, y) if self.visible_count else None
         if centre is None:
             return
         ids = self._brush_ids(centre)
@@ -711,21 +915,40 @@ class CloudEditor(Editor):
             return
         steps, depth = self._stroke
         self._stroke = None
-        del self._selection_steps[steps + 1:]
+        painted = [ids for kind, ids in self._selection_steps[steps:] if kind == "add"]
+        if len(painted) > 1:
+            self._selection_steps[steps:] = [("add", np.unique(np.concatenate(painted)))]
         self.cloud.squash(depth)
 
     def _right_click(self, x, y):
-        if not len(self.selection) or not len(self.visible_points):
+        if not self.selected.any() or not self.visible_count:
             return
         centre = self._pick(x, y)
         if centre is not None:
-            before = len(self.selection)
+            before = int(self.selected.sum())
             self.select(self._brush_ids(centre), "remove")
-            self.status(self.tr("status_deselected", n=before - len(self.selection)))
+            self.status(self.tr("status_deselected", n=before - int(self.selected.sum())))
+
+    def _chunks_in_rectangle(self, corner_a, corner_b):
+        """Chunk numbers whose bounding box overlaps a screen rectangle."""
+        low, high = self.chunks.low, self.chunks.high
+        corners = np.stack([np.where(np.array(mask, bool), high, low)
+                            for mask in ((i, j, k) for i in (0, 1) for j in (0, 1) for k in (0, 1))], axis=1)
+        sx, sy, ahead = self.viewport.project(corners.reshape(-1, 3))
+        sx, sy, ahead = sx.reshape(-1, 8), sy.reshape(-1, 8), ahead.reshape(-1, 8)
+        x0, x1 = sorted((corner_a[0], corner_b[0]))
+        y0, y1 = sorted((corner_a[1], corner_b[1]))
+        overlap = (sx.max(axis=1) >= x0) & (sx.min(axis=1) <= x1) & (sy.max(axis=1) >= y0) & (sy.min(axis=1) <= y1)
+        return np.flatnonzero((overlap | ~ahead.all(axis=1)) & ahead.any(axis=1))
 
     def _rectangle(self, corner_a, corner_b, subtract):
         self.hover_actor.VisibilityOff()
-        chosen = self.viewport.rectangle_hits(self.visible_points, corner_a, corner_b, self.front_only.isChecked(),
+        if not len(self.chunks):
+            return
+        filters = self._filters()
+        parts = [self.chunk_ids(int(chunk), filters) for chunk in self._chunks_in_rectangle(corner_a, corner_b)]
+        ids = np.concatenate(parts) if parts else np.zeros(0, np.int64)
+        chosen = self.viewport.rectangle_hits(self.cloud.xyz[ids], corner_a, corner_b, self.front_only.isChecked(),
                                               self.tolerance.value())
-        self.select(self.visible_ids[chosen], "remove" if subtract else "add")
-        self.status(self.tr("status_rectangle", n=len(chosen), t=len(self.selection)))
+        self.select(ids[chosen], "remove" if subtract else "add")
+        self.status(self.tr("status_rectangle", n=len(chosen), t=int(self.selected.sum())))

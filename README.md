@@ -69,6 +69,7 @@ Detection looks at the extension first and the file signature second, so a backu
 - **Colour by** height, stored RGB or any numeric field such as `intensity` or `ring`.
 - **Ruler** measures the real distance between two picked points.
 - Points are only ever removed, so saving to PCD or PLY keeps every field of every surviving point.
+- **Large clouds:** the cloud is split into spatial chunks; distant chunks are thinned on screen and edits redraw only the chunks they touch, so 30 million points stay interactive.
 
 ## 2D occupancy grid editor
 
