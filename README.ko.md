@@ -22,7 +22,7 @@ cd mapbarber
 ./mapbarber.sh examples/room.bt     # 또는 파일을 바로 열기
 ```
 
-처음 실행할 때 `.venv/`에 전용 가상환경을 만들고 NumPy, SciPy, VTK, PySide6를 설치합니다(약 500 MB). 그다음부터는 바로 실행됩니다. Python 3.9 이상과 데스크톱 환경이 필요합니다. X11에서 동작하고, Wayland에서는 스크립트가 XWayland를 자동으로 선택합니다.
+처음 실행할 때 `.venv/`에 전용 가상환경을 만들고 NumPy, SciPy, VTK, PySide6를 설치합니다(약 500 MB). 그다음부터는 바로 실행됩니다. Python 3.10 이상과 데스크톱 환경이 필요합니다. X11에서 동작하고, Wayland에서는 스크립트가 XWayland를 자동으로 선택합니다.
 
 ## 지원 형식
 

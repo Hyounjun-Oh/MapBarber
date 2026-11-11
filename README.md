@@ -8,7 +8,7 @@
 **A barbershop for robot maps.** Trim the stray voxels, points and pixels that noisy sensors leave behind, and fill the bald spots — in OctoMap octrees, point clouds and ROS 2D occupancy grids, all from one window.
 
 [![tests](https://github.com/Hyounjun-Oh/mapbarber/actions/workflows/tests.yml/badge.svg)](https://github.com/Hyounjun-Oh/mapbarber/actions/workflows/tests.yml)
-![python](https://img.shields.io/badge/python-3.9%2B-blue)
+![python](https://img.shields.io/badge/python-3.10%2B-blue)
 ![license](https://img.shields.io/badge/license-Unlicense-green)
 
 [한국어](README.ko.md)
@@ -26,7 +26,7 @@ cd mapbarber
 ./mapbarber.sh examples/room.bt     # or open a file directly
 ```
 
-The first run creates a private virtual environment in `.venv/` and installs NumPy, SciPy, VTK and PySide6 (about 500 MB). Later runs start immediately. You need Python 3.9 or newer and a desktop session (X11, or Wayland through XWayland, which the script selects for you).
+The first run creates a private virtual environment in `.venv/` and installs NumPy, SciPy, VTK and PySide6 (about 500 MB). Later runs start immediately. You need Python 3.10 or newer and a desktop session (X11, or Wayland through XWayland, which the script selects for you).
 
 Prefer pip? `pip install .` installs a `mapbarber` command that does the same thing.
 
