@@ -120,10 +120,11 @@ Die Kürzel folgen verbreiteten Desktop-Konventionen: Photoshop, Figma und Power
 | `Strg+Z` / `Strg+Umschalt+Z` oder `Strg+Y` | rückgängig / wiederholen |
 | `H` `V` `E` `B` `L` `R` `G` `I` | navigieren, auswählen, radieren, hinzufügen·Stift, Linie, Rechteck, füllen, messen |
 | `[` / `]` | kleinerer / größerer Pinsel |
-| `Entf` oder `Rücktaste` | Auswahl löschen |
+| `Entf` / `Rücktaste` | Auswahl löschen / letzten Auswahlschritt zurücknehmen |
 | `Strg+A` / `Strg+Umschalt+I` / `Esc` oder `Strg+D` | alles Sichtbare auswählen / umkehren / abwählen |
 | links ziehen / Mitte ziehen oder `Leertaste`+ziehen / Rad | drehen / verschieben / zoomen (2D: mit Navigieren verschiebt links ziehen) |
 | `Umschalt`+ziehen / `Umschalt`+rechts ziehen / Rechtsklick | Rechteckauswahl / Rechteck abwählen / abwählen |
+| `Strg`+ziehen | bei stehender Ansicht fortlaufend mit dem Pinsel malen (auswählen oder radieren) |
 | `Umschalt` / `Alt` beim Zeichnen | auf 0°·45°·90° einrasten bzw. Quadrat / von der Mitte aus |
 | `1` `3` `7` / `0` oder `Pos1` | Ansicht vorne, Seite, oben / isometrisch (auch Ziffernblock) |
 | `Strg+=` / `Strg+-` / `Strg+0` | vergrößern / verkleinern / an Fenster anpassen (2D) |

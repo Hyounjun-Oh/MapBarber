@@ -69,6 +69,19 @@ class CloudEditor(Editor):
         self.actor.GetProperty().SetRenderPointsAsSpheres(True)
         self.viewport.renderer.AddActor(self.actor)
         self.hover_source, self.hover_actor = self.viewport.wire_sphere((1, 1, 1))
+        self.hover_actor.GetProperty().SetRepresentationToSurface()
+        self.hover_actor.GetProperty().SetOpacity(0.22)
+        self._selection_steps = []
+        self.preview = vtk.vtkPolyData()
+        preview_mapper = vtk.vtkPolyDataMapper()
+        preview_mapper.SetInputData(self.preview)
+        self.preview_actor = vtk.vtkActor()
+        self.preview_actor.SetMapper(preview_mapper)
+        self.preview_actor.GetProperty().SetRenderPointsAsSpheres(True)
+        self.preview_actor.GetProperty().LightingOff()
+        self.preview_actor.PickableOff()
+        self.preview_actor.VisibilityOff()
+        self.viewport.renderer.AddActor(self.preview_actor)
         self.box_source, self.box_actor = self.viewport.outline((1.0, 0.85, 0.1))
         self.box_gizmo = BoxGizmo(self.viewport, self._box_dragged, Snap(0.01))
         self.slice_gizmo = SliceGizmo(self.viewport, self._slice_dragged, Snap(0.01))
@@ -77,6 +90,10 @@ class CloudEditor(Editor):
         self.overlay = MeasureOverlay(self.widget, lambda entry: self._ruler_text(entry)[1], self._show_measurement,
                                       lambda: self.tr)
         self.viewport.band_allowed = lambda: self.tool != "measure"
+        self.viewport.paint_allowed = lambda: self.tool in ("select", "delete")
+        self.viewport.on_paint = self._paint
+        self.viewport.on_paint_end = self._paint_end
+        self._stroke = None
         self.measurement = None
         self.data_bounds = (np.zeros(3), np.ones(3))
         self.hidden = 0
@@ -99,6 +116,7 @@ class CloudEditor(Editor):
         self.colours = point_colours(table)
         self.path, self.format = path, fmt
         self.selection = np.zeros(0, np.int64)
+        self._selection_steps = []
         alive = self.cloud.xyz[self.cloud.alive]
         extent = float(np.ptp(alive, axis=0).max()) if len(alive) else 1.0
         self.viewport.set_axes_length(max(0.08 * extent, 1e-3))
@@ -171,6 +189,9 @@ class CloudEditor(Editor):
         self.radius = spin(0.001, RANGE_LIMIT, values["radius"], 0.01)
         self.radius.setToolTip(t("cloud_brush_tip"))
         form.addRow(t("brush_radius"), self.radius)
+        hint = W.QLabel(t("brush_keys"))
+        hint.setStyleSheet("color: gray;")
+        form.addRow(hint)
         group.add_to(layout)
 
         group = Section(t("rectangle"), "rectangle")
@@ -268,10 +289,13 @@ class CloudEditor(Editor):
 
     def selection_actions(self):
         return {"delete": self.delete_selection, "select_all": self.select_all, "invert": self.invert_selection,
-                "clear": self.clear_selection}
+                "clear": self.clear_selection, "back": self.selection_back}
 
     def conversions(self):
         return [(self.tr("to_voxels"), self.to_voxels), (self.tr("to_grid"), self.to_grid)]
+
+    def shutdown(self):
+        self._refresh_timer.stop()
 
     def activate(self):
         self.viewport.initialize()
@@ -339,6 +363,7 @@ class CloudEditor(Editor):
     def set_tool(self, name):
         self.tool = name
         self.hover_actor.VisibilityOff()
+        self.preview_actor.VisibilityOff()
         self.viewport.set_default_cursor(Qt.ArrowCursor if name == "view" else Qt.CrossCursor)
         self.viewport.render()
 
@@ -352,13 +377,24 @@ class CloudEditor(Editor):
 
     def select(self, ids, mode="add"):
         ids = np.intersect1d(np.asarray(ids, np.int64), self.visible_ids)
+        before = self.selection
         if mode == "remove":
             self.selection = np.setdiff1d(self.selection, ids)
         elif mode == "replace":
             self.selection = ids
         else:
             self.selection = np.union1d(self.selection, ids)
+        if not np.array_equal(before, self.selection):
+            self._selection_steps = self._selection_steps[-63:] + [before]
         self.recolor()
+
+    def selection_back(self):
+        """Take back the most recent selection step (one click, rectangle or filter)."""
+        if not self._selection_steps:
+            return
+        self.selection = np.intersect1d(self._selection_steps.pop(), self.visible_ids)
+        self.recolor()
+        self.status(self.tr("selection_back") + f": {len(self.selection)}")
 
     def delete_selection(self):
         if len(self.selection):
@@ -608,14 +644,34 @@ class CloudEditor(Editor):
         if centre is None:
             if self.hover_actor.GetVisibility():
                 self.hover_actor.VisibilityOff()
+                self.preview_actor.VisibilityOff()
                 self.viewport.render()
             return
         self.hover_source.SetCenter(*centre)
         self.hover_source.SetRadius(self.radius.value())
         self.hover_actor.GetProperty().SetColor(*TOOL_RGB[self.tool])
         self.hover_actor.VisibilityOn()
-        self.status(self.tr("status_hover", x=centre[0], y=centre[1], z=centre[2]), 0)
+        inside = self.cloud.xyz[self._brush_ids(centre)]
+        self._show_preview(inside, TOOL_RGB[self.tool])
+        eye = np.array(self.viewport.renderer.GetActiveCamera().GetPosition())
+        self.status(self.tr("status_hover", x=centre[0], y=centre[1], z=centre[2]) + "   ·   "
+                    + self.tr("status_brush", n=len(inside), d=float(np.linalg.norm(centre - eye))), 0)
         self.viewport.render()
+
+    def _show_preview(self, points, rgb):
+        """Light up the points the brush would affect, so its depth in the cloud is obvious."""
+        vtk_points = vtk.vtkPoints()
+        cells = vtk.vtkCellArray()
+        if len(points):
+            vtk_points.SetData(numpy_support.numpy_to_vtk(np.ascontiguousarray(points), deep=True))
+            cells.SetData(numpy_support.numpy_to_vtkIdTypeArray(np.arange(len(points) + 1, dtype=np.int64), deep=True),
+                          numpy_support.numpy_to_vtkIdTypeArray(np.arange(len(points), dtype=np.int64), deep=True))
+        self.preview.SetPoints(vtk_points)
+        self.preview.SetVerts(cells)
+        self.preview.Modified()
+        self.preview_actor.GetProperty().SetColor(*rgb)
+        self.preview_actor.GetProperty().SetPointSize(self.point_size.value() + 3)
+        self.preview_actor.SetVisibility(bool(len(points)))
 
     def _click(self, x, y, ctrl):
         if self.tool == "view" or not len(self.visible_points):
@@ -632,6 +688,29 @@ class CloudEditor(Editor):
         else:
             self.remove(ids, self.tr("tool_delete"))
         self._hover(x, y)
+
+    def _paint(self, x, y):
+        """Ctrl + drag: keep applying the brush under the cursor while the view stays still."""
+        if self._stroke is None:
+            self._stroke = (len(self._selection_steps), self.cloud.undo_depth())
+        centre = self._pick(x, y) if len(self.visible_points) else None
+        if centre is None:
+            return
+        ids = self._brush_ids(centre)
+        if self.tool == "select":
+            self.select(ids, "add")
+        else:
+            self.remove(ids, self.tr("tool_delete"))
+        self._hover(x, y)
+
+    def _paint_end(self):
+        """Fold a finished stroke into a single selection step and a single undo step."""
+        if self._stroke is None:
+            return
+        steps, depth = self._stroke
+        self._stroke = None
+        del self._selection_steps[steps + 1:]
+        self.cloud.squash(depth)
 
     def _right_click(self, x, y):
         if not len(self.selection) or not len(self.visible_points):

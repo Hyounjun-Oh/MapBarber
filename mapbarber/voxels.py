@@ -219,6 +219,15 @@ class VoxelMap(KeySet):
         self._undo.append((add, remove))
         return True
 
+    def undo_depth(self):
+        return len(self._undo)
+
+    def squash(self, depth):
+        """Merge the removals recorded since `depth` into one undo step (a brush stroke)."""
+        steps = self._undo[depth:]
+        if len(steps) > 1 and all(not len(add) for add, _ in steps):
+            self._undo[depth:] = [(EMPTY, np.unique(np.concatenate([remove for _, remove in steps])))]
+
     @property
     def dirty(self):
         return bool(len(self.added) or len(self.removed))

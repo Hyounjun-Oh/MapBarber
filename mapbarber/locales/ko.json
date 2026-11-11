@@ -42,8 +42,8 @@
  "about": "정보",
  "about_text": "MapBarber {version}\n로봇 맵의 튀는 복셀·점·픽셀은 다듬고, 빈 곳은 채웁니다.",
  "controls_general": "Ctrl+O 로 맵을 열거나 파일을 창에 끌어다 놓으세요. 파일마다 탭이 하나씩 열립니다.\n\n· .bt / .ot / 복셀 .npz → 복셀 맵 편집기\n· .pcd / .ply / .xyz / .csv / .npy → 포인트 클라우드 편집기\n· 맵 .yaml / .pgm / .png → 2D 점유 격자 편집기\n\nCtrl+Tab / Ctrl+Shift+Tab: 다음 / 이전 탭   ·   Ctrl+W: 탭 닫기",
- "controls_voxel": "왼쪽 끌기: 회전   ·   가운데 끌기 또는 Space + 끌기: 이동   ·   휠 또는 Ctrl+= / Ctrl+−: 확대/축소\n1 앞 · 3 옆 · 7 위 · 0 / Home: 등각\n\n도구:  H 탐색   V 선택   E 지우기   B 추가   I 자\n[ / ]: 붓 작게 / 크게\n선택: 클릭하면 붓 정육면체만큼 선택   ·   Ctrl+클릭 또는 오른쪽 클릭: 선택 해제\n지우기: 클릭하면 붓 정육면체만큼 삭제\n추가: 복셀 면을 클릭하면 바깥으로 한 겹 추가, 빈 곳을 클릭하면 작업 평면 위에 추가\n자: 두 점을 클릭, Shift 를 누르면 축 방향으로 고정\n\nShift + 끌기: 사각형 선택   ·   Shift + 오른쪽 끌기: 사각형 선택 해제\nDelete / Backspace: 선택 삭제   ·   Esc / Ctrl+D: 선택 해제\nCtrl+A: 보이는 것 모두 선택   ·   Ctrl+Shift+I: 선택 반전\n상자: 색깔 화살표를 끌면 x / y / z 로 이동, 점을 끌면 크기 조절\n슬라이스: 평면으로 공간을 잘라 한쪽만 편집한 뒤 '보기 복구'\nCtrl+Z / Ctrl+Shift+Z (Ctrl+Y): 되돌리기 / 다시 실행   ·   Ctrl+S: 저장",
- "controls_cloud": "왼쪽 끌기: 회전   ·   가운데 끌기 또는 Space + 끌기: 이동   ·   휠 또는 Ctrl+= / Ctrl+−: 확대/축소\n1 앞 · 3 옆 · 7 위 · 0 / Home: 등각\n\n도구:  H 탐색   V 선택   E 지우기   I 자\n[ / ]: 붓 반지름 줄이기 / 늘리기\n선택 / 지우기: 점을 클릭하면 붓 구 안의 모든 점에 적용   ·   Ctrl+클릭 또는 오른쪽 클릭: 선택 해제\n자: 두 점을 클릭, Shift 를 누르면 축 방향으로 고정\n잡음 필터는 선택만 합니다. 확인한 뒤 Delete 로 지우세요.\n\nShift + 끌기: 사각형 선택   ·   Shift + 오른쪽 끌기: 사각형 선택 해제\nDelete / Backspace: 선택 삭제   ·   Esc / Ctrl+D: 선택 해제\nCtrl+A: 보이는 것 모두 선택   ·   Ctrl+Shift+I: 선택 반전\n상자: 색깔 화살표를 끌면 x / y / z 로 이동, 점을 끌면 크기 조절\n슬라이스: 평면으로 공간을 잘라 한쪽만 편집한 뒤 '보기 복구'\nCtrl+Z / Ctrl+Shift+Z (Ctrl+Y): 되돌리기 / 다시 실행   ·   Ctrl+S: 저장 (점의 모든 필드 유지)",
+ "controls_voxel": "왼쪽 끌기: 회전   ·   가운데 끌기 또는 Space + 끌기: 이동   ·   휠 또는 Ctrl+= / Ctrl+−: 확대/축소\n1 앞 · 3 옆 · 7 위 · 0 / Home: 등각\n\n도구:  H 탐색   V 선택   E 지우기   B 추가   I 자\n[ / ]: 붓 작게 / 크게\n선택: 클릭하면 붓 정육면체만큼 선택   ·   오른쪽 클릭: 선택 해제   ·   Ctrl + 끌기: 화면은 고정한 채 붓으로 연속 칠하기\n지우기: 클릭하면 붓 정육면체만큼 삭제\n추가: 복셀 면을 클릭하면 바깥으로 한 겹 추가, 빈 곳을 클릭하면 작업 평면 위에 추가\n자: 두 점을 클릭, Shift 를 누르면 축 방향으로 고정\n\nShift + 끌기: 사각형 선택   ·   Shift + 오른쪽 끌기: 사각형 선택 해제\nDelete: 선택 삭제   ·   Backspace: 선택 한 단계 되돌리기   ·   Esc / Ctrl+D: 선택 해제\nCtrl+A: 보이는 것 모두 선택   ·   Ctrl+Shift+I: 선택 반전\n상자: 색깔 화살표를 끌면 x / y / z 로 이동, 점을 끌면 크기 조절\n슬라이스: 평면으로 공간을 잘라 한쪽만 편집한 뒤 '보기 복구'\nCtrl+Z / Ctrl+Shift+Z (Ctrl+Y): 되돌리기 / 다시 실행   ·   Ctrl+S: 저장",
+ "controls_cloud": "왼쪽 끌기: 회전   ·   가운데 끌기 또는 Space + 끌기: 이동   ·   휠 또는 Ctrl+= / Ctrl+−: 확대/축소\n1 앞 · 3 옆 · 7 위 · 0 / Home: 등각\n\n도구:  H 탐색   V 선택   E 지우기   I 자\n[ / ]: 붓 반지름 줄이기 / 늘리기\n선택 / 지우기: 점을 클릭하면 붓 구 안의 모든 점에 적용   ·   오른쪽 클릭: 선택 해제   ·   Ctrl + 끌기: 화면은 고정한 채 붓으로 연속 칠하기\n자: 두 점을 클릭, Shift 를 누르면 축 방향으로 고정\n잡음 필터는 선택만 합니다. 확인한 뒤 Delete 로 지우세요.\n\nShift + 끌기: 사각형 선택   ·   Shift + 오른쪽 끌기: 사각형 선택 해제\nDelete: 선택 삭제   ·   Backspace: 선택 한 단계 되돌리기   ·   Esc / Ctrl+D: 선택 해제\nCtrl+A: 보이는 것 모두 선택   ·   Ctrl+Shift+I: 선택 반전\n상자: 색깔 화살표를 끌면 x / y / z 로 이동, 점을 끌면 크기 조절\n슬라이스: 평면으로 공간을 잘라 한쪽만 편집한 뒤 '보기 복구'\nCtrl+Z / Ctrl+Shift+Z (Ctrl+Y): 되돌리기 / 다시 실행   ·   Ctrl+S: 저장 (점의 모든 필드 유지)",
  "controls_grid": "휠 또는 Ctrl+= / Ctrl+−: 확대/축소   ·   가운데·오른쪽 끌기 또는 Space + 끌기: 이동   ·   Ctrl+0 / Home: 창에 맞춤\n\n도구:  H 탐색   B 펜   L 직선   R 사각형   G 채우기   I 자\nO / F / U: 점유 / 빈 공간 / 미지로 칠하기   ·   [ / ]: 펜 가늘게 / 굵게\nShift (직선·자): 0°, 45°, 90° 방향으로 고정\nShift (사각형): 정사각형   ·   Alt: 중심에서부터 그리기\nShift + 클릭 (펜): 마지막 점에서 직선 잇기\n\nCtrl+Z / Ctrl+Shift+Z (Ctrl+Y): 되돌리기 / 다시 실행   ·   Ctrl+S: 저장 (이미지 옆에 YAML 도 저장)",
  "welcome_text": "로봇 맵을 위한 이발소.\nOctoMap, 포인트 클라우드, 2D 점유 격자 중 무엇이든 열거나 끌어다 놓으면 알맞은 편집기가 저절로 열립니다.",
  "untitled": "제목 없음",
@@ -188,5 +188,8 @@
  "full_screen": "전체 화면",
  "brush_smaller": "붓 작게",
  "brush_larger": "붓 크게",
- "ruler_total": "합계 {d:.3f} m (측정 {n}회)"
+ "ruler_total": "합계 {d:.3f} m (측정 {n}회)",
+ "selection_back": "선택 한 단계 되돌리기",
+ "brush_keys": "[ 작게 · ] 크게",
+ "status_brush": "붓 안의 점 {n}개  ·  카메라에서 {d:.2f} m"
 }

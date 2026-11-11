@@ -126,7 +126,8 @@ class Workbench(QtWidgets.QMainWindow):
         selection = editor.selection_actions() if editor else {}
         if selection:
             edit_menu.addSeparator()
-            for key, label, shortcut in (("delete", "delete_selection", ["Delete", "Backspace"]),
+            for key, label, shortcut in (("delete", "delete_selection", "Delete"),
+                                         ("back", "selection_back", "Backspace"),
                                          ("select_all", "select_all", "@SelectAll"),
                                          ("invert", "invert_selection", "Ctrl+Shift+I"),
                                          ("clear", "clear_selection", ["Ctrl+D", "Escape", "@Deselect"])):
@@ -303,6 +304,7 @@ class Workbench(QtWidgets.QMainWindow):
         self.document_changed(editor)
 
     def _dispose(self, editor):
+        editor.shutdown()
         if hasattr(editor, "viewport"):
             editor.viewport.widget.Finalize()
         self._owners.pop(editor.widget, None)

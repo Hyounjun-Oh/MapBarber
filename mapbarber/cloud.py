@@ -28,6 +28,14 @@ class PointCloud:
         self._redo.clear()
         return len(ids)
 
+    def undo_depth(self):
+        return len(self._undo)
+
+    def squash(self, depth):
+        """Merge the removals recorded since `depth` into one undo step (a brush stroke)."""
+        if len(self._undo) - depth > 1:
+            self._undo[depth:] = [np.concatenate(self._undo[depth:])]
+
     def undo(self):
         if not self._undo:
             return False

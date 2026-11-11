@@ -35,6 +35,7 @@ class VoxelEditor(Editor):
         super().__init__(window)
         self.map = VoxelMap()
         self.selected = KeySet()
+        self._selection_steps = []
         self.height_range = (0.0, 1.0)
         self.panel_values = dict(DEFAULTS)
         self.viewport = Viewport(window, self._click, self._hover, self._rectangle, self._right_click)
@@ -49,7 +50,9 @@ class VoxelEditor(Editor):
         self._level_timer.setSingleShot(True)
         self._level_timer.setInterval(80)
         self._level_timer.timeout.connect(self.update_levels)
-        self.viewport.renderer.GetActiveCamera().AddObserver("ModifiedEvent", lambda *_: self._level_timer.start())
+        self._closed = False
+        self._camera_watch = self.viewport.renderer.GetActiveCamera().AddObserver(
+            "ModifiedEvent", lambda *_: None if self._closed else self._level_timer.start())
         self.hover_source, self.hover_actor = self.viewport.outline((1, 1, 1), 2.5)
         self.box_source, self.box_actor = self.viewport.outline((1.0, 0.85, 0.1))
         self.box_gizmo = BoxGizmo(self.viewport, self._box_dragged, Snap(self.map.resolution))
@@ -59,6 +62,10 @@ class VoxelEditor(Editor):
         self.overlay = MeasureOverlay(self.widget, lambda entry: self._ruler_text(entry)[1], self._show_measurement,
                                       lambda: self.tr)
         self.viewport.band_allowed = lambda: self.tool != "measure"
+        self.viewport.paint_allowed = lambda: self.tool in ("select", "delete")
+        self.viewport.on_paint = self._paint
+        self.viewport.on_paint_end = self._paint_end
+        self._stroke = None
         self.measurement = None
         self.data_bounds = (np.zeros(3), np.ones(3))
         self._previous_mode = (False, 2)
@@ -83,6 +90,7 @@ class VoxelEditor(Editor):
         self.map = VoxelMap(keys, resolution)
         self.path, self.format = path, fmt
         self.selected = KeySet()
+        self._selection_steps = []
         size = self.map.resolution
         self.view.clear()
         self.view.set_resolution(size)
@@ -155,6 +163,9 @@ class VoxelEditor(Editor):
         self.brush.setSingleStep(2)
         self.brush.setToolTip(t("brush_tip"))
         form.addRow(t("brush_size"), self.brush)
+        hint = W.QLabel(t("brush_keys"))
+        hint.setStyleSheet("color: gray;")
+        form.addRow(hint)
         self.plane = spin(-RANGE_LIMIT, RANGE_LIMIT, values["plane"], step)
         self.plane.setToolTip(t("plane_tip"))
         form.addRow(t("work_plane"), self.plane)
@@ -246,7 +257,7 @@ class VoxelEditor(Editor):
 
     def selection_actions(self):
         return {"delete": self.delete_selection, "select_all": self.select_all, "invert": self.invert_selection,
-                "clear": self.clear_selection}
+                "clear": self.clear_selection, "back": self.selection_back}
 
     def conversions(self):
         return [(self.tr("to_grid"), self.to_grid), (self.tr("to_cloud"), self.to_cloud)]
@@ -376,8 +387,16 @@ class VoxelEditor(Editor):
         if len(ids):
             self.data_bounds = (self._chunk_low.min(axis=0), self._chunk_high.max(axis=0))
 
+    def shutdown(self):
+        self._closed = True
+        self._level_timer.stop()
+        self._refresh_timer.stop()
+        self.viewport.renderer.GetActiveCamera().RemoveObserver(self._camera_watch)
+
     def update_levels(self):
         """Switch chunks to the detail level that suits the current camera distance."""
+        if self._closed:
+            return
         chunks = list(self.map.chunks)
         wanted = self._levels(chunks)
         stale = [chunk for chunk in chunks if self.view.levels.get(chunk, wanted[chunk]) != wanted[chunk]]
@@ -418,12 +437,33 @@ class VoxelEditor(Editor):
             keys = keys[self.map.contains(keys)]
             keys = keys[self.shown(unpack(keys))]
         if mode == "remove":
+            keys = keys[self.selected.contains(keys)]
+            step = ("remove", keys)
             touched = self.selected.remove(keys)
         elif mode == "replace":
+            step = ("replace", self.selection)
             touched = self.selected.clear() | self.selected.add(keys)
         else:
+            keys = keys[~self.selected.contains(keys)]
+            step = ("add", keys)
             touched = self.selected.add(keys)
+        if touched:
+            self._selection_steps = self._selection_steps[-63:] + [step]
         self.refresh(touched)
+
+    def selection_back(self):
+        """Take back the most recent selection step (one click, rectangle or filter)."""
+        if not self._selection_steps:
+            return
+        kind, keys = self._selection_steps.pop()
+        if kind == "add":
+            touched = self.selected.remove(keys)
+        else:
+            touched = self.selected.clear() if kind == "replace" else set()
+            keys = keys[self.map.contains(keys)] if len(keys) else keys
+            touched |= self.selected.add(keys)
+        self.refresh(touched)
+        self.status(self.tr("selection_back") + f": {len(self.selected)}")
 
     def delete_selection(self):
         if len(self.selected):
@@ -753,6 +793,30 @@ class VoxelEditor(Editor):
         else:
             self.edit(add=keys, label=self.tr("tool_add"))
         self._hover(x, y)
+
+    def _paint(self, x, y):
+        """Ctrl + drag: keep applying the brush under the cursor while the view stays still."""
+        if self._stroke is None:
+            self._stroke = (len(self._selection_steps), self.map.undo_depth())
+        cells = self.target_cells(x, y)
+        if cells is None or not len(cells):
+            return
+        if self.tool == "select":
+            self.select(pack(cells), "add")
+        else:
+            self.edit(remove=pack(cells), label=self.tr("tool_delete"))
+        self._hover(x, y)
+
+    def _paint_end(self):
+        """Fold a finished stroke into a single selection step and a single undo step."""
+        if self._stroke is None:
+            return
+        steps, depth = self._stroke
+        self._stroke = None
+        painted = [keys for kind, keys in self._selection_steps[steps:] if kind == "add"]
+        if len(painted) > 1:
+            self._selection_steps[steps:] = [("add", np.unique(np.concatenate(painted)))]
+        self.map.squash(depth)
 
     def _right_click(self, x, y):
         cells = self.target_cells(x, y, "select")

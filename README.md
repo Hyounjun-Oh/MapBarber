@@ -50,6 +50,8 @@ Detection looks at the extension first and the file signature second, so a backu
 
 - **Tools:** Navigate `H`, Select `V`, Erase `E`, Add `B`, Measure `I`. The brush is a cube of 1–31 cells; `[` and `]` change its size. Add grows a layer outward from the face you click, or places voxels on a horizontal work plane.
 - **Selection:** `Shift`-drag selects inside a screen rectangle (*Front layer only* skips hidden voxels). Right-click deselects under the cursor; `Shift`+right-drag deselects a rectangle.
+- **Painting:** hold `Ctrl` and drag to keep applying the brush (select or erase) while the view stays still; one stroke is one undo step. `Backspace` takes back the last selection step.
+- **Large maps:** the map is stored in chunks; distant chunks are drawn coarser and edits redraw only what they touch, so a 35-million-voxel building stays interactive.
 - **Select islands** finds groups of voxels that touch nothing else — the floating specks depth cameras produce. It only selects, so you can look before pressing `Delete`.
 - **Box:** drag the coloured arrows in the 3D view to move it along x, y or z, and the dots on its faces to resize it (or type the bounds). Then select, erase or fill everything inside.
 - **Slice:** cut the space with a plane on x, y or z and work on one side; the other side is hidden and protected. Drag the plane's arrow, flip sides, and *Restore view* when done.
@@ -121,10 +123,11 @@ Shortcuts follow common desktop conventions (Photoshop, Figma and PowerPoint for
 | `Ctrl+Z` / `Ctrl+Shift+Z` or `Ctrl+Y` | undo / redo |
 | `H` `V` `E` `B` `L` `R` `G` `I` | navigate, select, erase, add/pen, line, rectangle, fill, measure |
 | `[` / `]` | smaller / larger brush |
-| `Delete` or `Backspace` | erase selection |
+| `Delete` / `Backspace` | erase selection / undo the last selection step |
 | `Ctrl+A` / `Ctrl+Shift+I` / `Esc` or `Ctrl+D` | select all visible / invert / deselect |
 | Left drag / middle drag or `Space`+drag / wheel | rotate / pan / zoom (2D: left drag pans with Navigate) |
 | `Shift`+drag / `Shift`+right drag / right click | rectangle select / rectangle deselect / deselect |
+| `Ctrl`+drag | paint with the brush (select or erase) while the view stays still |
 | `Shift` / `Alt` while drawing | lock to 0°·45°·90° or square / draw from the centre |
 | `1` `3` `7` / `0` or `Home` | front, side, top / isometric view (numpad too) |
 | `Ctrl+=` / `Ctrl+-` / `Ctrl+0` | zoom in / zoom out / fit (2D) |

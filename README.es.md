@@ -120,10 +120,11 @@ Los atajos siguen las convenciones habituales de escritorio: Photoshop, Figma y 
 | `Ctrl+Z` / `Ctrl+Mayús+Z` o `Ctrl+Y` | deshacer / rehacer |
 | `H` `V` `E` `B` `L` `R` `G` `I` | navegar, seleccionar, borrar, añadir·lápiz, línea, rectángulo, rellenar, medir |
 | `[` / `]` | pincel más pequeño / más grande |
-| `Supr` o `Retroceso` | eliminar selección |
+| `Supr` / `Retroceso` | eliminar selección / deshacer el último paso de selección |
 | `Ctrl+A` / `Ctrl+Mayús+I` / `Esc` o `Ctrl+D` | seleccionar todo lo visible / invertir / deseleccionar |
 | arrastrar izquierdo / arrastrar central o `Espacio`+arrastrar / rueda | rotar / desplazar / zoom (2D: con Navegar, arrastrar izquierdo desplaza) |
 | `Mayús`+arrastrar / `Mayús`+arrastrar derecho / clic derecho | selección rectangular / deselección rectangular / deseleccionar |
+| `Ctrl`+arrastrar | pintar con el pincel (seleccionar o borrar) sin mover la vista |
 | `Mayús` / `Alt` al dibujar | fijar a 0°·45°·90° o cuadrado / dibujar desde el centro |
 | `1` `3` `7` / `0` o `Inicio` | vista frontal, lateral, superior / isométrica (también teclado numérico) |
 | `Ctrl+=` / `Ctrl+-` / `Ctrl+0` | acercar / alejar / ajustar a la ventana (2D) |

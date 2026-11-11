@@ -65,6 +65,9 @@ class Editor:
     def activate(self):
         """Called after the editor's widget became visible."""
 
+    def shutdown(self):
+        """Stop timers and callbacks before the editor's widget is destroyed."""
+
     def capture(self):
         """Image of the editing area, or None when the widget can be grabbed directly."""
         return None

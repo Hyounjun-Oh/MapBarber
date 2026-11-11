@@ -32,6 +32,10 @@ class Viewport:
         self.on_right_click = on_right_click
         self.gizmos = []
         self.band_allowed = lambda: True
+        self.paint_allowed = lambda: False
+        self.on_paint = None
+        self.on_paint_end = None
+        self._painting = False
         self._space = False
         self._panning = False
         self.default_cursor = Qt.ArrowCursor
@@ -251,6 +255,10 @@ class Viewport:
             self._gizmo = gizmo
             gizmo.begin(handle, x, y)
             return
+        if self.interactor.GetControlKey() and self.on_paint and self.paint_allowed():
+            self._painting = True
+            self.on_paint(x, y)
+            return
         self.style.OnLeftButtonDown()
 
     def _on_right_press(self, *_):
@@ -285,6 +293,9 @@ class Viewport:
             self._gizmo.drag(x, y)
             self.render()
             return
+        if self._painting:
+            self.on_paint(x, y)
+            return
         if self._band is not None:
             x0, y0 = self._band
             corners = self.band_shape.GetPoints()
@@ -312,6 +323,11 @@ class Viewport:
         if self._gizmo is not None:
             self._gizmo.end()
             self._gizmo = None
+            return
+        if self._painting:
+            self._painting = False
+            if self.on_paint_end:
+                self.on_paint_end()
             return
         if self._band is not None:
             self._finish_band(x, y)

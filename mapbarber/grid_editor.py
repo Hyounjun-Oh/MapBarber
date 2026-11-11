@@ -238,6 +238,9 @@ class GridEditor(Editor):
         self.brush = int_spin(1, 201, values["brush"], t("cells"))
         self.brush.setToolTip(t("grid_brush_tip"))
         form.addRow(t("brush_size"), self.brush)
+        hint = W.QLabel(t("brush_keys"))
+        hint.setStyleSheet("color: gray;")
+        form.addRow(hint)
         group.add_to(layout)
 
         group = Section(t("speckles"), "speckles")

@@ -340,7 +340,7 @@ def test_standard_shortcuts(workbench):
     window.close_all(ask=False)
     assert window.open(str(folder / "room.bt"))
     pump()
-    for sequence, label in {"V": "Select", "E": "Erase", "Delete": "Delete selection", "Backspace": "Delete selection",
+    for sequence, label in {"V": "Select", "E": "Erase", "Delete": "Delete selection", "Backspace": "Undo last selection step",
                             "Ctrl+A": "Select all visible", "Ctrl+Shift+I": "Invert selection", "Ctrl+D": "Clear selection",
                             "Escape": "Clear selection", "7": "Top", "1": "Front", "3": "Side", "Home": "Isometric"}.items():
         assert bound(sequence) == [label], (sequence, bound(sequence))
@@ -657,5 +657,97 @@ def test_far_chunks_are_drawn_coarser_and_edits_touch_few_chunks(workbench):
     assert editor.map.changes() == (0, 1) and len(editor.map.touched) == 1
     editor.undo()
     assert not editor.map.dirty and editor.visible_count == len(floor)
+    window.close_all(ask=False)
+    assert not dialogs
+
+
+def test_backspace_steps_the_selection_back(workbench):
+    from mapbarber.formats import CLOUD, VOXEL
+    window, _folder, pump, dialogs = workbench
+    editor = window.show_document(VOXEL, floor_map())
+    pump()
+    editor.look_from((0, 0, 1), (0, 1, 0))
+    window.set_tool("select")
+    for x in (0.25, 0.75, 1.25):
+        vtk_click(editor.viewport, *screen(editor, (x, 0.25, 0.1)))
+    assert len(editor.selected) == 3
+    back = next(action for action in window.actions() if action.text() == "Undo last selection step")
+    back.trigger()
+    assert len(editor.selected) == 2
+    editor.select_all()
+    assert len(editor.selected) == 400
+    back.trigger()
+    assert len(editor.selected) == 2
+    back.trigger()
+    back.trigger()
+    back.trigger()
+    assert len(editor.selected) == 0 and not editor.map.dirty
+
+    xy = np.stack(np.meshgrid(np.arange(0, 3.01, 0.5), np.arange(0, 3.01, 0.5), indexing="ij"), -1).reshape(-1, 2)
+    cloud = window.show_document(CLOUD, (np.column_stack([xy, np.zeros(len(xy))]), None))
+    pump()
+    cloud.look_from((0, 0, 1), (0, 1, 0))
+    window.set_tool("select")
+    cloud.radius.setValue(0.1)
+    spot = screen(cloud, (1.0, 1.0, 0.0)).astype(int)
+    cloud.viewport.interactor.SetEventInformation(int(spot[0]), int(spot[1]), 0, 0)
+    cloud.viewport.interactor.MouseMoveEvent()
+    assert cloud.preview_actor.GetVisibility() and cloud.preview.GetNumberOfPoints() == 1
+    for x in (0.5, 1.0, 1.5):
+        vtk_click(cloud.viewport, *screen(cloud, (x, 1.0, 0.0)))
+    assert len(cloud.selection) == 3
+    cloud.selection_back()
+    assert len(cloud.selection) == 2
+    window.close_all(ask=False)
+    assert not dialogs
+
+
+def vtk_stroke(viewport, points, ctrl=True):
+    first = points[0]
+    viewport.interactor.SetEventInformation(int(first[0]), int(first[1]), int(ctrl), 0)
+    viewport.interactor.LeftButtonPressEvent()
+    for point in points[1:]:
+        viewport.interactor.SetEventInformation(int(point[0]), int(point[1]), int(ctrl), 0)
+        viewport.interactor.MouseMoveEvent()
+    viewport.interactor.LeftButtonReleaseEvent()
+
+
+def test_ctrl_drag_paints_without_moving_the_view(workbench):
+    from mapbarber.formats import CLOUD, VOXEL
+    window, _folder, pump, dialogs = workbench
+    editor = window.show_document(VOXEL, floor_map())
+    pump()
+    editor.look_from((0, 0, 1), (0, 1, 0))
+    camera = editor.viewport.renderer.GetActiveCamera()
+    position = camera.GetPosition()
+    window.set_tool("select")
+    path = [screen(editor, (x, 0.55, 0.1)) for x in np.arange(0.25, 1.26, 0.05)]
+    vtk_stroke(editor.viewport, path)
+    assert camera.GetPosition() == position
+    assert len(editor.selected) == 11 and len(editor._selection_steps) == 1
+    editor.selection_back()
+    assert len(editor.selected) == 0
+    window.set_tool("delete")
+    vtk_stroke(editor.viewport, path)
+    assert editor.map.changes() == (0, 11) and editor.map.undo_depth() == 1
+    editor.undo()
+    assert not editor.map.dirty
+    vtk_stroke(editor.viewport, path, ctrl=False)
+    assert not editor.map.dirty and camera.GetPosition() != position
+
+    xy = np.stack(np.meshgrid(np.arange(0, 3.01, 0.25), np.arange(0, 3.01, 0.25), indexing="ij"), -1).reshape(-1, 2)
+    cloud = window.show_document(CLOUD, (np.column_stack([xy, np.zeros(len(xy))]), None))
+    pump()
+    cloud.look_from((0, 0, 1), (0, 1, 0))
+    cloud.radius.setValue(0.05)
+    window.set_tool("select")
+    path = [screen(cloud, (x, 1.0, 0.0)) for x in np.arange(0.5, 2.01, 0.125)]
+    vtk_stroke(cloud.viewport, path)
+    assert len(cloud.selection) == 7 and len(cloud._selection_steps) == 1
+    window.set_tool("delete")
+    vtk_stroke(cloud.viewport, path)
+    assert cloud.cloud.removed() == 7 and cloud.cloud.undo_depth() == 1
+    cloud.undo()
+    assert not cloud.cloud.dirty
     window.close_all(ask=False)
     assert not dialogs
