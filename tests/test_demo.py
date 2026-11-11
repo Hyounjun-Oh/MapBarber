@@ -41,11 +41,15 @@ def test_point_clouds():
 def test_grids():
     warehouse = grid.load(path("warehouse_map.yaml"))
     assert warehouse.shape == (800, 1000) and warehouse.origin == (-25.0, -20.0, 0.0)
+    mask = grid.load(path("keepout_mask.yaml"))
+    assert mask.meta["mode"] == "raw" and mask.counts() == [23200, 4800, 2000]
+
+
+def test_png_grid_with_negate():
+    pytest.importorskip("vtkmodules")
     lab_yaml, lab_png = grid.load(path("lab_map.yaml")), grid.load(path("lab_map.png"))
     assert lab_yaml.meta["negate"] == 1 and lab_yaml.origin[2] == pytest.approx(0.35)
     assert np.array_equal(lab_yaml.cells, lab_png.cells)
-    mask = grid.load(path("keepout_mask.yaml"))
-    assert mask.meta["mode"] == "raw" and mask.counts() == [23200, 4800, 2000]
 
 
 @pytest.mark.parametrize("name, message", [("broken_truncated.bt", "truncated"), ("not_a_map.yaml", "not a map"),

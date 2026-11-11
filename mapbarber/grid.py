@@ -1,4 +1,5 @@
 """Editable 2D occupancy grid in the map_server layout (YAML description plus an image)."""
+import math
 import os
 
 import numpy as np
@@ -205,6 +206,37 @@ class GridMap:
         self.origin = (float(self.origin[0] + c * x - s * y), float(self.origin[1] + s * x + c * y), self.origin[2])
         self.cells = np.ascontiguousarray(self.cells[r0:r1, c0:c1])
         return True
+
+
+def snap_angle(start, end):
+    """End cell moved onto the nearest 0, 45 or 90 degree direction from the start cell."""
+    dr, dc = end[0] - start[0], end[1] - start[1]
+    if dr == 0 and dc == 0:
+        return end
+    angle = round(math.atan2(dr, dc) / (math.pi / 4)) * (math.pi / 4)
+    along = dr * math.sin(angle) + dc * math.cos(angle)
+    return start[0] + int(round(along * math.sin(angle))), start[1] + int(round(along * math.cos(angle)))
+
+
+def shape_corners(start, end, square, centred):
+    """Rectangle corners from a drag: square keeps equal sides, centred grows the shape around the start cell."""
+    dr, dc = end[0] - start[0], end[1] - start[1]
+    if square:
+        side = max(abs(dr), abs(dc))
+        dr, dc = (side if dr >= 0 else -side), (side if dc >= 0 else -side)
+    if centred:
+        return (start[0] - dr, start[1] - dc), (start[0] + dr, start[1] + dc)
+    return start, (start[0] + dr, start[1] + dc)
+DEFAULTS = {"brush": 1, "state": OCCUPIED, "speckle": 4}
+
+
+def min_pool(rgb, step):
+    """Shrink an image by keeping the darkest pixel of each block, so thin obstacles survive zooming out."""
+    height, width = rgb.shape[0] // step * step, rgb.shape[1] // step * step
+    if height == 0 or width == 0:
+        return rgb
+    blocks = rgb[:height, :width].reshape(height // step, step, width // step, step, 3)
+    return blocks.min(axis=(1, 3))
 
 
 def classify(pixels, meta):

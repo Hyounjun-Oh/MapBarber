@@ -74,7 +74,7 @@ def test_conversions():
 
 
 def test_drawing_constraints():
-    from mapbarber.grid_editor import shape_corners, snap_angle
+    from mapbarber.grid import shape_corners, snap_angle
     assert snap_angle((10, 10), (12, 30)) == (10, 30)
     assert snap_angle((10, 10), (30, 11)) == (30, 10)
     assert snap_angle((10, 10), (19, 21)) == (20, 20)
@@ -85,9 +85,10 @@ def test_drawing_constraints():
 
 
 def test_min_pool_keeps_thin_walls():
-    from mapbarber.grid_editor import STATE_RGB, min_pool
+    from mapbarber.grid import min_pool
+    shades = np.array([[250] * 3, [20] * 3, [128] * 3], np.uint8)
     cells = np.full((40, 40), FREE, np.uint8)
     cells[:, 17] = OCCUPIED
-    small = min_pool(STATE_RGB[cells], 4)
+    small = min_pool(shades[cells], 4)
     assert small.shape == (10, 10, 3)
-    assert (small[:, 4] == STATE_RGB[OCCUPIED]).all() and (small[:, 0] == STATE_RGB[FREE]).all()
+    assert (small[:, 4] == shades[OCCUPIED]).all() and (small[:, 0] == shades[FREE]).all()

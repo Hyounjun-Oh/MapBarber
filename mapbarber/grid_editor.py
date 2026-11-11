@@ -6,7 +6,7 @@ import numpy as np
 from . import convert, grid
 from .editor import Editor
 from .formats import GRID, VOXEL
-from .grid import FREE, OCCUPIED, UNKNOWN, GridMap
+from .grid import FREE, OCCUPIED, UNKNOWN, GridMap, min_pool, shape_corners, snap_angle
 from .qt import QtCore, QtGui, QtWidgets
 from .ruler import RULER_RGB, measure
 from .widgets import RANGE_LIMIT, ask_numbers, button, int_spin, set_quietly, spin
@@ -15,37 +15,6 @@ Qt = QtCore.Qt
 STATE_RGB = np.array([[250, 250, 250], [20, 20, 24], [128, 132, 140]], np.uint8)
 STATES = ((OCCUPIED, "state_occupied", "O"), (FREE, "state_free", "F"), (UNKNOWN, "state_unknown", "U"))
 TOOL_PEN = {"pen", "line", "rectangle"}
-
-
-def snap_angle(start, end):
-    """End cell moved onto the nearest 0, 45 or 90 degree direction from the start cell."""
-    dr, dc = end[0] - start[0], end[1] - start[1]
-    if dr == 0 and dc == 0:
-        return end
-    angle = round(math.atan2(dr, dc) / (math.pi / 4)) * (math.pi / 4)
-    along = dr * math.sin(angle) + dc * math.cos(angle)
-    return start[0] + int(round(along * math.sin(angle))), start[1] + int(round(along * math.cos(angle)))
-
-
-def shape_corners(start, end, square, centred):
-    """Rectangle corners from a drag: square keeps equal sides, centred grows the shape around the start cell."""
-    dr, dc = end[0] - start[0], end[1] - start[1]
-    if square:
-        side = max(abs(dr), abs(dc))
-        dr, dc = (side if dr >= 0 else -side), (side if dc >= 0 else -side)
-    if centred:
-        return (start[0] - dr, start[1] - dc), (start[0] + dr, start[1] + dc)
-    return start, (start[0] + dr, start[1] + dc)
-DEFAULTS = {"brush": 1, "state": OCCUPIED, "speckle": 4}
-
-
-def min_pool(rgb, step):
-    """Shrink an image by keeping the darkest pixel of each block, so thin obstacles survive zooming out."""
-    height, width = rgb.shape[0] // step * step, rgb.shape[1] // step * step
-    if height == 0 or width == 0:
-        return rgb
-    blocks = rgb[:height, :width].reshape(height // step, step, width // step, step, 3)
-    return blocks.min(axis=(1, 3))
 
 
 def cosmetic_pen(rgb, width=1.5, style=Qt.SolidLine):
