@@ -191,5 +191,8 @@
  "ruler_total": "Summe {d:.3f} m aus {n} Messungen",
  "selection_back": "Letzten Auswahlschritt zurücknehmen",
  "brush_keys": "[ kleiner · ] größer",
- "status_brush": "{n} Punkte im Pinsel  ·  {d:.2f} m von der Kamera"
+ "status_brush": "{n} Punkte im Pinsel  ·  {d:.2f} m von der Kamera",
+ "loading_read": "{name} wird gelesen …",
+ "loading_view": "Ansicht von {name} wird vorbereitet …",
+ "saving": "{name} wird gespeichert …"
 }

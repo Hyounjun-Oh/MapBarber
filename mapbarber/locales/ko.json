@@ -191,5 +191,8 @@
  "ruler_total": "합계 {d:.3f} m (측정 {n}회)",
  "selection_back": "선택 한 단계 되돌리기",
  "brush_keys": "[ 작게 · ] 크게",
- "status_brush": "붓 안의 점 {n}개  ·  카메라에서 {d:.2f} m"
+ "status_brush": "붓 안의 점 {n}개  ·  카메라에서 {d:.2f} m",
+ "loading_read": "{name} 읽는 중 …",
+ "loading_view": "{name} 화면 준비 중 …",
+ "saving": "{name} 저장 중 …"
 }

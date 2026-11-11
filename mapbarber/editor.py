@@ -65,6 +65,17 @@ class Editor:
     def activate(self):
         """Called after the editor's widget became visible."""
 
+    def read(self, path):
+        """Parse a file into the payload for set_document. Runs on a worker thread: no widgets here."""
+        raise NotImplementedError
+
+    def export(self, path, fmt=None):
+        """Write the document to a file. Runs on a worker thread: no widgets here."""
+        raise NotImplementedError
+
+    def mark_saved(self):
+        """Called on the main thread after export succeeded."""
+
     def shutdown(self):
         """Stop timers and callbacks before the editor's widget is destroyed."""
 

@@ -107,10 +107,10 @@ class CloudEditor(Editor):
     def dirty(self):
         return self.cloud.dirty
 
-    def load(self, path):
-        self.set_document(formats.read_cloud(path), path, formats.detect(path))
+    def read(self, path):
+        return formats.read_cloud(path)
 
-    def set_document(self, payload, path=None, fmt=None):
+    def set_document(self, payload, path=None, fmt=None, progress=None):
         xyz, table = payload
         self.cloud = cloud.PointCloud(xyz, table)
         self.colours = point_colours(table)
@@ -129,11 +129,13 @@ class CloudEditor(Editor):
             self._fill_colour_modes()
         self.refresh(render=False)
 
-    def save(self, path, fmt=None):
+    def export(self, path, fmt=None):
         xyz, table = self.cloud.surviving()
         if not len(xyz):
             raise ValueError(self.tr("empty_map"))
         formats.save_cloud(path, xyz, table, fmt)
+
+    def mark_saved(self):
         self.cloud.mark_saved()
         self.changed()
 

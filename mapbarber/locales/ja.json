@@ -191,5 +191,8 @@
  "ruler_total": "合計 {d:.3f} m (計測 {n} 回)",
  "selection_back": "選択を1つ前に戻す",
  "brush_keys": "[ 小さく · ] 大きく",
- "status_brush": "ブラシ内 {n} 点  ·  カメラから {d:.2f} m"
+ "status_brush": "ブラシ内 {n} 点  ·  カメラから {d:.2f} m",
+ "loading_read": "{name} を読み込み中 …",
+ "loading_view": "{name} の表示を準備中 …",
+ "saving": "{name} を保存中 …"
 }

@@ -187,10 +187,10 @@ class GridEditor(Editor):
     def dirty(self):
         return self.map.dirty
 
-    def load(self, path):
-        self.set_document(grid.load(path), path, None)
+    def read(self, path):
+        return grid.load(path)
 
-    def set_document(self, payload, path=None, fmt=None):
+    def set_document(self, payload, path=None, fmt=None, progress=None):
         self.map = payload
         self.path, self.format = path, fmt
         self._pen_end = None
@@ -198,8 +198,10 @@ class GridEditor(Editor):
         self.redraw()
         self.sync_panel()
 
-    def save(self, path, fmt=None):
+    def export(self, path, fmt=None):
         grid.save(path, self.map)
+
+    def mark_saved(self):
         self.map.mark_saved()
         self.changed()
 

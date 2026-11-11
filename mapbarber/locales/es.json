@@ -191,5 +191,8 @@
  "ruler_total": "Total {d:.3f} m en {n} mediciones",
  "selection_back": "Deshacer el último paso de selección",
  "brush_keys": "[ más pequeño · ] más grande",
- "status_brush": "{n} puntos en el pincel  ·  a {d:.2f} m de la cámara"
+ "status_brush": "{n} puntos en el pincel  ·  a {d:.2f} m de la cámara",
+ "loading_read": "Leyendo {name} …",
+ "loading_view": "Preparando la vista de {name} …",
+ "saving": "Guardando {name} …"
 }

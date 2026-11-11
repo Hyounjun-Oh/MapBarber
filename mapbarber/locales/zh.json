@@ -191,5 +191,8 @@
  "ruler_total": "合计 {d:.3f} m (共 {n} 次测量)",
  "selection_back": "撤销上一步选择",
  "brush_keys": "[ 缩小 · ] 放大",
- "status_brush": "画笔内 {n} 个点  ·  距相机 {d:.2f} m"
+ "status_brush": "画笔内 {n} 个点  ·  距相机 {d:.2f} m",
+ "loading_read": "正在读取 {name} …",
+ "loading_view": "正在准备 {name} 的视图 …",
+ "saving": "正在保存 {name} …"
 }

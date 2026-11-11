@@ -1,6 +1,7 @@
 """Main window: recognises what each file contains and opens it in a tab with the matching editor."""
 import os
 import shutil
+import threading
 import time
 
 from . import __version__, formats
@@ -336,6 +337,47 @@ class Workbench(QtWidgets.QMainWindow):
             self.close_document(document, ask=False)
         return True
 
+    def busy(self, title, work):
+        """Run `work()` on a worker thread behind a progress dialog so the window keeps repainting.
+
+        Returns (result, dialog); the caller advances and closes the dialog. Errors from `work` are re-raised.
+        """
+        dialog = QtWidgets.QProgressDialog(title, "", 0, 0, self)
+        dialog.setWindowTitle("MapBarber")
+        dialog.setCancelButton(None)
+        dialog.setWindowModality(Qt.WindowModal)
+        dialog.setMinimumDuration(250)
+        dialog.setMinimumWidth(380)
+        dialog.setAutoClose(False)
+        dialog.setAutoReset(False)
+        dialog.setValue(0)
+        outcome = {}
+
+        def run():
+            try:
+                outcome["result"] = work()
+            except BaseException as error:
+                outcome["error"] = error
+
+        worker = threading.Thread(target=run, daemon=True)
+        worker.start()
+        while worker.is_alive():
+            QtWidgets.QApplication.processEvents()
+            worker.join(0.02)
+        if "error" in outcome:
+            dialog.close()
+            raise outcome["error"]
+        return outcome["result"], dialog
+
+    def _stage(self, dialog, text):
+        """Returns a progress callback (done, total) that updates the dialog for one stage of work."""
+        def step(done, total):
+            dialog.setMaximum(max(total, 1))
+            dialog.setValue(done)
+            dialog.setLabelText(text)
+            QtWidgets.QApplication.processEvents()
+        return step
+
     def show_document(self, kind, payload):
         """Open data that is not (yet) a file in a new tab."""
         editor = EDITORS[kind](self)
@@ -352,11 +394,17 @@ class Workbench(QtWidgets.QMainWindow):
                 self.tabs.setCurrentWidget(document.widget)
                 return True
         editor = None
+        name = os.path.basename(path)
         try:
             kind = formats.kind(path)
             editor = EDITORS[kind](self)
             editor.widget.hide()
-            editor.load(path)
+            payload, dialog = self.busy(self.tr_("loading_read", name=name), lambda: editor.read(path))
+            try:
+                editor.set_document(payload, path, formats.detect(path) if kind != GRID else None,
+                                    self._stage(dialog, self.tr_("loading_view", name=name)))
+            finally:
+                dialog.close()
         except Exception as error:
             if editor is not None:
                 self._dispose(editor)
@@ -439,7 +487,9 @@ class Workbench(QtWidgets.QMainWindow):
                 backup = f"{path}.bak_{time.strftime('%Y%m%d_%H%M%S')}"
                 shutil.copy2(path, backup)
                 notes.append(t("status_backup", name=os.path.basename(backup)))
-            editor.save(path, fmt)
+            _, dialog = self.busy(t("saving", name=os.path.basename(path)), lambda: editor.export(path, fmt))
+            dialog.close()
+            editor.mark_saved()
         except Exception as error:
             QtWidgets.QMessageBox.critical(self, t("save_failed"), f"{path}\n\n{error}")
             return False

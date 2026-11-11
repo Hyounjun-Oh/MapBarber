@@ -191,5 +191,8 @@
  "ruler_total": "Total {d:.3f} m over {n} measurements",
  "selection_back": "Undo last selection step",
  "brush_keys": "[ smaller · ] larger",
- "status_brush": "{n} points in the brush  ·  {d:.2f} m from the camera"
+ "status_brush": "{n} points in the brush  ·  {d:.2f} m from the camera",
+ "loading_read": "Reading {name} …",
+ "loading_view": "Preparing the view of {name} …",
+ "saving": "Saving {name} …"
 }

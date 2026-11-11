@@ -77,7 +77,8 @@ class KeySet:
             return
         chunk, local = self.split(keys)
         code = (chunk << _LOCAL_BITS) | local
-        code = np.unique(code)
+        code.sort()
+        code = code[np.concatenate([[True], code[1:] != code[:-1]])]
         chunk, local = code >> _LOCAL_BITS, (code & ((1 << _LOCAL_BITS) - 1)).astype(np.int32)
         cuts = np.flatnonzero(np.diff(chunk)) + 1
         for start, end in zip(np.concatenate([[0], cuts]), np.concatenate([cuts, [len(chunk)]])):

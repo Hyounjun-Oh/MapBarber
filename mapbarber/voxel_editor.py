@@ -1,4 +1,6 @@
 """Editor for occupied-voxel maps (OctoMap octrees and voxel archives)."""
+import time
+
 import numpy as np
 
 from . import convert, formats
@@ -18,7 +20,8 @@ SELECTED_RGB = np.array([255, 40, 200], np.uint8)
 ADDED_RGB = np.array([245, 245, 245], np.uint8)
 TOOL_RGB = {"select": (1.0, 0.2, 0.8), "delete": (1.0, 0.15, 0.1), "add": (0.2, 1.0, 0.3)}
 MAX_FILL_CELLS = 2_000_000
-CUBE_BUDGET = 4_000_000
+CUBE_BUDGET = 6_000_000
+CACHE_BUDGET = 24_000_000
 DEFAULTS = {"brush": 1, "plane": 0.0, "front_only": True, "tolerance": 0.10, "island": 20,
             "box": [(-0.2, 0.2)] * 3, "show_box": False, "range": [(-RANGE_LIMIT, RANGE_LIMIT)] * 3,
             "slice": SLICE_DEFAULTS, "snap": False}
@@ -48,9 +51,14 @@ class VoxelEditor(Editor):
         self._chunk_high = np.zeros((0, 3))
         self._level_timer = QtCore.QTimer()
         self._level_timer.setSingleShot(True)
-        self._level_timer.setInterval(80)
+        self._level_timer.setInterval(30)
         self._level_timer.timeout.connect(self.update_levels)
         self._closed = False
+        self._pending = []
+        self._slice_timer = QtCore.QTimer()
+        self._slice_timer.setSingleShot(True)
+        self._slice_timer.setInterval(0)
+        self._slice_timer.timeout.connect(self._refine)
         self._camera_watch = self.viewport.renderer.GetActiveCamera().AddObserver(
             "ModifiedEvent", lambda *_: None if self._closed else self._level_timer.start())
         self.hover_source, self.hover_actor = self.viewport.outline((1, 1, 1), 2.5)
@@ -81,13 +89,11 @@ class VoxelEditor(Editor):
     def changes(self):
         return self.map.changes()
 
-    def load(self, path):
-        keys, resolution = formats.load_voxels(path)
-        self.set_document((keys, resolution), path, formats.detect(path))
+    def read(self, path):
+        return VoxelMap(*formats.load_voxels(path))
 
-    def set_document(self, payload, path=None, fmt=None):
-        keys, resolution = payload
-        self.map = VoxelMap(keys, resolution)
+    def set_document(self, payload, path=None, fmt=None, progress=None):
+        self.map = payload if isinstance(payload, VoxelMap) else VoxelMap(*payload)
         self.path, self.format = path, fmt
         self.selected = KeySet()
         self._selection_steps = []
@@ -112,12 +118,14 @@ class VoxelEditor(Editor):
             self.ranges.reset()
             for box in self._step_boxes():
                 box.setSingleStep(size)
-        self.refresh(render=False)
+        self.refresh(render=False, progress=progress)
 
-    def save(self, path, fmt=None):
+    def export(self, path, fmt=None):
         if not len(self.map):
             raise ValueError(self.tr("empty_map"))
         formats.save_voxels(path, self.map.occupied, self.map.resolution, fmt)
+
+    def mark_saved(self):
         marked = set(KeySet.split(self.map.added)[0].tolist())
         self.map.mark_saved()
         self.refresh(marked)
@@ -345,7 +353,27 @@ class VoxelEditor(Editor):
         table = dict(zip(everything, levels.tolist()))
         return {chunk: table[chunk] for chunk in chunks}
 
-    def refresh(self, chunks=None, render=True):
+    def _draw(self, chunk, level, filters, added, added_chunks):
+        """Build one detail level of one chunk from the current cells, selection and filters."""
+        size = self.map.resolution
+        cells = self.map.cells(chunk)
+        self.chunk_bounds[chunk] = (cells.min(axis=0) * size, (cells.max(axis=0) + 1) * size)
+        cells = cells[self.shown(cells, filters)]
+        self.shown_counts[chunk] = len(cells)
+        flags = np.full(len(cells), NORMAL, np.uint8)
+        if len(cells) and (chunk in added_chunks or chunk in self.selected.chunks):
+            keys = pack(cells)
+            if chunk in added_chunks:
+                flags[np.isin(keys, added)] = ADDED
+            if chunk in self.selected.chunks:
+                flags[np.isin(keys, self.selected.keys(chunk))] = SELECTED
+        self.view.build(chunk, cells, flags, level)
+
+    def _marks(self):
+        added = self.map.added
+        return added, (set(KeySet.split(added)[0].tolist()) if len(added) else set())
+
+    def refresh(self, chunks=None, render=True, progress=None):
         """Redraw the given chunks (all of them by default) after cells, the selection or the filters changed."""
         if chunks is None:
             chunks = set(self.map.chunks) | set(self.view.actors)
@@ -353,27 +381,16 @@ class VoxelEditor(Editor):
         chunks = list(chunks)
         filters = self._filters()
         levels = self._levels([chunk for chunk in chunks if chunk in self.map.chunks])
-        added = self.map.added
-        added_chunks = set(KeySet.split(added)[0].tolist()) if len(added) else set()
-        size = self.map.resolution
-        for chunk in chunks:
+        added, added_chunks = self._marks()
+        for done, chunk in enumerate(chunks):
+            if progress and done % 64 == 0:
+                progress(done, len(chunks))
+            self.view.forget(chunk)
             if chunk not in self.map.chunks:
-                self.view.update(chunk, np.zeros((0, 3), np.int64), None, 0)
                 self.shown_counts.pop(chunk, None)
                 self.chunk_bounds.pop(chunk, None)
                 continue
-            cells = self.map.cells(chunk)
-            self.chunk_bounds[chunk] = (cells.min(axis=0) * size, (cells.max(axis=0) + 1) * size)
-            cells = cells[self.shown(cells, filters)]
-            self.shown_counts[chunk] = len(cells)
-            flags = np.full(len(cells), NORMAL, np.uint8)
-            if len(cells) and (chunk in added_chunks or chunk in self.selected.chunks):
-                keys = pack(cells)
-                if chunk in added_chunks:
-                    flags[np.isin(keys, added)] = ADDED
-                if chunk in self.selected.chunks:
-                    flags[np.isin(keys, self.selected.keys(chunk))] = SELECTED
-            self.view.update(chunk, cells, flags, levels[chunk])
+            self._draw(chunk, levels[chunk], filters, added, added_chunks)
         self._index_chunks()
         self.changed()
         if render:
@@ -389,19 +406,58 @@ class VoxelEditor(Editor):
 
     def shutdown(self):
         self._closed = True
+        self._pending = []
         self._level_timer.stop()
+        self._slice_timer.stop()
         self._refresh_timer.stop()
         self.viewport.renderer.GetActiveCamera().RemoveObserver(self._camera_watch)
 
     def update_levels(self):
-        """Switch chunks to the detail level that suits the current camera distance."""
+        """Move chunks to the detail level that suits the camera: cached levels at once, the rest in small slices."""
         if self._closed:
             return
         chunks = list(self.map.chunks)
         wanted = self._levels(chunks)
-        stale = [chunk for chunk in chunks if self.view.levels.get(chunk, wanted[chunk]) != wanted[chunk]]
-        if stale:
-            self.refresh(stale)
+        pending = []
+        for chunk in chunks:
+            level = wanted[chunk]
+            if self.view.levels.get(chunk) == level:
+                continue
+            if self.view.has(chunk, level):
+                self.view.show(chunk, level)
+            else:
+                pending.append(chunk)
+        if pending:
+            origin = np.array([KeySet.chunk_origin(chunk) for chunk in pending], float)
+            centres = (origin + CHUNK / 2.0) * self.map.resolution
+            eye = np.array(self.viewport.renderer.GetActiveCamera().GetPosition())
+            order = np.argsort(np.linalg.norm(centres - eye, axis=1))
+            pending = [(pending[i], wanted[pending[i]]) for i in order]
+        self._pending = pending
+        self.viewport.render()
+        if pending:
+            self._slice_timer.start()
+
+    def _refine(self, budget=0.012):
+        """Build queued detail levels, nearest chunks first, for a few milliseconds; then let the window breathe."""
+        if self._closed or not self._pending:
+            return
+        filters = self._filters()
+        added, added_chunks = self._marks()
+        started = time.perf_counter()
+        while self._pending and time.perf_counter() - started < budget:
+            chunk, level = self._pending.pop(0)
+            if chunk in self.map.chunks and not self.view.has(chunk, level):
+                self._draw(chunk, level, filters, added, added_chunks)
+        self.view.trim(CACHE_BUDGET)
+        self.viewport.render()
+        if self._pending:
+            self._slice_timer.start()
+
+    def finish_levels(self):
+        """Build every queued detail level now (used by tests and screenshots)."""
+        while self._pending:
+            self._refine(1.0)
 
     def recolor(self, render=True):
         self.changed()

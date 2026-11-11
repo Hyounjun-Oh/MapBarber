@@ -648,7 +648,15 @@ def test_far_chunks_are_drawn_coarser_and_edits_touch_few_chunks(workbench):
     assert editor.view.drawn() < len(floor) / 3 and max(editor.view.levels.values()) >= 1
     editor.viewport.zoom(12.0)
     editor.update_levels()
+    editor.finish_levels()
     assert min(editor.view.levels.values()) == 0
+    cached = editor.view.cached
+    editor.viewport.zoom(1 / 12.0)
+    editor.update_levels()
+    assert not editor._pending and editor.view.cached == cached
+    editor.viewport.zoom(12.0)
+    editor.update_levels()
+    assert not editor._pending and min(editor.view.levels.values()) == 0
     width, height = editor.viewport.renderer.GetSize()
     window.set_tool("delete")
     cells = editor.target_cells(width // 2, height // 2)
