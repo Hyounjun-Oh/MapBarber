@@ -11,7 +11,7 @@ from .qt import QtCore, QtWidgets
 from .ruler import Ruler3D, measure
 from .scene import VIEWS, Viewport, ramp
 from .voxels import EMPTY, VoxelMap, in_range, pack, ray_pick, unpack
-from .widgets import RANGE_LIMIT, AxisRanges, ask_numbers, button, int_spin, spin
+from .widgets import add_button, ask_numbers, AxisRanges, button, danger_button, int_spin, RANGE_LIMIT, Section, select_button, spin
 
 Qt = QtCore.Qt
 SELECTED_RGB = np.array([255, 40, 200], np.uint8)
@@ -133,7 +133,7 @@ class VoxelEditor(Editor):
         panel = W.QWidget()
         layout = W.QVBoxLayout(panel)
 
-        group = W.QGroupBox(t("brush"))
+        group = Section(t("brush"), "brush")
         form = W.QFormLayout(group)
         self.brush = int_spin(1, 31, values["brush"], t("cells"))
         self.brush.setSingleStep(2)
@@ -142,9 +142,9 @@ class VoxelEditor(Editor):
         self.plane = spin(-RANGE_LIMIT, RANGE_LIMIT, values["plane"], step)
         self.plane.setToolTip(t("plane_tip"))
         form.addRow(t("work_plane"), self.plane)
-        layout.addWidget(group)
+        group.add_to(layout)
 
-        group = W.QGroupBox(t("rectangle"))
+        group = Section(t("rectangle"), "rectangle")
         form = W.QFormLayout(group)
         self.front_only = W.QCheckBox(t("front_only"))
         self.front_only.setChecked(values["front_only"])
@@ -152,19 +152,19 @@ class VoxelEditor(Editor):
         self.tolerance = spin(0.0, RANGE_LIMIT, values["tolerance"], step)
         form.addRow(t("depth_tolerance"), self.tolerance)
         row = W.QHBoxLayout()
-        row.addWidget(button(t("delete_selection"), self.delete_selection))
+        row.addWidget(danger_button(t("delete_selection"), self.delete_selection))
         row.addWidget(button(t("clear_selection"), self.clear_selection))
         form.addRow(row)
-        layout.addWidget(group)
+        group.add_to(layout)
 
-        group = W.QGroupBox(t("islands"))
+        group = Section(t("islands"), "islands")
         form = W.QFormLayout(group)
         self.island_size = int_spin(1, 1_000_000, values["island"], t("voxels_suffix"))
         form.addRow(t("island_size"), self.island_size)
-        form.addRow(button(t("select_islands"), self.select_islands, t("islands_tip")))
-        layout.addWidget(group)
+        form.addRow(select_button(t("select_islands"), self.select_islands, t("islands_tip")))
+        group.add_to(layout)
 
-        group = W.QGroupBox(t("box"))
+        group = Section(t("box"), "box")
         group.setToolTip(t("box_handles_tip"))
         grid = W.QGridLayout(group)
         self.box = AxisRanges(grid, 0, values["box"], step, self._box_changed)
@@ -173,12 +173,12 @@ class VoxelEditor(Editor):
         self.show_box.toggled.connect(self._box_changed)
         grid.addWidget(self.show_box, 3, 0, 1, 2)
         grid.addWidget(button(t("box_from_selection"), self.box_from_selection), 3, 2)
-        grid.addWidget(button(t("box_select"), self.box_select), 4, 0, 1, 3)
-        grid.addWidget(button(t("box_delete"), self.box_delete), 5, 0, 1, 3)
-        grid.addWidget(button(t("box_fill"), self.box_fill, t("box_fill_tip")), 6, 0, 1, 3)
-        layout.addWidget(group)
+        grid.addWidget(select_button(t("box_select"), self.box_select), 4, 0, 1, 3)
+        grid.addWidget(danger_button(t("box_delete"), self.box_delete), 5, 0, 1, 3)
+        grid.addWidget(add_button(t("box_fill"), self.box_fill, t("box_fill_tip")), 6, 0, 1, 3)
+        group.add_to(layout)
 
-        group = W.QGroupBox(t("ruler"))
+        group = Section(t("ruler"), "ruler")
         group.setToolTip(t("ruler_tip"))
         form = W.QFormLayout(group)
         self.ruler_snap = W.QCheckBox(t("ruler_snap"))
@@ -189,17 +189,17 @@ class VoxelEditor(Editor):
         self.ruler_label.setTextInteractionFlags(Qt.TextSelectableByMouse)
         form.addRow(self.ruler_label)
         form.addRow(button(t("ruler_clear"), self.clear_ruler))
-        layout.addWidget(group)
+        group.add_to(layout)
 
         self.slice = SliceControls(t, values["slice"], step, self._slice_changed, self.restore_view)
-        layout.addWidget(self.slice.group)
+        self.slice.group.add_to(layout)
 
-        group = W.QGroupBox(t("visible_range"))
+        group = Section(t("visible_range"), "visible_range")
         group.setToolTip(t("range_tip"))
         grid = W.QGridLayout(group)
         self.ranges = AxisRanges(grid, 0, values["range"], step, lambda *_: self.refresh())
         grid.addWidget(button(t("show_all"), self.reset_range), 3, 0, 1, 3)
-        layout.addWidget(group)
+        group.add_to(layout)
 
         layout.addStretch(1)
         legend = W.QLabel(t("voxel_legend"))

@@ -8,6 +8,7 @@ from .cloud_editor import CloudEditor
 from .formats import CLOUD, GRID, VOXEL
 from .grid import UNKNOWN, GridMap
 from .grid_editor import GridEditor
+from . import icons
 from .i18n import LANGUAGES, Translator
 from .qt import QAction, QActionGroup, QtCore, QtGui, QtWidgets, run
 from .voxel_editor import VoxelEditor
@@ -170,6 +171,10 @@ class Workbench(QtWidgets.QMainWindow):
 
         self.toolbar = self.addToolBar("main")
         self.toolbar.setMovable(False)
+        self.toolbar.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
+        self.toolbar.setIconSize(QtCore.QSize(18, 18))
+        for action, name in ((open_, "open"), (save, "save"), (undo, "undo"), (redo, "redo")):
+            action.setIcon(icons.icon(name))
         self.toolbar.addActions([open_, save, undo, redo])
         self.tool_actions = {}
         if editor:
@@ -177,6 +182,7 @@ class Workbench(QtWidgets.QMainWindow):
             tools = QActionGroup(self)
             for name, key in editor.tools:
                 action = self._action(editor.tool_label(name), lambda n=name: self.set_tool(n), key, checkable=True)
+                action.setIcon(icons.icon(f"tool_{name}"))
                 tools.addAction(action)
                 self.tool_actions[name] = action
                 self.toolbar.addAction(action)

@@ -55,6 +55,7 @@ Detection looks at the extension first and the file signature second, so a backu
 - **Slice:** cut the space with a plane on x, y or z and work on one side; the other side is hidden and protected. Drag the plane's arrow, flip sides, and *Restore view* when done.
 - **Ruler:** click two voxels to read the distance, Δx/Δy/Δz and the length in voxels. Hold `Shift` to lock the measurement to an axis; tick *Snap to voxel centres* for centre-to-centre readings.
 - Voxels added since the last save are drawn white; the selection is pink.
+- Panel sections carry an icon and a colour stripe, and buttons are tinted by purpose: red erases, green adds, pink selects.
 
 ## Point cloud editor
 

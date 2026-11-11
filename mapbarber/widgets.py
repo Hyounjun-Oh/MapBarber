@@ -26,12 +26,70 @@ def int_spin(low, high, value, suffix="", slot=None):
     return box
 
 
-def button(text, slot, tip=None):
+ROLE_STYLE = ("QPushButton {{ border: 1px solid {c}; border-radius: 4px; padding: 4px 8px; "
+              "background-color: rgba({r}, {g}, {b}, 0.16); }} "
+              "QPushButton:hover {{ background-color: rgba({r}, {g}, {b}, 0.32); }} "
+              "QPushButton:pressed {{ background-color: rgba({r}, {g}, {b}, 0.5); }}")
+
+
+def button(text, slot, tip=None, role=None):
+    """Push button; role 'danger', 'add' or 'select' tints it and adds a matching icon."""
     widget = QtWidgets.QPushButton(text)
     widget.clicked.connect(slot)
     if tip:
         widget.setToolTip(tip)
+    if role:
+        from . import icons
+        colour = icons.accent(f"role_{role}")
+        r, g, b = (int(colour[i:i + 2], 16) for i in (1, 3, 5))
+        widget.setStyleSheet(ROLE_STYLE.format(c=colour, r=r, g=g, b=b))
+        widget.setIcon(icons.icon(f"role_{role}", 14))
     return widget
+
+
+def danger_button(text, slot, tip=None):
+    return button(text, slot, tip, "danger")
+
+
+def add_button(text, slot, tip=None):
+    return button(text, slot, tip, "add")
+
+
+def select_button(text, slot, tip=None):
+    return button(text, slot, tip, "select")
+
+
+class Section(QtWidgets.QFrame):
+    """Framed panel group with an icon and title above it and an accent stripe on its left edge."""
+
+    def __init__(self, title, name):
+        super().__init__()
+        from . import icons
+        self.setObjectName("section")
+        self.setStyleSheet(f"QFrame#section {{ border: 1px solid rgba(128, 128, 128, 0.35); "
+                           f"border-left: 4px solid {icons.accent(name)}; border-radius: 6px; "
+                           "background-color: rgba(128, 128, 128, 0.07); }")
+        self.header = QtWidgets.QWidget()
+        row = QtWidgets.QHBoxLayout(self.header)
+        row.setContentsMargins(2, 10, 0, 0)
+        row.setSpacing(7)
+        image = icons.pixmap(name, 20)
+        if image is not None:
+            badge = QtWidgets.QLabel()
+            badge.setPixmap(image)
+            row.addWidget(badge)
+        label = QtWidgets.QLabel(title)
+        label.setStyleSheet("font-weight: 700;")
+        row.addWidget(label)
+        row.addStretch(1)
+
+    def setToolTip(self, text):
+        super().setToolTip(text)
+        self.header.setToolTip(text)
+
+    def add_to(self, layout):
+        layout.addWidget(self.header)
+        layout.addWidget(self)
 
 
 def set_quietly(box, value):

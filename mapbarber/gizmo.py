@@ -3,7 +3,7 @@ import numpy as np
 import vtk
 
 from .qt import QtWidgets
-from .widgets import RANGE_LIMIT, button, set_quietly, spin
+from .widgets import button, RANGE_LIMIT, Section, set_quietly, spin
 
 AXIS_RGB = ((0.95, 0.32, 0.25), (0.35, 0.85, 0.35), (0.32, 0.56, 1.0))
 AXIS_NAMES = "xyz"
@@ -244,7 +244,7 @@ class SliceControls:
 
     def __init__(self, tr, values, step, on_change, on_restore):
         W = QtWidgets
-        self.group = W.QGroupBox(tr("slice"))
+        self.group = Section(tr("slice"), "slice")
         self.group.setToolTip(tr("slice_tip"))
         form = W.QFormLayout(self.group)
         self.enabled = W.QCheckBox(tr("slice_enable"))

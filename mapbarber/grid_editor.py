@@ -9,7 +9,7 @@ from .formats import GRID, VOXEL
 from .grid import FREE, OCCUPIED, UNKNOWN, GridMap, min_pool, shape_corners, snap_angle
 from .qt import QtCore, QtGui, QtWidgets
 from .ruler import RULER_RGB, measure
-from .widgets import RANGE_LIMIT, ask_numbers, button, int_spin, set_quietly, spin
+from .widgets import ask_numbers, button, danger_button, int_spin, RANGE_LIMIT, Section, set_quietly, spin
 
 Qt = QtCore.Qt
 STATE_RGB = np.array([[250, 250, 250], [20, 20, 24], [128, 132, 140]], np.uint8)
@@ -210,7 +210,7 @@ class GridEditor(Editor):
         panel = W.QWidget()
         layout = W.QVBoxLayout(panel)
 
-        group = W.QGroupBox(t("paint_with"))
+        group = Section(t("paint_with"), "paint_with")
         column = W.QVBoxLayout(group)
         self.state_buttons = W.QButtonGroup(group)
         for value, key, shortcut in STATES:
@@ -218,23 +218,23 @@ class GridEditor(Editor):
             radio.setChecked(value == values["state"])
             self.state_buttons.addButton(radio, value)
             column.addWidget(radio)
-        layout.addWidget(group)
+        group.add_to(layout)
 
-        group = W.QGroupBox(t("brush"))
+        group = Section(t("brush"), "brush")
         form = W.QFormLayout(group)
         self.brush = int_spin(1, 201, values["brush"], t("cells"))
         self.brush.setToolTip(t("grid_brush_tip"))
         form.addRow(t("brush_size"), self.brush)
-        layout.addWidget(group)
+        group.add_to(layout)
 
-        group = W.QGroupBox(t("speckles"))
+        group = Section(t("speckles"), "speckles")
         form = W.QFormLayout(group)
         self.speckle = int_spin(1, 1_000_000, values["speckle"], t("cells"))
         form.addRow(t("island_size"), self.speckle)
-        form.addRow(button(t("clear_speckles"), self.clear_speckles, t("speckles_tip")))
-        layout.addWidget(group)
+        form.addRow(danger_button(t("clear_speckles"), self.clear_speckles, t("speckles_tip")))
+        group.add_to(layout)
 
-        group = W.QGroupBox(t("map_info"))
+        group = Section(t("map_info"), "map_info")
         form = W.QFormLayout(group)
         self.resolution = spin(1e-4, 100.0, self.map.resolution, 0.01, decimals=4)
         self.origin_x = spin(-1e6, 1e6, self.map.origin[0], 0.1)
@@ -245,10 +245,10 @@ class GridEditor(Editor):
         form.addRow(t("origin_y"), self.origin_y)
         form.addRow(t("origin_yaw"), self.origin_yaw)
         form.addRow(button(t("apply"), self.apply_info))
-        form.addRow(button(t("trim"), self.trim, t("trim_tip")))
-        layout.addWidget(group)
+        form.addRow(danger_button(t("trim"), self.trim, t("trim_tip")))
+        group.add_to(layout)
 
-        group = W.QGroupBox(t("ruler"))
+        group = Section(t("ruler"), "ruler")
         group.setToolTip(t("ruler_tip_grid"))
         form = W.QFormLayout(group)
         self.ruler_label = W.QLabel(self._ruler_detail() if self.measurement else t("ruler_hint"))
@@ -256,7 +256,7 @@ class GridEditor(Editor):
         self.ruler_label.setTextInteractionFlags(Qt.TextSelectableByMouse)
         form.addRow(self.ruler_label)
         form.addRow(button(t("ruler_clear"), self.clear_ruler))
-        layout.addWidget(group)
+        group.add_to(layout)
 
         layout.addStretch(1)
         legend = W.QLabel(t("grid_legend"))
