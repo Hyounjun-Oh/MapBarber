@@ -13,7 +13,7 @@
 
 [![tests](https://github.com/Hyounjun-Oh/mapbarber/actions/workflows/tests.yml/badge.svg)](https://github.com/Hyounjun-Oh/mapbarber/actions/workflows/tests.yml)
 ![python](https://img.shields.io/badge/python-3.10%2B-blue)
-![license](https://img.shields.io/badge/license-Unlicense%20OR%20MIT-green)
+![license](https://img.shields.io/badge/license-MIT-green)
 
 ![세 종류 맵을 탭으로 열고, 복셀 맵을 2D 격자로 변환하고, 언어를 바꾸는 장면](docs/overview.gif)
 
@@ -166,6 +166,6 @@ MAPBARBER_GUI_TESTS=1 .venv/bin/pytest            # 실제 창에서의 종단 �
 
 ## 라이선스
 
-[Unlicense](UNLICENSE) 와 [MIT 라이선스](LICENSE-MIT) 중 원하는 쪽을 골라 쓸 수 있는 듀얼 라이선스입니다([COPYING](COPYING) 참고). 요약하면 출처 표시 여부와 관계없이 어떤 용도로든 쓸 수 있습니다. 코드, 번역, 로고, 아이콘, 예제·데모 맵이 모두 해당하며, 전부 이 프로젝트를 위해 만든 것입니다.
+[MIT](LICENSE) 라이선스입니다. 상업적 용도를 포함해 자유롭게 사용·수정·재배포할 수 있고, 사본에 저작권 고지와 라이선스 전문만 함께 두면 됩니다. 코드, 번역, 로고, 아이콘, 예제·데모 맵이 모두 해당하며, 전부 이 프로젝트를 위해 만든 것입니다.
 
-의존 라이브러리는 각자의 라이선스를 따릅니다. PySide6 (LGPL-3.0), VTK·NumPy·SciPy (BSD-3-Clause). 소스로 실행하거나 pip 로 설치할 때는 따로 할 일이 없고, 이 라이브러리들을 포함한 묶음을 재배포한다면 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) 를 보세요. 기여는 같은 조건으로 받습니다([CONTRIBUTING.md](CONTRIBUTING.md)).
+의존 라이브러리는 각자의 라이선스를 따릅니다. PySide6 (LGPL-3.0), VTK·NumPy·SciPy (BSD-3-Clause). 소스로 실행하거나 pip 로 설치할 때는 따로 할 일이 없고, 이 라이브러리들을 포함한 묶음을 재배포한다면 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) 를 보세요. 기여는 같은 라이선스로 받습니다([CONTRIBUTING.md](CONTRIBUTING.md)).

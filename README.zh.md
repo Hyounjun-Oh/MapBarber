@@ -13,7 +13,7 @@
 
 [![tests](https://github.com/Hyounjun-Oh/mapbarber/actions/workflows/tests.yml/badge.svg)](https://github.com/Hyounjun-Oh/mapbarber/actions/workflows/tests.yml)
 ![python](https://img.shields.io/badge/python-3.10%2B-blue)
-![license](https://img.shields.io/badge/license-Unlicense%20OR%20MIT-green)
+![license](https://img.shields.io/badge/license-MIT-green)
 
 ![在标签页中打开三种地图、把体素地图转换为二维栅格并切换语言](docs/overview.gif)
 
@@ -165,6 +165,6 @@ MAPBARBER_GUI_TESTS=1 .venv/bin/pytest            # 另外在真实窗口中运�
 
 ## 许可证
 
-采用 [Unlicense](UNLICENSE) 或 [MIT 许可证](LICENSE-MIT) 双重许可，可任选其一 (见 [COPYING](COPYING))。简而言之：无论是否署名，都可以用于任何用途。代码、翻译、标志、图标以及示例和演示地图均在此范围内，且全部为本项目原创。
+采用 [MIT](LICENSE) 许可证。可以自由使用、修改和再分发 (包括商业用途)，只需在副本中保留版权声明和许可证全文。代码、翻译、标志、图标以及示例和演示地图均在此范围内，且全部为本项目原创。
 
-所依赖的库遵循各自的许可证：PySide6 (LGPL-3.0)、VTK、NumPy 和 SciPy (BSD-3-Clause)。从源码运行或用 pip 安装时无需额外处理；如果要再分发包含这些库的打包版本，请参阅 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。贡献内容按相同条款接受 ([CONTRIBUTING.md](CONTRIBUTING.md))。
+所依赖的库遵循各自的许可证：PySide6 (LGPL-3.0)、VTK、NumPy 和 SciPy (BSD-3-Clause)。从源码运行或用 pip 安装时无需额外处理；如果要再分发包含这些库的打包版本，请参阅 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。贡献内容按相同许可证接受 ([CONTRIBUTING.md](CONTRIBUTING.md))。

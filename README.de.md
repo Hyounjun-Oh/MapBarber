@@ -13,7 +13,7 @@
 
 [![tests](https://github.com/Hyounjun-Oh/mapbarber/actions/workflows/tests.yml/badge.svg)](https://github.com/Hyounjun-Oh/mapbarber/actions/workflows/tests.yml)
 ![python](https://img.shields.io/badge/python-3.10%2B-blue)
-![license](https://img.shields.io/badge/license-Unlicense%20OR%20MIT-green)
+![license](https://img.shields.io/badge/license-MIT-green)
 
 ![Drei Kartenarten in Tabs öffnen, eine Voxelkarte in ein 2D-Raster umwandeln und die Sprache wechseln](docs/overview.gif)
 
@@ -165,6 +165,6 @@ Mit `MAPBARBER_QT` = `PySide6`, `PySide2` oder `PyQt5` lässt sich die Qt-Anbind
 
 ## Lizenz
 
-Doppelt lizenziert unter der [Unlicense](UNLICENSE) oder der [MIT-Lizenz](LICENSE-MIT), nach Wahl (siehe [COPYING](COPYING)). Kurz gesagt: für jeden Zweck nutzbar, mit oder ohne Namensnennung. Das gilt für Code, Übersetzungen, Logo, Symbole sowie die Beispiel- und Demokarten, die alle für dieses Projekt erstellt wurden.
+[MIT](LICENSE). Frei nutzbar, veränderbar und weiterzugeben, auch kommerziell; es genügt, den Urheberrechtshinweis und den Lizenztext jeder Kopie beizulegen. Das gilt für Code, Übersetzungen, Logo, Symbole sowie die Beispiel- und Demokarten, die alle für dieses Projekt erstellt wurden.
 
-Die verwendeten Bibliotheken behalten ihre eigenen Lizenzen: PySide6 (LGPL-3.0), VTK, NumPy und SciPy (BSD-3-Clause). Beim Start aus dem Quellcode oder bei der Installation mit pip ist nichts weiter nötig; wer ein Paket weitergibt, das sie enthält, findet die Pflichten in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). Beiträge werden zu denselben Bedingungen angenommen ([CONTRIBUTING.md](CONTRIBUTING.md)).
+Die verwendeten Bibliotheken behalten ihre eigenen Lizenzen: PySide6 (LGPL-3.0), VTK, NumPy und SciPy (BSD-3-Clause). Beim Start aus dem Quellcode oder bei der Installation mit pip ist nichts weiter nötig; wer ein Paket weitergibt, das sie enthält, findet die Pflichten in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). Beiträge werden unter derselben Lizenz angenommen ([CONTRIBUTING.md](CONTRIBUTING.md)).

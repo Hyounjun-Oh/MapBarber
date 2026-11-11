@@ -1,6 +1,6 @@
 # Third-party notices
 
-MapBarber's own files are dual-licensed under the Unlicense or the MIT license (see `COPYING`).
+MapBarber's own files are released under the MIT license (see `LICENSE`).
 Nothing from other projects is copied into this repository. At run time it uses the libraries
 below, which are installed separately (by `mapbarber.sh` or `pip`) and keep their own licenses.
 

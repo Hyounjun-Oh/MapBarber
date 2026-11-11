@@ -13,7 +13,7 @@
 
 [![tests](https://github.com/Hyounjun-Oh/mapbarber/actions/workflows/tests.yml/badge.svg)](https://github.com/Hyounjun-Oh/mapbarber/actions/workflows/tests.yml)
 ![python](https://img.shields.io/badge/python-3.10%2B-blue)
-![license](https://img.shields.io/badge/license-Unlicense%20OR%20MIT-green)
+![license](https://img.shields.io/badge/license-MIT-green)
 
 ![Opening three kinds of map in tabs, converting a voxel map to a 2D grid and switching language](docs/overview.gif)
 
@@ -166,6 +166,6 @@ Set `MAPBARBER_QT` to `PySide6`, `PySide2` or `PyQt5` to choose a Qt binding.
 
 ## License
 
-Dual-licensed under the [Unlicense](UNLICENSE) or the [MIT license](LICENSE-MIT), whichever you prefer (see [COPYING](COPYING)). In short: use it for anything, with or without credit. This covers the code, translations, logo, icons and the example and demo maps, all made for this project.
+[MIT](LICENSE). Use, modify and redistribute it freely, including commercially; just keep the copyright notice and license text with any copy. This covers the code, translations, logo, icons and the example and demo maps, all made for this project.
 
-The libraries it runs on keep their own licenses: PySide6 (LGPL-3.0), VTK, NumPy and SciPy (BSD-3-Clause). Running from source or installing with pip needs nothing more; if you redistribute a bundle that contains them, see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). Contributions are accepted under the same terms ([CONTRIBUTING.md](CONTRIBUTING.md)).
+The libraries it runs on keep their own licenses: PySide6 (LGPL-3.0), VTK, NumPy and SciPy (BSD-3-Clause). Running from source or installing with pip needs nothing more; if you redistribute a bundle that contains them, see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). Contributions are accepted under the same license ([CONTRIBUTING.md](CONTRIBUTING.md)).

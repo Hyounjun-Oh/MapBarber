@@ -4,10 +4,10 @@ Bug reports and pull requests are welcome.
 
 ## Licensing of contributions
 
-MapBarber is dual-licensed under the Unlicense or the MIT license (see `COPYING`). By submitting a
-contribution you agree that it is provided under those same terms, and you confirm that:
+MapBarber is released under the MIT license (see `LICENSE`). By submitting a contribution you agree
+that it is provided under the same license, and you confirm that:
 
-- you wrote it yourself, or otherwise have the right to submit it under those terms, and
+- you wrote it yourself, or otherwise have the right to submit it under that license, and
 - if your employer or institution has rights to what you write, you have its permission.
 
 Please do not copy code, data, icons or text from other projects into a pull request, even if their

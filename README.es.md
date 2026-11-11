@@ -13,7 +13,7 @@
 
 [![tests](https://github.com/Hyounjun-Oh/mapbarber/actions/workflows/tests.yml/badge.svg)](https://github.com/Hyounjun-Oh/mapbarber/actions/workflows/tests.yml)
 ![python](https://img.shields.io/badge/python-3.10%2B-blue)
-![license](https://img.shields.io/badge/license-Unlicense%20OR%20MIT-green)
+![license](https://img.shields.io/badge/license-MIT-green)
 
 ![Abrir tres tipos de mapa en pestañas, convertir un mapa de vóxeles en una rejilla 2D y cambiar de idioma](docs/overview.gif)
 
@@ -165,6 +165,6 @@ Define `MAPBARBER_QT` como `PySide6`, `PySide2` o `PyQt5` para elegir el enlace 
 
 ## Licencia
 
-Con doble licencia: [Unlicense](UNLICENSE) o [licencia MIT](LICENSE-MIT), a tu elección (consulta [COPYING](COPYING)). En resumen: úsalo para lo que quieras, con o sin atribución. Esto incluye el código, las traducciones, el logotipo, los iconos y los mapas de ejemplo y de demostración, todos creados para este proyecto.
+[MIT](LICENSE). Puedes usarlo, modificarlo y redistribuirlo libremente, también con fines comerciales; basta con conservar el aviso de copyright y el texto de la licencia en cada copia. Esto incluye el código, las traducciones, el logotipo, los iconos y los mapas de ejemplo y de demostración, todos creados para este proyecto.
 
-Las bibliotecas de las que depende mantienen sus propias licencias: PySide6 (LGPL-3.0), VTK, NumPy y SciPy (BSD-3-Clause). Para ejecutarlo desde el código fuente o instalarlo con pip no hace falta nada más; si redistribuyes un paquete que las incluya, consulta [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). Las contribuciones se aceptan en los mismos términos ([CONTRIBUTING.md](CONTRIBUTING.md)).
+Las bibliotecas de las que depende mantienen sus propias licencias: PySide6 (LGPL-3.0), VTK, NumPy y SciPy (BSD-3-Clause). Para ejecutarlo desde el código fuente o instalarlo con pip no hace falta nada más; si redistribuyes un paquete que las incluya, consulta [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). Las contribuciones se aceptan bajo la misma licencia ([CONTRIBUTING.md](CONTRIBUTING.md)).
