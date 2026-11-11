@@ -411,6 +411,7 @@ class VoxelEditor(Editor):
         self._slice_timer.stop()
         self._refresh_timer.stop()
         self.viewport.renderer.GetActiveCamera().RemoveObserver(self._camera_watch)
+        self.view.clear()
 
     def update_levels(self):
         """Move chunks to the detail level that suits the camera: cached levels at once, the rest in small slices."""
