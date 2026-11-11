@@ -34,3 +34,7 @@ packages = ["mapbarber", "mapbarber.locales", "mapbarber.assets"]
 
 [tool.setuptools.dynamic]
 version = { attr = "mapbarber.__version__" }
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
