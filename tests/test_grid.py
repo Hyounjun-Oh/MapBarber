@@ -92,3 +92,27 @@ def test_min_pool_keeps_thin_walls():
     small = min_pool(shades[cells], 4)
     assert small.shape == (10, 10, 3)
     assert (small[:, 4] == shades[OCCUPIED]).all() and (small[:, 0] == shades[FREE]).all()
+
+
+def test_cloud_to_voxels_and_back_returns_the_original_points():
+    from mapbarber.voxels import VoxelMap, voxelize
+    rng = np.random.default_rng(8)
+    xyz = rng.uniform(-3, 3, size=(5000, 3))
+    table = np.zeros(len(xyz), np.dtype([("x", "f8"), ("y", "f8"), ("z", "f8"), ("intensity", "f4")]))
+    for axis, name in enumerate("xyz"):
+        table[name] = xyz[:, axis]
+    table["intensity"] = np.arange(len(xyz))
+    voxels = VoxelMap(voxelize(xyz, 0.25), 0.25)
+    points, rows = convert.restore_points(xyz, table, 0.25, voxels)
+    assert np.array_equal(points, xyz) and np.array_equal(rows, table)
+
+    erased = voxels.occupied[:40]
+    voxels.apply(remove=erased, add=pack(np.array([[100, 100, 100]])))
+    points, rows = convert.restore_points(xyz, table, 0.25, voxels)
+    gone = np.isin(voxelize_each(xyz, 0.25), erased)
+    assert np.array_equal(points[:-1], xyz[~gone]) and np.array_equal(rows["intensity"][:-1], table["intensity"][~gone])
+    assert np.allclose(points[-1], (25.125, 25.125, 25.125)) and rows["x"][-1] == pytest.approx(25.125)
+
+
+def voxelize_each(points, resolution):
+    return pack(np.floor(points / resolution + 1e-9).astype(np.int64))

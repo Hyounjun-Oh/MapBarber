@@ -88,7 +88,7 @@ Detection looks at the extension first and the file signature second, so a backu
 
 Every file opens in its own tab, and opening a file that is already open switches to it. `Ctrl+Tab` / `Ctrl+Shift+Tab` move between tabs, `Ctrl+W` closes one (asking first if it has unsaved changes), and you can drop several files at once.
 
-The **Convert** menu turns the current map into another kind in a new tab, leaving the original untouched:
+The **Convert** menu turns the current map into another kind in a new tab, leaving the original untouched. Nothing is lost on the way back: a voxel map made from a cloud returns that cloud's own points at their exact positions with all fields (minus the voxels you erased), and a cloud made from voxels returns to the same voxels.
 
 | From \ To | Voxel map | Point cloud | 2D grid |
 |---|---|---|---|

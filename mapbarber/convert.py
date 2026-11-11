@@ -13,6 +13,28 @@ def points_to_voxels(points, resolution):
     return voxelize(points, resolution)
 
 
+def restore_points(xyz, table, resolution, voxel_map):
+    """Points of a cloud that was turned into voxels, as they come back from the (possibly edited) voxel map.
+
+    Every original point whose voxel still exists returns at its exact original position with all its fields.
+    Voxels that hold no original point (added in the voxel editor) contribute their centre as a new point.
+    """
+    cells = np.floor(np.asarray(xyz, np.float64) / resolution + 1e-9).astype(np.int64)
+    keys = pack(cells)
+    kept = voxel_map.contains(keys)
+    covered = np.unique(keys[kept])
+    occupied = voxel_map.occupied
+    fresh = centers(occupied[~np.isin(occupied, covered, assume_unique=True)], resolution)
+    points = np.vstack([xyz[kept], fresh])
+    if table is None:
+        return points, None
+    rows = np.zeros(len(points), table.dtype)
+    rows[:int(kept.sum())] = table[kept]
+    for axis, name in enumerate("xyz"):
+        rows[name][int(kept.sum()):] = fresh[:, axis]
+    return points, rows
+
+
 def voxels_to_grid(keys, resolution, z_low=-np.inf, z_high=np.inf):
     """Project the voxels of a height band onto the ground plane; cells without an obstacle become free."""
     cells = unpack(keys)

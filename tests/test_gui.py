@@ -795,3 +795,38 @@ def test_large_cloud_is_thinned_far_away_and_edits_touch_few_chunks(workbench):
     assert not editor.selected.any()
     window.close_all(ask=False)
     assert not dialogs
+
+
+def test_conversions_between_cloud_and_voxels_lose_nothing(workbench):
+    import mapbarber.cloud_editor as cloud_editor
+    window, folder, pump, dialogs = workbench
+    asked = []
+    original_ask = cloud_editor.ask_numbers
+    cloud_editor.ask_numbers = lambda parent, title, fields: asked.append(fields[0][1]) or [field[1] for field in fields]
+    try:
+        assert window.open(str(folder / "scan.pcd"))
+        pump()
+        source = window.editor
+        xyz, table = source.cloud.surviving()
+        window.convert(source.to_voxels)
+        voxels = window.editor
+        size = voxels.map.resolution
+        window.convert(voxels.to_cloud)
+        restored = window.editor
+        back_xyz, back_table = restored.cloud.surviving()
+        assert np.array_equal(back_xyz, xyz) and np.array_equal(back_table, table)
+        window.convert(restored.to_voxels)
+        assert asked[-1] == size and np.array_equal(window.editor.map.occupied, voxels.map.occupied)
+
+        assert window.open(str(folder / "room.bt"))
+        pump()
+        first = window.editor
+        window.convert(first.to_cloud)
+        window.convert(window.editor.to_voxels)
+        assert asked[-1] == first.map.resolution and np.array_equal(window.editor.map.occupied, first.map.occupied)
+    finally:
+        cloud_editor.ask_numbers = original_ask
+    for document in window.documents:
+        (document.cloud if hasattr(document, "cloud") else document.map).mark_saved()
+    window.close_all(ask=False)
+    assert not dialogs

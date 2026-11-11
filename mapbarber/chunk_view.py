@@ -64,6 +64,17 @@ class ChunkView:
     def has(self, chunk_key, level):
         return level in self.actors.get(chunk_key, {})
 
+    def count(self, chunk_key):
+        """Cubes of the level a chunk currently shows."""
+        level = self.levels.get(chunk_key)
+        return 0 if level is None else self.actors[chunk_key][level][0].GetNumberOfPoints()
+
+    def hide(self, chunk_key):
+        """Stop showing a chunk but keep what was built for it."""
+        for _, actor in self.actors.get(chunk_key, {}).values():
+            actor.VisibilityOff()
+        self.levels.pop(chunk_key, None)
+
     def show(self, chunk_key, level):
         """Make a cached level of a chunk the visible one."""
         for other, (_, actor) in self.actors[chunk_key].items():

@@ -84,6 +84,10 @@ class Viewport:
             self.interactor.Initialize()
             self._initialized = True
 
+    def close(self):
+        """Shut the render window down before its widget is destroyed."""
+        self.widget.Finalize()
+
     def outline(self, rgb, width=2.0):
         source = vtk.vtkOutlineSource()
         actor = self._actor(source, rgb, width)

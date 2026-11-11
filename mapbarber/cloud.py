@@ -116,7 +116,10 @@ def pick_along_ray(origin, direction, points, angle):
 
 
 class PointChunks:
-    """Fixed spatial partition of a cloud into grid cells, so work can be limited to the cells it concerns."""
+    """Fixed spatial partition of a cloud into grid cells, so work can be limited to the cells it concerns.
+
+    Each chunk lists its points in a fixed random order, so any leading part of the list is an even sample of it.
+    """
 
     TARGET = 40_000
 
@@ -135,8 +138,9 @@ class PointChunks:
         order = np.argsort(code, kind="stable")
         starts = np.concatenate([[0], np.flatnonzero(np.diff(code[order])) + 1, [len(order)]])
         lows, highs = [], []
+        shuffle = np.random.default_rng(0)
         for number, (start, end) in enumerate(zip(starts[:-1], starts[1:])):
-            members = ids[order[start:end]]
+            members = shuffle.permutation(ids[order[start:end]])
             self.ids.append(members)
             self.of[members] = number
             inside = xyz[members]

@@ -307,7 +307,7 @@ class Workbench(QtWidgets.QMainWindow):
     def _dispose(self, editor):
         editor.shutdown()
         if hasattr(editor, "viewport"):
-            editor.viewport.widget.Finalize()
+            editor.viewport.close()
         self._owners.pop(editor.widget, None)
         editor.widget.deleteLater()
 
@@ -366,6 +366,7 @@ class Workbench(QtWidgets.QMainWindow):
             worker.join(0.02)
         if "error" in outcome:
             dialog.close()
+            dialog.deleteLater()
             raise outcome["error"]
         return outcome["result"], dialog
 

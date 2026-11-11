@@ -58,6 +58,7 @@ class CloudEditor(Editor):
     def __init__(self, window):
         super().__init__(window)
         self.cloud = cloud.PointCloud(np.zeros((0, 3)))
+        self.origin = None
         self.colours = None
         self.selected = np.zeros(0, bool)
         self.chunks = cloud.PointChunks(self.cloud.xyz, self.cloud.alive)
@@ -121,7 +122,9 @@ class CloudEditor(Editor):
         return formats.read_cloud(path)
 
     def set_document(self, payload, path=None, fmt=None, progress=None):
-        xyz, table = payload
+        """payload: (xyz, table[, origin]) where origin names the voxel size of the map the points came from."""
+        xyz, table = payload[:2]
+        self.origin = payload[2] if len(payload) > 2 else None
         self.cloud = cloud.PointCloud(xyz, table)
         self.colours = point_colours(table)
         self.path, self.format = path, fmt
@@ -423,7 +426,7 @@ class CloudEditor(Editor):
         self.shown_counts[chunk] = len(ids)
         if level:
             keep = np.zeros(len(ids), bool)
-            keep[::4 ** level] = True
+            keep[:-(-len(ids) // 4 ** level)] = True
             ids = ids[keep | self.selected[ids]]
         points = self.cloud.xyz[ids]
         if mode == "rgb" and self.colours is not None:
@@ -697,7 +700,7 @@ class CloudEditor(Editor):
         xyz, _ = self.cloud.surviving()
         if not len(xyz):
             return None, None
-        guess = formats.estimate_resolution(xyz)
+        guess = self.origin["resolution"] if self.origin else formats.estimate_resolution(xyz)
         answer = ask_numbers(self.window, self.tr("voxel_size_title"), [(self.tr("voxel_size_cloud"), guess, 1e-4, 1e3, 4)])
         return (xyz, answer[0]) if answer else (None, None)
 
@@ -705,7 +708,7 @@ class CloudEditor(Editor):
         xyz, size = self._ask_size()
         if size is None:
             return None
-        return VOXEL, (convert.points_to_voxels(xyz, size), size)
+        return VOXEL, (convert.points_to_voxels(xyz, size), size, {"xyz": xyz, "table": self.cloud.surviving()[1]})
 
     def to_grid(self):
         xyz, size = self._ask_size()
