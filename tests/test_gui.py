@@ -31,12 +31,13 @@ def workbench(tmp_path_factory):
 
     pump(0.5)
     yield window, folder, pump, dialogs
-    for editor in window.editors.values():
+    for editor in window.documents:
         (editor.cloud if hasattr(editor, "cloud") else editor.map).mark_saved()
     window.close()
 
 
 def vtk_click(viewport, x, y, shift=False):
+    x, y = int(x), int(y)
     for name in ("MouseMoveEvent", "LeftButtonPressEvent", "LeftButtonReleaseEvent"):
         viewport.interactor.SetEventInformation(x, y, 0, int(shift))
         getattr(viewport.interactor, name)()
@@ -117,4 +118,308 @@ def test_grid_editor(workbench):
     assert editor.map.shape == (300, 420)
     assert window.write(str(folder / "floor_out.yaml"), None)
     assert (folder / "floor_out.pgm").exists()
+    assert not dialogs
+
+
+def vtk_drag(viewport, start, end, steps=8):
+    viewport.interactor.SetEventInformation(int(start[0]), int(start[1]), 0, 0)
+    viewport.interactor.LeftButtonPressEvent()
+    for t in np.linspace(0, 1, steps + 1)[1:]:
+        point = np.asarray(start) + (np.asarray(end) - np.asarray(start)) * t
+        viewport.interactor.SetEventInformation(int(point[0]), int(point[1]), 0, 0)
+        viewport.interactor.MouseMoveEvent()
+    viewport.interactor.LeftButtonReleaseEvent()
+
+
+def vtk_right_click(viewport, x, y):
+    viewport.interactor.SetEventInformation(int(x), int(y), 0, 0)
+    viewport.interactor.RightButtonPressEvent()
+    viewport.interactor.RightButtonReleaseEvent()
+
+
+def screen(editor, world):
+    return np.array(editor.viewport.to_display(world))
+
+
+def floor_map():
+    from mapbarber.voxels import pack
+    cells = np.stack(np.meshgrid(np.arange(20), np.arange(20), [0], indexing="ij"), -1).reshape(-1, 3)
+    return pack(cells), 0.1
+
+
+def test_voxel_ruler_box_handles_slice_and_right_click(workbench):
+    from mapbarber.formats import VOXEL
+    from mapbarber.voxels import unpack
+    window, _folder, pump, dialogs = workbench
+    window.show_document(VOXEL, floor_map())
+    pump()
+    editor = window.editor
+    editor.look_from((0, 0, 1), (0, 1, 0))
+    pump()
+
+    window.set_tool("measure")
+    editor.ruler_snap.setChecked(True)
+    vtk_click(editor.viewport, *screen(editor, (0.25, 0.25, 0.1)).astype(int))
+    assert editor.ruler.pending
+    vtk_click(editor.viewport, *screen(editor, (1.25, 0.25, 0.1)).astype(int))
+    assert editor.measurement["d"] == pytest.approx(1.0) and editor.measurement["cells"] == pytest.approx(10.0)
+    assert "1.000" in editor.ruler_label.text()
+    editor.ruler_snap.setChecked(False)
+    vtk_click(editor.viewport, *screen(editor, (0.25, 0.25, 0.1)).astype(int))
+    vtk_click(editor.viewport, *screen(editor, (0.25, 1.25, 0.1)).astype(int))
+    assert editor.measurement["dz"] == pytest.approx(0.0, abs=1e-9) and 0.9 < editor.measurement["d"] < 1.1
+
+    editor.set_box((0.2, 0.2, -0.1), (0.6, 0.6, 0.3))
+    pump()
+    length = editor.box_gizmo.length()
+    grab = screen(editor, (0.4 + 0.6 * length, 0.4, 0.1))
+    per_metre = screen(editor, (1.4, 0.4, 0.1)) - screen(editor, (0.4, 0.4, 0.1))
+    vtk_drag(editor.viewport, grab, grab + per_metre * 0.5)
+    (x_low, x_high), (y_low, y_high), _ = editor.box.values()
+    assert (x_low, x_high) == (pytest.approx(0.7), pytest.approx(1.1))
+    assert (y_low, y_high) == (pytest.approx(0.2), pytest.approx(0.6))
+    dot = screen(editor, (1.1, 0.4, 0.1))
+    vtk_drag(editor.viewport, dot, dot + per_metre * 0.3)
+    (x_low, x_high), _, _ = editor.box.values()
+    assert (x_low, x_high) == (pytest.approx(0.7), pytest.approx(1.4))
+
+    total = len(editor.map)
+    editor.slice.axes.button(0).setChecked(True)
+    editor.slice.enabled.setChecked(True)
+    assert editor.slice.position.value() == pytest.approx(1.0)
+    editor.slice.position.setValue(1.0)
+    pump()
+    shown = (unpack(editor.visible_keys)[:, 0] + 0.5) * 0.1
+    assert shown.max() <= 1.0 and editor.hidden == total - len(editor.visible_keys) > 0
+    editor.set_box((0.0, 0.0, 0.1), (2.0, 2.0, 0.2))
+    editor.box_fill()
+    added = np.setdiff1d(editor.map.occupied, editor.map.saved)
+    assert len(added) > 0 and ((unpack(added)[:, 0] + 0.5) * 0.1).max() <= 1.0
+    editor.set_box((0.0, 0.0, -0.1), (2.0, 2.0, 0.3))
+    editor.box_delete()
+    assert len(editor.map) == total - len(np.setdiff1d(editor.map.saved, editor.map.occupied))
+    removed = np.setdiff1d(editor.map.saved, editor.map.occupied)
+    assert ((unpack(removed)[:, 0] + 0.5) * 0.1).min() >= 0.0 and ((unpack(removed)[:, 0] + 0.5) * 0.1).max() <= 1.0
+    editor.undo()
+    editor.undo()
+    assert not editor.map.dirty
+
+    plane = editor.slice_gizmo.centre()
+    grab = screen(editor, plane + np.array([0.6 * editor.slice_gizmo.length(), 0, 0]))
+    vtk_drag(editor.viewport, grab, grab - per_metre * 0.4)
+    assert editor.slice.position.value() == pytest.approx(0.6)
+    editor.restore_view()
+    assert not editor.slice.enabled.isChecked() and len(editor.visible_keys) == total
+
+    editor.select_all()
+    window.set_tool("view")
+    before = len(editor.selection)
+    vtk_right_click(editor.viewport, *screen(editor, (1.05, 1.05, 0.1)))
+    assert len(editor.selection) == before - 1
+    editor.clear_ruler()
+    assert not dialogs
+
+
+def test_cloud_ruler_slice_and_right_click(workbench):
+    from mapbarber.formats import CLOUD
+    window, _folder, pump, dialogs = workbench
+    xy = np.stack(np.meshgrid(np.arange(0, 5.01, 0.5), np.arange(0, 5.01, 0.5), indexing="ij"), -1).reshape(-1, 2)
+    xyz = np.column_stack([xy, np.zeros(len(xy))])
+    window.show_document(CLOUD, (xyz, None))
+    pump()
+    editor = window.editor
+    editor.look_from((0, 0, 1), (0, 1, 0))
+    pump()
+    window.set_tool("measure")
+    vtk_click(editor.viewport, *screen(editor, (0, 0, 0)).astype(int))
+    vtk_click(editor.viewport, *screen(editor, (3, 4, 0)).astype(int))
+    assert editor.measurement["d"] == pytest.approx(5.0) and editor.measurement["dx"] == pytest.approx(3.0)
+
+    editor.slice.axes.button(1).setChecked(True)
+    editor.slice.keep.setCurrentIndex(1)
+    editor.slice.enabled.setChecked(True)
+    assert editor.slice.position.value() == pytest.approx(2.5)
+    editor.slice.position.setValue(2.4)
+    pump()
+    assert editor.visible_points[:, 1].min() >= 2.4 and editor.hidden == 11 * 5
+    editor.slice.flip()
+    pump()
+    assert editor.visible_points[:, 1].max() <= 2.4
+    editor.restore_view()
+    assert len(editor.visible_ids) == len(xyz)
+
+    editor.select_all()
+    window.set_tool("view")
+    editor.radius.setValue(0.1)
+    vtk_right_click(editor.viewport, *screen(editor, (2.5, 2.5, 0)))
+    assert len(editor.selection) == len(xyz) - 1
+    assert not dialogs
+
+
+def test_grid_ruler(workbench):
+    from mapbarber.formats import GRID
+    from mapbarber.grid import FREE, GridMap
+    from mapbarber.qt import QtCore, QtTest
+    window, _folder, pump, dialogs = workbench
+    window.show_document(GRID, GridMap(np.full((60, 80), FREE, np.uint8), 0.05, (1.0, 2.0, np.pi / 2)))
+    pump()
+    editor = window.editor
+    canvas = editor.canvas
+
+    def at(row, column):
+        return canvas.mapFromScene(QtCore.QPointF(column + 0.5, editor.map.shape[0] - row - 0.5))
+
+    window.set_tool("measure")
+    for cell in ((10, 10), (10, 40)):
+        QtTest.QTest.mousePress(canvas.viewport(), QtCore.Qt.LeftButton, QtCore.Qt.NoModifier, at(*cell))
+        QtTest.QTest.mouseRelease(canvas.viewport(), QtCore.Qt.LeftButton, QtCore.Qt.NoModifier, at(*cell))
+        pump(0.1)
+    result = editor.measurement
+    assert result["px"] == pytest.approx(30.0) and result["d"] == pytest.approx(1.5)
+    assert result["dx"] == pytest.approx(0.0, abs=1e-9) and result["dy"] == pytest.approx(1.5)
+    assert (result["dc"], result["dr"]) == (30, 0) and "30.0 px" in editor.ruler_label.text()
+    assert not editor.map.dirty and not dialogs
+
+
+def test_tabs(workbench):
+    window, folder, pump, dialogs = workbench
+    window.close_all(ask=False)
+    pump()
+    assert window.stack.currentWidget() is window.welcome and window.editor is None
+    for name in ("room.bt", "scan.pcd", "floor.yaml"):
+        assert window.open(str(folder / name))
+    pump()
+    kinds = [type(d).__name__ for d in window.documents]
+    assert kinds == ["VoxelEditor", "CloudEditor", "GridEditor"] and window.tabs.count() == 3
+    assert window.open(str(folder / "room.bt")) and window.tabs.count() == 3 and window.tabs.currentIndex() == 0
+    window.editor.select_islands()
+    window.editor.delete_selection()
+    pump()
+    assert window.tabs.tabText(0).endswith("*")
+    window.tabs.setCurrentIndex(1)
+    pump()
+    assert type(window.editor).__name__ == "CloudEditor" and "Points" in window.counts.text()
+    window.tabs.setCurrentIndex(0)
+    pump()
+    assert window.editor.map.dirty and window.dock.windowTitle() == "Voxel map"
+    count = len(dialogs)
+    assert window.close_document(window.documents[0])
+    assert len(dialogs) == count + 1 and window.tabs.count() == 2
+    dialogs.clear()
+    window.close_all(ask=False)
+    pump()
+    assert window.editor is None and window.stack.currentWidget() is window.welcome
+
+
+def test_standard_shortcuts(workbench):
+    from mapbarber.qt import QtGui
+    window, folder, pump, dialogs = workbench
+    assert window.open(str(folder / "floor.yaml"))
+    pump()
+
+    def bound(sequence):
+        wanted = QtGui.QKeySequence(sequence)
+        return [action.text() for action in window.actions() if wanted in action.shortcuts()]
+
+    def assert_unambiguous():
+        seen = {}
+        for action in window.actions():
+            for sequence in action.shortcuts():
+                key = sequence.toString()
+                assert key not in seen, (key, seen.get(key), action.text())
+                seen[key] = action.text()
+
+    assert_unambiguous()
+
+    expected = {"Ctrl+O": "Open…", "Ctrl+S": "Save", "Ctrl+Shift+S": "Save As / Export…", "Ctrl+Z": "Undo",
+                "Ctrl+Shift+Z": "Redo", "Ctrl+Y": "Redo", "Ctrl+W": "Close tab", "Ctrl+Q": "Quit", "Ctrl+Tab": "Next tab",
+                "F1": "Controls", "F11": "Full screen", "Ctrl+0": "Fit to window", "H": "Navigate", "B": "Pen",
+                "L": "Line", "R": "Rectangle", "G": "Fill", "I": "Measure", "[": "Smaller brush", "]": "Larger brush"}
+    for sequence, label in expected.items():
+        assert bound(sequence) == [label], (sequence, bound(sequence))
+    window.close_all(ask=False)
+    assert window.open(str(folder / "room.bt"))
+    pump()
+    for sequence, label in {"V": "Select", "E": "Erase", "Delete": "Delete selection", "Backspace": "Delete selection",
+                            "Ctrl+A": "Select all visible", "Ctrl+Shift+I": "Invert selection", "Ctrl+D": "Clear selection",
+                            "Escape": "Clear selection", "7": "Top", "1": "Front", "3": "Side", "Home": "Isometric"}.items():
+        assert bound(sequence) == [label], (sequence, bound(sequence))
+    assert_unambiguous()
+    window.close_all(ask=False)
+    assert window.open(str(folder / "scan.pcd"))
+    pump()
+    assert_unambiguous()
+    window.close_all(ask=False)
+    assert not dialogs
+
+
+def test_grid_shift_constraints(workbench):
+    from mapbarber.formats import GRID
+    from mapbarber.grid import FREE, OCCUPIED, GridMap
+    from mapbarber.qt import QtCore, QtTest
+    window, _folder, pump, dialogs = workbench
+    editor = window.show_document(GRID, GridMap(np.full((80, 80), FREE, np.uint8), 0.05))
+    pump()
+    canvas, Qt = editor.canvas, QtCore.Qt
+
+    def at(row, column):
+        return canvas.mapFromScene(QtCore.QPointF(column + 0.5, editor.map.shape[0] - row - 0.5))
+
+    def drag(start, end, modifiers=Qt.NoModifier):
+        QtTest.QTest.mousePress(canvas.viewport(), Qt.LeftButton, modifiers, at(*start))
+        event_move(end, modifiers)
+        QtTest.QTest.mouseRelease(canvas.viewport(), Qt.LeftButton, modifiers, at(*end))
+        pump(0.05)
+
+    def event_move(cell, modifiers):
+        from mapbarber.qt import QtGui
+        point = QtCore.QPointF(at(*cell))
+        event = QtGui.QMouseEvent(QtCore.QEvent.MouseMove, point, point, Qt.NoButton, Qt.LeftButton, modifiers)
+        QtWidgets_send(canvas.viewport(), event)
+
+    from mapbarber.qt import QtWidgets
+    QtWidgets_send = QtWidgets.QApplication.sendEvent
+    editor.brush.setValue(1)
+    window.set_tool("line")
+    drag((10, 10), (13, 40), Qt.ShiftModifier)
+    rows, columns = np.nonzero(editor.map.cells == OCCUPIED)
+    assert set(rows) == {10} and (columns.min(), columns.max()) == (10, 40)
+    editor.undo()
+    window.set_tool("rectangle")
+    drag((20, 20), (25, 30), Qt.ShiftModifier)
+    rows, columns = np.nonzero(editor.map.cells == OCCUPIED)
+    assert (rows.min(), rows.max(), columns.min(), columns.max()) == (20, 30, 20, 30)
+    editor.undo()
+    drag((40, 40), (42, 45), Qt.AltModifier)
+    rows, columns = np.nonzero(editor.map.cells == OCCUPIED)
+    assert (rows.min(), rows.max(), columns.min(), columns.max()) == (38, 42, 35, 45)
+    editor.undo()
+    window.set_tool("pen")
+    drag((60, 10), (60, 10))
+    drag((60, 50), (60, 50), Qt.ShiftModifier)
+    rows, columns = np.nonzero(editor.map.cells == OCCUPIED)
+    assert set(rows) == {60} and len(columns) == 41
+    window.set_tool("measure")
+    for cell, modifiers in (((5, 5), Qt.NoModifier), ((9, 35), Qt.ShiftModifier)):
+        QtTest.QTest.mousePress(canvas.viewport(), Qt.LeftButton, modifiers, at(*cell))
+        QtTest.QTest.mouseRelease(canvas.viewport(), Qt.LeftButton, modifiers, at(*cell))
+    assert editor.measurement["px"] == pytest.approx(30.0) and editor.measurement["dr"] == 0
+    editor.map.mark_saved()
+    window.close_all(ask=False)
+    assert not dialogs
+
+
+def test_voxel_ruler_shift_locks_axis(workbench):
+    from mapbarber.formats import VOXEL
+    window, _folder, pump, dialogs = workbench
+    editor = window.show_document(VOXEL, floor_map())
+    pump()
+    editor.look_from((0, 0, 1), (0, 1, 0))
+    pump()
+    window.set_tool("measure")
+    editor.ruler_snap.setChecked(True)
+    vtk_click(editor.viewport, *screen(editor, (0.25, 0.25, 0.1)).astype(int))
+    vtk_click(editor.viewport, *screen(editor, (1.25, 0.55, 0.1)).astype(int), shift=True)
+    assert editor.measurement["d"] == pytest.approx(1.0) and editor.measurement["dy"] == pytest.approx(0.0)
+    window.close_all(ask=False)
     assert not dialogs

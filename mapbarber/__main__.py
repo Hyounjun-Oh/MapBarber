@@ -19,7 +19,7 @@ def build_parser():
         prog="mapbarber",
         description="Editor for robot maps: OctoMap octrees, point clouds and 2D occupancy grids. "
                     "Without --output or --info it opens the graphical editor.")
-    parser.add_argument("map", nargs="?", help="file to open; its type is detected automatically")
+    parser.add_argument("map", nargs="*", help="files to open, each in its own tab; the type is detected automatically")
     parser.add_argument("-l", "--language", choices=sorted(LANGUAGES), help="interface language")
     parser.add_argument("--info", action="store_true", help="print a summary and exit")
     parser.add_argument("-o", "--output", help="write the (cleaned or converted) map here and exit; "
@@ -132,9 +132,14 @@ def main(argv=None):
             parser.error("cleaning options need --output")
         from .app import main as run_editor
         return run_editor(args.map, args.language)
-    if not args.map:
-        parser.error("--output and --info need an input file")
-    kind, payload = load(args.map)
+    if len(args.map) != 1:
+        parser.error("--output and --info need exactly one input file")
+    args.map = args.map[0]
+    try:
+        kind, payload = load(args.map)
+    except (OSError, ValueError) as error:
+        print(f"mapbarber: cannot open {args.map}: {error}", file=sys.stderr)
+        return 1
     if args.info:
         print(describe(kind, payload))
     payload = clean(kind, payload, args)

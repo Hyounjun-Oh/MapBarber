@@ -93,3 +93,32 @@ def test_resolution_estimate(keys):
 def test_pack_round_trip():
     ijk = np.array([[-32768, 0, 32767], [1, -1, 0]])
     assert np.array_equal(unpack(pack(ijk)), ijk)
+
+
+def test_damaged_and_empty_files_raise_clear_errors(tmp_path, keys):
+    whole = str(tmp_path / "map.bt")
+    octree.write_bt(whole, keys, 0.05)
+    with open(whole, "rb") as f:
+        data = f.read()
+    cut = tmp_path / "cut.bt"
+    cut.write_bytes(data[:len(data) // 2])
+    with pytest.raises(ValueError, match="truncated"):
+        formats.load_voxels(str(cut))
+    notes = tmp_path / "notes.txt"
+    notes.write_text("no numbers here\n")
+    with pytest.raises(ValueError, match="no x, y, z"):
+        formats.read_cloud(str(notes))
+
+
+def test_xyz_text_with_colours(tmp_path):
+    path = tmp_path / "coloured.xyz"
+    path.write_text("0 0 0 255 0 0\n1 0 0 0 128 255\n")
+    xyz, table = formats.read_cloud(str(path))
+    assert xyz.shape == (2, 3)
+    assert table["red"].tolist() == [255, 0] and table["green"].tolist() == [0, 128] and table["blue"].tolist() == [0, 255]
+    out = str(tmp_path / "coloured.ply")
+    formats.save_cloud(out, xyz, table)
+    assert formats.read_cloud(out)[1]["blue"].tolist() == [0, 255]
+    plain = tmp_path / "plain.xyz"
+    plain.write_text("0 0 0\n1 2 3 7\n")
+    assert formats.read_cloud(str(plain))[1] is None

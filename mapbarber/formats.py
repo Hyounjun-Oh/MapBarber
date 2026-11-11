@@ -141,7 +141,8 @@ def _read_ply(path):
 
 
 def _read_xyz(path):
-    rows = []
+    """Text points, one per line; three more numbers after x y z are read as an RGB colour."""
+    rows, colours = [], []
     with open(path, "r", errors="replace") as f:
         for line in f:
             parts = line.replace(",", " ").replace(";", " ").split()
@@ -151,11 +152,34 @@ def _read_xyz(path):
                 rows.append([float(v) for v in parts[:3]])
             except ValueError:
                 continue
-    return np.asarray(rows, np.float64).reshape(-1, 3)
+            try:
+                colours.append([float(v) for v in parts[3:6]] if len(parts) >= 6 else None)
+            except ValueError:
+                colours.append(None)
+    xyz = np.asarray(rows, np.float64).reshape(-1, 3)
+    if not rows or any(c is None for c in colours):
+        return xyz, None
+    rgb = np.asarray(colours)
+    if rgb.min() < 0 or rgb.max() > 255:
+        return xyz, None
+    table = _xyz_table(xyz)
+    coloured = np.zeros(len(xyz), np.dtype(table.dtype.descr + [("red", "u1"), ("green", "u1"), ("blue", "u1")]))
+    for name in "xyz":
+        coloured[name] = table[name]
+    for i, name in enumerate(("red", "green", "blue")):
+        coloured[name] = np.round(rgb[:, i] * (255.0 if rgb.max() <= 1.0 else 1.0))
+    return xyz, coloured
 
 
 def read_cloud(path):
     """Point file -> (xyz (N, 3), per-point record array with every field, or None)."""
+    xyz, table = _read_cloud(path)
+    if not np.isfinite(xyz).all(axis=1).any():
+        raise ValueError("no x, y, z coordinates were found in the file")
+    return xyz, table
+
+
+def _read_cloud(path):
     fmt = detect(path)
     if fmt == "pcd":
         table = _read_pcd(path)
@@ -164,7 +188,7 @@ def read_cloud(path):
         table = _read_ply(path)
         return _columns(table), table
     if fmt == "xyz":
-        return _read_xyz(path), None
+        return _read_xyz(path)
     if fmt == "npy":
         return np.asarray(np.load(path), np.float64).reshape(-1, 3), None
     if fmt == "npz":

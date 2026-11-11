@@ -1,0 +1,168 @@
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/logo-dark.svg">
+    <img src="docs/logo-light.svg" alt="MapBarber — una barbería para mapas de robots" width="560">
+  </picture>
+</p>
+
+<p align="center">
+  <a href="README.md">English</a> · <a href="README.ko.md">한국어</a> · <a href="README.ja.md">日本語</a> · <a href="README.zh.md">简体中文</a> · <a href="README.de.md">Deutsch</a> · <b>Español</b>
+</p>
+
+**Una barbería para mapas de robots.** Recorta los vóxeles, puntos y píxeles sueltos que dejan los sensores ruidosos y rellena las calvas, en octrees de OctoMap, nubes de puntos y rejillas de ocupación 2D de ROS, todo desde una sola ventana.
+
+[![tests](https://github.com/Hyounjun-Oh/mapbarber/actions/workflows/tests.yml/badge.svg)](https://github.com/Hyounjun-Oh/mapbarber/actions/workflows/tests.yml)
+![python](https://img.shields.io/badge/python-3.10%2B-blue)
+![license](https://img.shields.io/badge/license-Unlicense-green)
+
+![Abrir tres tipos de mapa en pestañas, convertir un mapa de vóxeles en una rejilla 2D y cambiar de idioma](docs/overview.gif)
+
+Abre o suelta archivos y MapBarber reconoce qué contiene cada uno y lo abre en su propia pestaña con el editor adecuado: un editor de vóxeles para octrees, un editor de puntos para nubes y un editor de pintura para rejillas de ocupación 2D. Los mapas se pueden convertir entre los tres tipos, y cada cambio se puede deshacer hasta que guardes.
+
+## Inicio rápido
+
+```bash
+git clone https://github.com/Hyounjun-Oh/mapbarber.git
+cd mapbarber
+./mapbarber.sh                                      # ventana vacía: suelta mapas en ella
+./mapbarber.sh demo/office_octomap.bt demo/warehouse_map.yaml   # o abre archivos, una pestaña por archivo
+```
+
+La primera ejecución crea un entorno virtual propio en `.venv/` e instala NumPy, SciPy, VTK y PySide6 (unos 500 MB). Las siguientes arrancan al instante. Necesitas Python 3.10 o posterior y una sesión de escritorio (X11, o Wayland mediante XWayland, que el script elige por ti).
+
+¿Prefieres pip? `pip install .` instala un comando `mapbarber` que hace lo mismo.
+
+**Pruébalo con datos realistas:** [`demo/`](demo/README.md) contiene mapas generados con sensores simulados, cada uno con defectos y dimensiones reales conocidos, y una lista de comprobación paso a paso.
+
+## Qué abre
+
+| Tipo de mapa | Archivos | Se abre en |
+|---|---|---|
+| Mapa de vóxeles | OctoMap `.bt` (binario), `.ot` (`OcTree`, `OcTreeStamped`, `ColorOcTree`), archivos `.npz` de vóxeles | editor de vóxeles |
+| Nube de puntos | `.pcd` (ascii, binary, organizada), `.ply` (ascii, binary), `.xyz` / `.txt` / `.csv` (columnas RGB opcionales), `.npy`, `.npz` | editor de nubes de puntos |
+| Rejilla de ocupación 2D | `.yaml` de map_server con `.pgm` / `.png` / `.bmp`, o solo la imagen | editor de rejillas |
+
+La detección mira primero la extensión y después la firma del archivo, así que una copia como `map.bt.bak_20240101` también se abre como octree. Al abrir solo un `.pgm` se lee también el `.yaml` contiguo si apunta a esa imagen. Los archivos dañados o ajenos se rechazan con una breve explicación.
+
+## Editor de mapas de vóxeles
+
+![Quitar motas flotantes y un bloque fantasma, rellenar un hueco y añadir vóxeles](docs/voxel.gif)
+
+- **Herramientas:** Navegar `H`, Seleccionar `V`, Borrar `E`, Añadir `B`, Medir `I`. El pincel es un cubo de 1 a 31 celdas; `[` y `]` cambian su tamaño. Añadir crea una capa hacia fuera desde la cara pulsada o coloca vóxeles sobre un plano de trabajo horizontal.
+- **Selección:** `Mayús`+arrastrar selecciona dentro de un rectángulo de pantalla (*Solo la capa frontal* omite los vóxeles ocultos). El clic derecho deselecciona bajo el cursor; `Mayús`+arrastrar con el botón derecho deselecciona un rectángulo.
+- **Seleccionar islas** encuentra grupos de vóxeles que no tocan nada más: las motas flotantes que producen las cámaras de profundidad. Solo selecciona, así que puedes revisar antes de pulsar `Supr`.
+- **Caja:** en la vista 3D, arrastra las flechas de colores para moverla en x, y o z, y los puntos de sus caras para cambiar su tamaño (o escribe los límites). Después selecciona, borra o rellena su interior.
+- **Corte:** corta el espacio con un plano en x, y o z y trabaja en un lado; el otro queda oculto y protegido. Arrastra la flecha del plano, cambia de lado y, al terminar, pulsa *Restaurar vista*.
+- **Regla:** haz clic en dos vóxeles para leer la distancia, Δx/Δy/Δz y la longitud en vóxeles. Mantén `Mayús` para fijar la medida a un eje; activa *Ajustar a los centros de vóxel* para medir de centro a centro.
+- Los vóxeles añadidos desde el último guardado se ven en blanco; la selección, en rosa.
+
+## Editor de nubes de puntos
+
+![Seleccionar atípicos, borrar una estela, colorear por intensidad y aclarar](docs/cloud.gif)
+
+- **Herramientas:** Navegar `H`, Seleccionar `V`, Borrar `E`, Medir `I`, con un pincel esférico alrededor del punto pulsado (`[` / `]` cambian el radio), selección rectangular y deselección con clic derecho.
+- **Filtros de ruido** seleccionan atípicos estadísticos (distancia media a los vecinos muy superior a la normal) o puntos dispersos (muy pocos vecinos dentro de un radio).
+- **Aclarar** conserva un punto por celda cúbica. **Caja** y **Corte** funcionan como en el editor de vóxeles, y la caja además puede borrar todo lo exterior.
+- **Colorear por** altura, RGB guardado o cualquier campo numérico como `intensity` o `ring`.
+- **Regla** mide la distancia real entre dos puntos elegidos.
+- Los puntos solo se eliminan, así que al guardar en PCD o PLY se conservan todos los campos de cada punto restante.
+
+## Editor de rejillas de ocupación 2D
+
+![Quitar motas, cerrar una puerta, dibujar obstáculos, rellenar un hueco y recortar el borde](docs/grid.gif)
+
+- **Herramientas:** Navegar `H`, Lápiz `B`, Línea `L`, Rectángulo `R`, Rellenar `G`, Medir `I`. Pinta *ocupado*, *libre* o *desconocido* con `O`, `F`, `U`; `[` / `]` cambian el grosor del lápiz.
+- **Restricciones como en PowerPoint:** con `Mayús`, la línea (o la regla) se fija a 0°, 45° o 90° y el rectángulo se vuelve cuadrado; `Alt` dibuja el rectángulo desde su centro; `Mayús`+clic con el lápiz traza una recta desde el último punto.
+- **Quitar motas** libera las manchas ocupadas pequeñas y aisladas.
+- **Recortar el borde desconocido** elimina el margen sin explorar y mueve el origen para que nada del mapa se desplace.
+- **Información del mapa** edita la resolución y el origen (x, y, guiñada). Las flechas roja y verde marcan el origen del mapa.
+- **Regla** da la distancia en metros y en píxeles, y Δx/Δy en el marco del mapa (incluidos orígenes girados).
+- Al alejar la vista, las paredes finas siguen visibles: ocupado prevalece sobre desconocido, y desconocido sobre libre.
+- Al guardar se escriben la imagen y un YAML de map_server lado a lado (modos `trinary`, `scale` y `raw`, `negate`).
+
+## Varios mapas a la vez
+
+Cada archivo se abre en su propia pestaña, y abrir uno que ya está abierto cambia a su pestaña. `Ctrl+Tab` / `Ctrl+Mayús+Tab` cambian de pestaña, `Ctrl+W` cierra una (preguntando antes si tiene cambios sin guardar) y puedes soltar varios archivos a la vez.
+
+El menú **Convertir** transforma el mapa actual en otro tipo en una pestaña nueva, sin tocar el original:
+
+| De \ A | Mapa de vóxeles | Nube de puntos | Rejilla 2D |
+|---|---|---|---|
+| Mapa de vóxeles | — | centros de vóxel | proyectar una franja de altura |
+| Nube de puntos | voxelizar con el tamaño elegido | — | voxelizar y luego proyectar |
+| Rejilla 2D | levantar paredes hasta una altura | — | — |
+
+## Línea de comandos
+
+Sin `--output` ni `--info` se abre el editor. Con ellos no se muestra nada y el trabajo se hace en la terminal:
+
+```bash
+./mapbarber.sh room.bt --info
+./mapbarber.sh room.bt --remove-islands 20 -o room_clean.bt
+./mapbarber.sh room.bt --z-band 0.1 1.8 -o floor.yaml          # octree -> mapa de ROS
+./mapbarber.sh floor.yaml --clear-speckles 4 -o floor_clean.yaml
+./mapbarber.sh floor.yaml --wall-height 2.0 -o walls.bt        # mapa de ROS -> octree
+./mapbarber.sh scan.pcd --remove-outliers 16 2.0 -o scan_clean.pcd
+./mapbarber.sh scan.pcd -r 0.05 -o scan.bt                     # nube -> octree
+```
+
+La extensión de salida decide el tipo de salida.
+
+## Atajos de teclado
+
+Los atajos siguen las convenciones habituales de escritorio: Photoshop, Figma y PowerPoint para herramientas y restricciones, y el sistema operativo para archivos y edición. En macOS, `Ctrl` es `⌘`.
+
+| Teclas | Acción |
+|---|---|
+| `Ctrl+O` / `Ctrl+S` / `Ctrl+Mayús+S` | abrir / guardar / guardar como o exportar |
+| `Ctrl+N` / `Ctrl+Mayús+N` | nuevo mapa de vóxeles / nueva rejilla 2D |
+| `Ctrl+W` / `Ctrl+Tab` / `Ctrl+Mayús+Tab` | cerrar pestaña / pestaña siguiente / anterior |
+| `Ctrl+Z` / `Ctrl+Mayús+Z` o `Ctrl+Y` | deshacer / rehacer |
+| `H` `V` `E` `B` `L` `R` `G` `I` | navegar, seleccionar, borrar, añadir·lápiz, línea, rectángulo, rellenar, medir |
+| `[` / `]` | pincel más pequeño / más grande |
+| `Supr` o `Retroceso` | eliminar selección |
+| `Ctrl+A` / `Ctrl+Mayús+I` / `Esc` o `Ctrl+D` | seleccionar todo lo visible / invertir / deseleccionar |
+| arrastrar izquierdo / arrastrar central o `Espacio`+arrastrar / rueda | rotar / desplazar / zoom (2D: con Navegar, arrastrar izquierdo desplaza) |
+| `Mayús`+arrastrar / `Mayús`+arrastrar derecho / clic derecho | selección rectangular / deselección rectangular / deseleccionar |
+| `Mayús` / `Alt` al dibujar | fijar a 0°·45°·90° o cuadrado / dibujar desde el centro |
+| `1` `3` `7` / `0` o `Inicio` | vista frontal, lateral, superior / isométrica (también teclado numérico) |
+| `Ctrl+=` / `Ctrl+-` / `Ctrl+0` | acercar / alejar / ajustar a la ventana (2D) |
+| `F11` / `F1` | pantalla completa / controles del editor actual |
+
+## Idiomas
+
+La interfaz está en English, 한국어, 日本語, 简体中文, Deutsch y Español, y se cambia desde el menú **Idioma**; la elección se recuerda. Para añadir un idioma, copia `mapbarber/locales/en.json`, traduce los valores, añade el código a `LANGUAGES` en `mapbarber/i18n.py` y ejecuta las pruebas: comprueban que estén todas las claves y marcadores.
+
+## Notas sobre archivos
+
+- **Al guardar como octree** solo se escriben las celdas ocupadas. La información de espacio libre del archivo original no se vuelve a escribir, lo que coincide con el uso habitual de los mapas estáticos para comprobar colisiones.
+- **Al guardar como `.ot`** todas las celdas ocupadas reciben el mismo valor log-odds (3,5, p ≈ 0,97).
+- **PCD / PLY** conservan todos los campos de cada punto. Las PCD organizadas se abren omitiendo los puntos no válidos (NaN) y se guardan sin organizar. `.xyz`, `.csv` y `.npy` solo guardan coordenadas, aunque las columnas RGB de un `.xyz` se conservan al guardar en PCD o PLY. No se admite PCD binario comprimido.
+- **Las rejillas** siguen las reglas de map_server: modos `trinary`, `scale` y `raw`, `negate` y los umbrales de ocupado y libre guardados en el YAML.
+- **Copias de seguridad:** al sobrescribir un archivo se conserva el anterior como `name.bak_YYYYmmdd_HHMMSS`. Se puede desactivar en el menú Archivo.
+
+## Cómo funciona
+
+MapBarber es una implementación independiente escrita a partir de los formatos de archivo publicados. No usa ni deriva del código fuente de OctoMap, PCL o map_server.
+
+- Los archivos octree se leen y escriben como un *octree lineal*. Las celdas ocupadas forman un array ordenado de códigos Morton, de modo que cada nodo del árbol es un tramo contiguo de ese array y se localiza por búsqueda binaria. No se construye ningún árbol de punteros.
+- La edición trabaja sobre un array ordenado de claves de celda empaquetadas mediante operaciones de conjuntos; deshacer y rehacer funcionan igual.
+- Las componentes conexas (islas, motas) y las consultas de vecinos usan SciPy; la visualización usa glifos de VTK dentro de una ventana Qt.
+
+## Desarrollo
+
+```bash
+python -m venv .venv && .venv/bin/pip install -e ".[dev]"
+.venv/bin/pytest                                   # pruebas principales, sin pantalla
+MAPBARBER_GUI_TESTS=1 .venv/bin/pytest            # además, pruebas de extremo a extremo en una ventana real
+.venv/bin/python tools/make_examples.py            # regenerar examples/
+.venv/bin/python tools/make_demo.py                # regenerar demo/ (--large para archivos de rendimiento)
+.venv/bin/python tools/record_demo.py docs         # volver a grabar las animaciones (requiere ffmpeg)
+.venv/bin/python tools/make_logo.py                # regenerar el icono y los logotipos
+```
+
+Define `MAPBARBER_QT` como `PySide6`, `PySide2` o `PyQt5` para elegir el enlace de Qt.
+
+## Licencia
+
+Dominio público, bajo la [Unlicense](LICENSE). Úsalo para lo que quieras, con o sin atribución. Las dependencias mantienen sus propias licencias: PySide6 (LGPL-3.0), VTK (BSD-3-Clause), NumPy y SciPy (BSD-3-Clause).

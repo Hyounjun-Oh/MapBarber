@@ -72,8 +72,26 @@ def _parse_header(data):
             fields[key] = value.strip()
 
 
+DAMAGED = "the octree data ends early or is malformed; the file is truncated or damaged"
+
+
 def read_bt(path):
     """Binary octree -> (occupied keys, resolution)."""
+    try:
+        return _read_bt(path)
+    except (IndexError, KeyError, struct.error) as error:
+        raise ValueError(DAMAGED) from error
+
+
+def read_ot(path):
+    """Full octree (OcTree, OcTreeStamped or ColorOcTree) -> (occupied keys, resolution)."""
+    try:
+        return _read_ot(path)
+    except (IndexError, KeyError, struct.error) as error:
+        raise ValueError(DAMAGED) from error
+
+
+def _read_bt(path):
     with open(path, "rb") as f:
         data = f.read()
     fields, pos = _parse_header(data)
@@ -95,8 +113,7 @@ def read_bt(path):
     return _keys_from_blocks(blocks), float(fields["res"])
 
 
-def read_ot(path):
-    """Full octree (OcTree, OcTreeStamped or ColorOcTree) -> (occupied keys, resolution)."""
+def _read_ot(path):
     with open(path, "rb") as f:
         data = f.read()
     fields, pos = _parse_header(data)

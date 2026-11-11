@@ -8,13 +8,44 @@ from .editor import Editor
 from .formats import GRID, VOXEL
 from .grid import FREE, OCCUPIED, UNKNOWN, GridMap
 from .qt import QtCore, QtGui, QtWidgets
+from .ruler import RULER_RGB, measure
 from .widgets import RANGE_LIMIT, ask_numbers, button, int_spin, set_quietly, spin
 
 Qt = QtCore.Qt
 STATE_RGB = np.array([[250, 250, 250], [20, 20, 24], [128, 132, 140]], np.uint8)
 STATES = ((OCCUPIED, "state_occupied", "O"), (FREE, "state_free", "F"), (UNKNOWN, "state_unknown", "U"))
 TOOL_PEN = {"pen", "line", "rectangle"}
+
+
+def snap_angle(start, end):
+    """End cell moved onto the nearest 0, 45 or 90 degree direction from the start cell."""
+    dr, dc = end[0] - start[0], end[1] - start[1]
+    if dr == 0 and dc == 0:
+        return end
+    angle = round(math.atan2(dr, dc) / (math.pi / 4)) * (math.pi / 4)
+    along = dr * math.sin(angle) + dc * math.cos(angle)
+    return start[0] + int(round(along * math.sin(angle))), start[1] + int(round(along * math.cos(angle)))
+
+
+def shape_corners(start, end, square, centred):
+    """Rectangle corners from a drag: square keeps equal sides, centred grows the shape around the start cell."""
+    dr, dc = end[0] - start[0], end[1] - start[1]
+    if square:
+        side = max(abs(dr), abs(dc))
+        dr, dc = (side if dr >= 0 else -side), (side if dc >= 0 else -side)
+    if centred:
+        return (start[0] - dr, start[1] - dc), (start[0] + dr, start[1] + dc)
+    return start, (start[0] + dr, start[1] + dc)
 DEFAULTS = {"brush": 1, "state": OCCUPIED, "speckle": 4}
+
+
+def min_pool(rgb, step):
+    """Shrink an image by keeping the darkest pixel of each block, so thin obstacles survive zooming out."""
+    height, width = rgb.shape[0] // step * step, rgb.shape[1] // step * step
+    if height == 0 or width == 0:
+        return rgb
+    blocks = rgb[:height, :width].reshape(height // step, step, width // step, step, 3)
+    return blocks.min(axis=(1, 3))
 
 
 def cosmetic_pen(rgb, width=1.5, style=Qt.SolidLine):
@@ -48,9 +79,13 @@ class MapItem(QtWidgets.QGraphicsItem):
         x1, y1 = min(int(math.ceil(area.right())), self.rgb.shape[1]), min(int(math.ceil(area.bottom())), self.rgb.shape[0])
         if x1 <= x0 or y1 <= y0:
             return
-        block = np.ascontiguousarray(self.rgb[y0:y1, x0:x1])
+        block = self.rgb[y0:y1, x0:x1]
+        step = int(1.0 / max(painter.worldTransform().m11(), 1e-6))
+        if step > 1:
+            block = min_pool(block, step)
+        block = np.ascontiguousarray(block)
         data = block.tobytes()
-        image = QtGui.QImage(data, x1 - x0, y1 - y0, 3 * (x1 - x0), QtGui.QImage.Format_RGB888)
+        image = QtGui.QImage(data, block.shape[1], block.shape[0], 3 * block.shape[1], QtGui.QImage.Format_RGB888)
         painter.drawImage(QtCore.QRectF(x0, y0, x1 - x0, y1 - y0), image)
 
 
@@ -66,7 +101,23 @@ class Canvas(QtWidgets.QGraphicsView):
         self.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.setMouseTracking(True)
         self.setRenderHint(QtGui.QPainter.Antialiasing, False)
+        self.setFocusPolicy(Qt.StrongFocus)
         self._pan = None
+        self._space = False
+
+    def keyPressEvent(self, event):
+        if event.key() == Qt.Key_Space and not event.isAutoRepeat():
+            self._space = True
+            self.setCursor(Qt.OpenHandCursor)
+            return
+        super().keyPressEvent(event)
+
+    def keyReleaseEvent(self, event):
+        if event.key() == Qt.Key_Space and not event.isAutoRepeat():
+            self._space = False
+            self.editor.set_tool(self.editor.tool)
+            return
+        super().keyReleaseEvent(event)
 
     def wheelEvent(self, event):
         factor = 1.2 ** (event.angleDelta().y() / 120.0)
@@ -79,12 +130,12 @@ class Canvas(QtWidgets.QGraphicsView):
     def mousePressEvent(self, event):
         point, position = self._scene_point(event)
         panning = event.button() in (Qt.MiddleButton, Qt.RightButton) or (
-            event.button() == Qt.LeftButton and self.editor.tool == "view")
+            event.button() == Qt.LeftButton and (self.editor.tool == "view" or self._space))
         if panning:
             self._pan = position
             self.setCursor(Qt.ClosedHandCursor)
         elif event.button() == Qt.LeftButton:
-            self.editor.press(point)
+            self.editor.press(point, event.modifiers())
 
     def mouseMoveEvent(self, event):
         point, position = self._scene_point(event)
@@ -94,20 +145,23 @@ class Canvas(QtWidgets.QGraphicsView):
             self.horizontalScrollBar().setValue(self.horizontalScrollBar().value() - delta.x())
             self.verticalScrollBar().setValue(self.verticalScrollBar().value() - delta.y())
             return
-        self.editor.move(point, bool(event.buttons() & Qt.LeftButton))
+        self.editor.move(point, bool(event.buttons() & Qt.LeftButton), event.modifiers())
 
     def mouseReleaseEvent(self, event):
         point, _ = self._scene_point(event)
         if self._pan is not None:
             self._pan = None
-            self.editor.set_tool(self.editor.tool)
+            if self._space:
+                self.setCursor(Qt.OpenHandCursor)
+            else:
+                self.editor.set_tool(self.editor.tool)
         elif event.button() == Qt.LeftButton:
-            self.editor.release(point)
+            self.editor.release(point, event.modifiers())
 
 
 class GridEditor(Editor):
     kind = GRID
-    tools = (("view", "1"), ("pen", "2"), ("line", "3"), ("rectangle", "4"), ("fill", "5"))
+    tools = (("view", "H"), ("pen", "B"), ("line", "L"), ("rectangle", "R"), ("fill", "G"), ("measure", "I"))
     export_filters = (("ROS map, YAML + PGM", "yaml"), ("ROS map, YAML + PNG", "png"), ("PGM image + YAML", "pgm"))
 
     def __init__(self, window):
@@ -124,12 +178,27 @@ class GridEditor(Editor):
         self.preview_rect = scene.addRect(QtCore.QRectF(), cosmetic_pen((255, 210, 40), 2.0, Qt.DashLine))
         self.axis_x = scene.addLine(QtCore.QLineF(), cosmetic_pen((230, 60, 50), 3.0))
         self.axis_y = scene.addLine(QtCore.QLineF(), cosmetic_pen((60, 200, 80), 3.0))
-        for item in (self.hover, self.preview_line, self.preview_rect):
+        ruler_rgb = tuple(int(c * 255) for c in RULER_RGB)
+        self.ruler_line = scene.addLine(QtCore.QLineF(), cosmetic_pen(ruler_rgb, 2.5))
+        self.ruler_ends = []
+        for _ in range(2):
+            end = scene.addEllipse(QtCore.QRectF(-5, -5, 10, 10), cosmetic_pen((20, 20, 24), 1.5), QtGui.QBrush(QtGui.QColor(*ruler_rgb)))
+            end.setFlag(QtWidgets.QGraphicsItem.ItemIgnoresTransformations, True)
+            self.ruler_ends.append(end)
+        self.ruler_text = QtWidgets.QGraphicsTextItem()
+        self.ruler_text.setFlag(QtWidgets.QGraphicsItem.ItemIgnoresTransformations, True)
+        scene.addItem(self.ruler_text)
+        for item in (self.hover, self.preview_line, self.preview_rect, self.ruler_line, self.ruler_text, *self.ruler_ends):
             item.setZValue(3)
             item.hide()
+        self.ruler_text.setZValue(4)
+        self.ruler_first = None
+        self.ruler_done = False
+        self.measurement = None
         self._before = None
         self._start = None
         self._last = None
+        self._pen_end = None
 
     @property
     def dirty(self):
@@ -141,6 +210,8 @@ class GridEditor(Editor):
     def set_document(self, payload, path=None, fmt=None):
         self.map = payload
         self.path, self.format = path, fmt
+        self._pen_end = None
+        self.clear_ruler()
         self.redraw()
         self.sync_panel()
 
@@ -207,6 +278,16 @@ class GridEditor(Editor):
         form.addRow(button(t("trim"), self.trim, t("trim_tip")))
         layout.addWidget(group)
 
+        group = W.QGroupBox(t("ruler"))
+        group.setToolTip(t("ruler_tip_grid"))
+        form = W.QFormLayout(group)
+        self.ruler_label = W.QLabel(self._ruler_detail() if self.measurement else t("ruler_hint"))
+        self.ruler_label.setWordWrap(True)
+        self.ruler_label.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        form.addRow(self.ruler_label)
+        form.addRow(button(t("ruler_clear"), self.clear_ruler))
+        layout.addWidget(group)
+
         layout.addStretch(1)
         legend = W.QLabel(t("grid_legend"))
         legend.setWordWrap(True)
@@ -231,10 +312,17 @@ class GridEditor(Editor):
         self.state_buttons.button(value).setChecked(True)
 
     def extra_actions(self):
-        return [(self.tr(key), shortcut, lambda v=value: self.set_state(v)) for value, key, shortcut in STATES]
+        return super().extra_actions() + [(self.tr(key), shortcut, lambda v=value: self.set_state(v))
+                                          for value, key, shortcut in STATES]
 
     def view_actions(self):
-        return [(self.tr("view_fit"), self.fit)]
+        return [(self.tr("view_fit"), self.fit, ["Ctrl+0", "Home"])]
+
+    def adjust_brush(self, step):
+        self.brush.stepBy(step)
+
+    def zoom(self, factor):
+        self.canvas.scale(factor, factor)
 
     def conversions(self):
         return [(self.tr("to_voxels"), self.to_voxels)]
@@ -291,26 +379,92 @@ class GridEditor(Editor):
         if changed:
             self.status(self.tr("status_painted", what=label, n=changed))
 
-    def press(self, point):
+    def clear_ruler(self):
+        self.ruler_first, self.ruler_done, self.measurement = None, False, None
+        for item in (self.ruler_line, self.ruler_text, *self.ruler_ends):
+            item.hide()
+        if self.panel_alive:
+            self.ruler_label.setText(self.tr("ruler_hint"))
+
+    def measure_cells(self, start, end):
+        """Distance between two cell centres in metres, pixels and per-axis offsets in the map frame."""
+        a, b = self.map.world(*start), self.map.world(*end)
+        result = measure(a, b)
+        result.update(px=float(np.hypot(end[0] - start[0], end[1] - start[1])), dc=int(end[1] - start[1]),
+                      dr=int(end[0] - start[0]))
+        return result
+
+    def _ruler_detail(self):
+        return self.tr("ruler_detail_grid", **self.measurement)
+
+    def _scene_centre(self, cell):
+        return QtCore.QPointF(cell[1] + 0.5, self.map.shape[0] - cell[0] - 0.5)
+
+    def _draw_ruler(self, end):
+        result = self.measure_cells(self.ruler_first, end)
+        a, b = self._scene_centre(self.ruler_first), self._scene_centre(end)
+        self.ruler_line.setLine(QtCore.QLineF(a, b))
+        for item, position in zip(self.ruler_ends, (a, b)):
+            item.setPos(position)
+            item.show()
+        text = self.tr("ruler_short_grid", **result)
+        self.ruler_text.setHtml(f'<div style="background-color:#15171e; color:#ffffff; font-weight:600;">&nbsp;{text}&nbsp;</div>')
+        self.ruler_text.setPos((a + b) / 2)
+        for item in (self.ruler_line, self.ruler_text):
+            item.show()
+        return result
+
+    def _measure_press(self, row, column, modifiers=Qt.NoModifier):
+        if self.ruler_first is None or self.ruler_done:
+            self.clear_ruler()
+            self.ruler_first = (row, column)
+            self.ruler_ends[0].setPos(self._scene_centre(self.ruler_first))
+            self.ruler_ends[0].show()
+            self.ruler_label.setText(self.tr("ruler_second"))
+            self.status(self.tr("ruler_second"), 0)
+            return
+        end = snap_angle(self.ruler_first, (row, column)) if modifiers & Qt.ShiftModifier else (row, column)
+        self.measurement = self._draw_ruler(end)
+        self.ruler_done = True
+        detail = self._ruler_detail()
+        self.ruler_label.setText(detail)
+        self.status(detail.replace("\n", "  ·  "), 0)
+
+    def press(self, point, modifiers=Qt.NoModifier):
         if self.tool == "view":
             return
         row, column = self._cell(point)
+        if self.tool == "measure":
+            self._measure_press(row, column, modifiers)
+            return
         state = self.paint_state()
         self._before = self.map.snapshot()
         self._start = self._last = (row, column)
         if self.tool == "pen":
-            self.map.stamp(row, column, self.brush.value(), state)
-            half = self.brush.value()
-            self._redraw_rows((row - half, row + half), (column - half, column + half))
+            size = self.brush.value()
+            if modifiers & Qt.ShiftModifier and self._pen_end is not None:
+                self.map.line(self._pen_end, (row, column), size, state)
+                self.redraw()
+            else:
+                self.map.stamp(row, column, size, state)
+                self._redraw_rows((row - size, row + size), (column - size, column + size))
         elif self.tool == "fill":
             self.map.flood(row, column, state)
             self.redraw()
             self._finish(self.tr("tool_fill"))
 
-    def move(self, point, pressed):
+    def _shape(self, end, modifiers):
+        if self.tool == "line":
+            return self._start, snap_angle(self._start, end) if modifiers & Qt.ShiftModifier else end
+        return shape_corners(self._start, end, bool(modifiers & Qt.ShiftModifier), bool(modifiers & Qt.AltModifier))
+
+    def move(self, point, pressed, modifiers=Qt.NoModifier):
         row, column = self._cell(point)
         if self.tool != "view":
             self._show_hover(row, column)
+        if self.tool == "measure" and self.ruler_first is not None and not self.ruler_done:
+            end = snap_angle(self.ruler_first, (row, column)) if modifiers & Qt.ShiftModifier else (row, column)
+            self._draw_ruler(end)
         if not pressed or self._before is None:
             return
         size = self.brush.value()
@@ -321,27 +475,32 @@ class GridEditor(Editor):
             self._last = (row, column)
         elif self.tool == "line":
             height = self.map.shape[0]
-            self.preview_line.setLine(self._start[1] + 0.5, height - self._start[0] - 0.5, column + 0.5, height - row - 0.5)
+            start, end = self._shape((row, column), modifiers)
+            self.preview_line.setLine(start[1] + 0.5, height - start[0] - 0.5, end[1] + 0.5, height - end[0] - 0.5)
             self.preview_line.show()
         elif self.tool == "rectangle":
             height = self.map.shape[0]
-            r0, r1 = sorted((self._start[0], row))
-            c0, c1 = sorted((self._start[1], column))
+            first, second = self._shape((row, column), modifiers)
+            r0, r1 = sorted((first[0], second[0]))
+            c0, c1 = sorted((first[1], second[1]))
             self.preview_rect.setRect(QtCore.QRectF(c0, height - r1 - 1, c1 - c0 + 1, r1 - r0 + 1))
             self.preview_rect.show()
 
-    def release(self, point):
+    def release(self, point, modifiers=Qt.NoModifier):
         if self._before is None:
             return
         row, column = self._cell(point)
         if self.tool == "line":
             self.preview_line.hide()
-            self.map.line(self._start, (row, column), self.brush.value(), self.paint_state())
+            start, end = self._shape((row, column), modifiers)
+            self.map.line(start, end, self.brush.value(), self.paint_state())
             self.redraw()
         elif self.tool == "rectangle":
             self.preview_rect.hide()
-            self.map.rectangle(self._start, (row, column), self.paint_state())
+            self.map.rectangle(*self._shape((row, column), modifiers), self.paint_state())
             self.redraw()
+        elif self.tool == "pen":
+            self._pen_end = self._last
         self._finish(self.tool_label(self.tool))
 
     def _show_hover(self, row, column):

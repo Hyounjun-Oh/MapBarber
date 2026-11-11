@@ -1,0 +1,3 @@
+# controller parameters, not a map description
+max_speed: 0.5
+acceleration: 1.2

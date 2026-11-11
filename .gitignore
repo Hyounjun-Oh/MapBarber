@@ -6,3 +6,4 @@ build/
 dist/
 .pytest_cache/
 *.bak_*
+demo/large/

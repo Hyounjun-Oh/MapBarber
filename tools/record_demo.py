@@ -18,6 +18,7 @@ from mapbarber.qt import QtCore, QtGui, QtTest, QtWidgets  # noqa: E402
 
 Qt = QtCore.Qt
 EXAMPLES = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "examples")
+DEMO = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "demo")
 WINDOW_SIZE = (1280, 760)
 FPS = 12
 CURSOR = [(0, 0), (0, 17), (4.5, 13), (7.5, 20), (10, 19), (7, 12), (13, 12)]
@@ -115,15 +116,18 @@ class Recorder:
         return QtCore.QPointF(widget.mapTo(self.window, QtCore.QPoint(int(point.x()), int(point.y()))))
 
     def click_widget(self, widget, steps=10):
-        self.glide(self.in_window(widget), steps)
+        spot = widget.rect().center()
+        if isinstance(widget, QtWidgets.QCheckBox):
+            spot = QtCore.QPoint(10, widget.height() // 2)
+        self.glide(self.in_window(widget, spot), steps)
         self.ripple = 4
-        QtTest.QTest.mouseClick(widget, Qt.LeftButton)
+        QtTest.QTest.mouseClick(widget, Qt.LeftButton, Qt.NoModifier, spot)
         self.frame(3)
 
     def shortcut(self, sequence):
         wanted = QtGui.QKeySequence(sequence)
         for action in self.window.actions():
-            if action.shortcut() == wanted and action.isEnabled():
+            if wanted in action.shortcuts() and action.isEnabled():
                 action.trigger()
                 return
 
@@ -192,20 +196,28 @@ class Recorder:
         viewport = self.window.editor.canvas.viewport()
         return viewport.mapFrom(self.window, QtCore.QPoint(int(point.x()), int(point.y())))
 
-    def canvas_drag(self, cells, steps_each=6):
+    def canvas_move(self, point, modifiers=Qt.NoModifier, buttons=Qt.NoButton):
+        local = QtCore.QPointF(self.canvas_local(point))
+        event = QtGui.QMouseEvent(QtCore.QEvent.MouseMove, local, local, Qt.NoButton, buttons, modifiers)
+        QtWidgets.QApplication.sendEvent(self.window.editor.canvas.viewport(), event)
+
+    def canvas_move_to(self, cell, modifiers=Qt.NoModifier, steps=10):
+        self.glide(self.cell_to_window(*cell), steps, lambda p: self.canvas_move(p, modifiers))
+
+    def canvas_drag(self, cells, steps_each=6, modifiers=Qt.NoModifier):
         viewport = self.window.editor.canvas.viewport()
         first = self.cell_to_window(*cells[0])
-        self.glide(first, 8, lambda p: QtTest.QTest.mouseMove(viewport, self.canvas_local(p)))
-        QtTest.QTest.mousePress(viewport, Qt.LeftButton, Qt.NoModifier, self.canvas_local(first))
+        self.glide(first, 8, lambda p: self.canvas_move(p))
+        QtTest.QTest.mousePress(viewport, Qt.LeftButton, modifiers, self.canvas_local(first))
         self.ripple = 4
         for cell in cells[1:]:
             target = self.cell_to_window(*cell)
-            self.glide(target, steps_each, lambda p: QtTest.QTest.mouseMove(viewport, self.canvas_local(p), 1))
-        QtTest.QTest.mouseRelease(viewport, Qt.LeftButton, Qt.NoModifier, self.canvas_local(self.cursor))
+            self.glide(target, steps_each, lambda p: self.canvas_move(p, modifiers, Qt.LeftButton))
+        QtTest.QTest.mouseRelease(viewport, Qt.LeftButton, modifiers, self.canvas_local(self.cursor))
         self.frame(3)
 
-    def canvas_click(self, row, column):
-        self.canvas_drag([(row, column)])
+    def canvas_click(self, row, column, modifiers=Qt.NoModifier):
+        self.canvas_drag([(row, column)], modifiers=modifiers)
 
     def write_gif(self, path, width=960):
         palette = (f"fps={FPS},scale={width}:-1:flags=lanczos,split[a][b];[a]palettegen=max_colors=160:stats_mode=diff[p];"
@@ -274,8 +286,13 @@ def demo_overview(rec, out):
         rec.frame(2)
         window.open(os.path.join(rec.workdir, name))
         rec.pump(0.3)
-        rec.say(caption, 2.2)
-    window.open(os.path.join(rec.workdir, "room.bt"))
+        rec.say(caption, 2.0)
+    rec.say("Each map in its own tab  ·  Ctrl+Tab switches")
+    for _ in range(3):
+        rec.shortcut("Ctrl+Tab")
+        rec.pump(0.2)
+        rec.hold(0.8)
+    window.tabs.setCurrentIndex(0)
     rec.pump(0.3)
     rec.say("Convert ▸ To 2D occupancy grid", 0.6)
     item = menu_pick(rec, "Convert", "To 2D occupancy grid…")
@@ -283,7 +300,7 @@ def demo_overview(rec, out):
     answer_dialog(rec, [0.3, 1.9])
     item.trigger()
     rec.pump(0.3)
-    rec.say("The voxels become a ROS occupancy grid", 2.2)
+    rec.say("The result opens in a new tab", 2.0)
     rec.say("Language ▸ 한국어")
     window.set_language("ko")
     rec.pump(0.3)
@@ -294,61 +311,72 @@ def demo_overview(rec, out):
 
 def demo_voxels(rec, out):
     window = rec.window
-    window.open(os.path.join(rec.workdir, "room.bt"))
+    window.open(os.path.join(rec.workdir, "office_octomap.bt"))
     rec.pump(0.4)
     editor = window.editor
     rec.start()
-    rec.say("A voxel map with sensor noise", 1.2)
-    w, h = editor.viewport.renderer.GetSize()
-    centre = rec.vtk_to_window(w * 0.5, h * 0.5)
-    rec.say("Drag to orbit")
-    rec.vtk_drag(centre, centre + QtCore.QPointF(-120, 30), 18)
-    rec.hold(0.4)
-    button = rec.panel_button("Select islands")
-    rec.say("Select islands finds floating specks")
-    rec.click_widget(button)
+    rec.say("An office mapped by a depth camera — the ceiling hides everything", 1.6)
+
+    rec.say("Slice the space along z")
+    rec.scroll_panel_to(editor.slice.enabled)
+    rec.click_widget(editor.slice.enabled)
+    rec.hold(0.8)
+    rec.say("Drag the plane up until only the ceiling is cut away")
+    plane = editor.slice_gizmo.centre()
+    grab = rec.project(plane + np.array([0, 0, 0.6 * editor.slice_gizmo.length()]))
+    target = rec.project(plane + np.array([0, 0, 0.6 * editor.slice_gizmo.length() + 1.35]))
+    rec.vtk_drag(grab, target, 18)
+    editor.slice.set_position(2.85)
+    editor.refresh()
     rec.hold(1.4)
+
+    rec.say("Select islands finds the floating specks")
+    rec.click_widget(rec.panel_button("Select islands"))
+    rec.hold(1.2)
     rec.say("Delete removes them")
     rec.shortcut("Delete")
+    rec.hold(1.0)
+
+    rec.say("Box: drag its arrows onto the ghost of a passer-by")
+    rec.scroll_panel_to(rec.panel_button("Erase inside"))
+    editor.set_box((4.3, 2.6, 0.05), (4.7, 3.0, 1.85))
+    rec.hold(0.6)
+    length = editor.box_gizmo.length()
+    for axis, shift in ((0, 0.95), (1, 1.4)):
+        centre = (editor.box_gizmo.low + editor.box_gizmo.high) / 2
+        tip = centre.copy()
+        tip[axis] += 0.6 * length
+        moved = tip.copy()
+        moved[axis] += shift
+        rec.vtk_drag(rec.project(tip), rec.project(moved), 14)
+    editor.set_box((5.15, 3.95, 0.05), (5.55, 4.35, 1.85))
+    rec.hold(0.6)
+    rec.click_widget(rec.panel_button("Erase inside"))
     rec.hold(1.2)
 
-    rec.say("Shift + drag around the ghost blob")
-    window.set_tool("select")
-    corners = [rec.project((x, y, z)) for x in (3.6, 4.0) for y in (0.8, 1.1) for z in (1.5, 1.65)]
-    xs, ys = [p.x() for p in corners], [p.y() for p in corners]
-    start = QtCore.QPointF(min(xs) - 18, min(ys) - 18)
-    end = QtCore.QPointF(max(xs) + 18, max(ys) + 18)
-    rec.vtk_drag(start, end, 14, shift=True)
-    rec.hold(1.0)
-    rec.shortcut("Delete")
-    rec.say("Gone", 0.8)
-
-    rec.say("Box ▸ Fill patches the hole in the wall")
-    rec.scroll_panel_to(rec.panel_button("Fill"))
-    editor.set_box((5.94, 1.6, 0.9), (6.0, 2.0, 1.3))
-    window.editor.look_from((1, -0.2, 0.25), (0, 0, 1))
+    rec.say("…and fill the holes in a black monitor")
+    editor.set_box((2.6, 3.6, 0.75), (3.0, 3.65, 1.1))
     rec.hold(0.8)
     rec.click_widget(rec.panel_button("Fill"))
-    rec.hold(1.4)
+    rec.hold(1.2)
     editor.show_box.setChecked(False)
 
-    window.editor.look_from((1, -1, 0.8), (0, 0, 1))
-    rec.say("Add tool: click a face to grow a layer")
-    window.set_tool("add")
-    editor.brush.setValue(3)
-    target = rec.project((2.7, 1.9, 0.76))
-    for _ in range(3):
-        rec.vtk_click(target, 6)
-        target = target + QtCore.QPointF(0, -9)
-    rec.hold(0.8)
-    rec.say("Erase tool with a 3-cell brush")
-    window.set_tool("delete")
-    for x in (1.10, 1.15, 1.20):
-        rec.vtk_click(rec.project((x, 3.0, 2.38)), 6)
-    rec.hold(0.8)
+    rec.say("Ruler: desk height — Shift locks it to the z axis")
+    window.set_tool("measure")
+    rec.vtk_click(rec.project((3.9, 3.4, 0.0)), 8)
+    rec.vtk_hover_to(rec.project((3.4, 3.2, 0.75)), 10)
+    rec.vtk_event("LeftButtonPressEvent", rec.cursor, shift=True)
+    rec.vtk_event("LeftButtonReleaseEvent", rec.cursor, shift=True)
+    rec.ripple = 4
+    rec.hold(1.8)
+    editor.clear_ruler()
+
+    rec.say("Restore view — the hidden half was never touched")
+    rec.click_widget(rec.panel_button("Restore view"))
+    rec.hold(1.4)
     rec.say("Ctrl+S writes a standard OctoMap .bt")
     window.save()
-    rec.hold(1.6)
+    rec.hold(1.4)
     rec.write_gif(out)
 
 
@@ -373,21 +401,31 @@ def demo_cloud(rec, out):
     for t in np.linspace(0.0, 1.0, 8):
         point = np.array([3.0, 0.5, 0.4]) + t * np.array([1.2, 1.3, 1.6])
         rec.vtk_click(rec.project(point), 5)
-    rec.hold(1.0)
+    rec.hold(0.8)
+
+    rec.say("Ruler: wall to wall, Shift locks it to x")
+    window.set_tool("measure")
+    rec.vtk_click(rec.project((0.0, 2.0, 2.4)), 8)
+    rec.vtk_hover_to(rec.project((6.0, 2.2, 2.4)), 12)
+    rec.vtk_event("LeftButtonPressEvent", rec.cursor, shift=True)
+    rec.vtk_event("LeftButtonReleaseEvent", rec.cursor, shift=True)
+    rec.ripple = 4
+    rec.hold(1.8)
+    editor.clear_ruler()
 
     editor.look_from((1, -1, 0.8), (0, 0, 1))
     rec.say("Colour by any field")
     rec.glide(rec.in_window(editor.colour_box), 8)
     editor.colour_box.setCurrentIndex(editor.colour_box.findData("intensity"))
     rec.ripple = 4
-    rec.hold(1.4)
+    rec.hold(1.2)
     rec.say("Thin out to a 5 cm grid")
     rec.scroll_panel_to(rec.panel_button("Thin out"))
     rec.click_widget(rec.panel_button("Thin out"))
-    rec.hold(1.4)
+    rec.hold(1.2)
     rec.say("Ctrl+Z undoes it")
     rec.shortcut("Ctrl+Z")
-    rec.hold(1.4)
+    rec.hold(1.2)
     rec.write_gif(out)
 
 
@@ -400,12 +438,12 @@ def demo_grid(rec, out):
     rec.say("A ROS map with speckles, gaps and a hole", 1.4)
     rec.say("Clear speckles")
     rec.click_widget(rec.panel_button("Clear speckles"))
-    rec.hold(1.2)
+    rec.hold(1.0)
 
-    rec.say("Line tool: close a doorway")
+    rec.say("Line + Shift: a perfectly straight wall across the doorway")
     window.set_tool("line")
     editor.brush.setValue(3)
-    rec.canvas_drag([(151, 330), (151, 352)], 14)
+    rec.canvas_drag([(151, 330), (155, 342), (153, 352)], 8, Qt.ShiftModifier)
     rec.hold(0.8)
 
     rec.say("Pen: sketch an obstacle")
@@ -413,25 +451,33 @@ def demo_grid(rec, out):
     editor.brush.setValue(2)
     loop = [(220 + 18 * math.sin(a), 300 + 30 * math.cos(a)) for a in np.linspace(0, 2 * math.pi, 14)]
     rec.canvas_drag([(int(r), int(c)) for r, c in loop], 3)
-    rec.hold(0.6)
+    rec.hold(0.5)
 
-    rec.say("Rectangle: mark a keep-out zone")
+    rec.say("Rectangle + Shift: a square keep-out zone")
     window.set_tool("rectangle")
-    rec.canvas_drag([(80, 250), (110, 330)], 12)
+    rec.canvas_drag([(80, 250), (100, 290), (104, 300)], 8, Qt.ShiftModifier)
     rec.hold(0.8)
 
     rec.say("Fill with free space to repair the unknown hole")
     editor.set_state(0)
     window.set_tool("fill")
     rec.canvas_click(65, 67)
-    rec.hold(1.2)
+    rec.hold(1.0)
+
+    rec.say("Ruler: metres and pixels, Shift keeps it level")
+    window.set_tool("measure")
+    rec.canvas_click(110, 31)
+    rec.canvas_move_to((114, 200), Qt.ShiftModifier)
+    rec.canvas_click(114, 200, Qt.ShiftModifier)
+    rec.hold(1.8)
+    editor.clear_ruler()
 
     rec.say("Trim the unknown border (origin follows)")
     rec.click_widget(rec.panel_button("Trim unknown border"))
-    rec.hold(1.6)
+    rec.hold(1.4)
     rec.say("Ctrl+S writes the image and its YAML")
     window.save()
-    rec.hold(1.4)
+    rec.hold(1.2)
     rec.write_gif(out)
 
 
@@ -441,6 +487,7 @@ def main(out_dir):
     workdir = tempfile.mkdtemp(prefix="mapbarber_demo_")
     for name in os.listdir(EXAMPLES):
         shutil.copy(os.path.join(EXAMPLES, name), workdir)
+    shutil.copy(os.path.join(DEMO, "office_octomap.bt"), workdir)
     app, window = launch(None, "en")
     window.resize(*WINDOW_SIZE)
     recorder = Recorder(app, window, workdir)
@@ -450,10 +497,10 @@ def main(out_dir):
     selected = sys.argv[2:] or [name for name, _ in demos]
     for name, demo in demos:
         if name in selected:
-            for editor in window.editors.values():
-                editor.map.mark_saved() if hasattr(editor, "map") else editor.cloud.mark_saved()
+            window.close_all(ask=False)
+            recorder.pump(0.3)
             demo(recorder, os.path.join(out_dir, name))
-    for editor in window.editors.values():
+    for editor in window.documents:
         editor.map.mark_saved() if hasattr(editor, "map") else editor.cloud.mark_saved()
     window.close()
     shutil.rmtree(workdir)

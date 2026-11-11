@@ -25,18 +25,25 @@ class Editor:
         self.window.statusBar().showMessage(text, timeout)
 
     def changed(self):
-        self.window.document_changed()
+        self.window.document_changed(self)
 
     def tool_label(self, name):
         return self.tr(f"tool_{name}")
 
     def view_actions(self):
-        """[(label, callable)] for the View menu and toolbar."""
+        """[(label, callable, shortcut)] for the View menu and toolbar."""
         return []
 
     def extra_actions(self):
         """[(label, shortcut, callable)] registered while this editor is active."""
-        return []
+        return [(self.tr("brush_smaller"), "[", lambda: self.adjust_brush(-1)),
+                (self.tr("brush_larger"), "]", lambda: self.adjust_brush(1))]
+
+    def adjust_brush(self, step):
+        """Make the brush one step smaller (-1) or larger (+1)."""
+
+    def zoom(self, factor):
+        """Zoom the view in (factor > 1) or out."""
 
     def selection_actions(self):
         """{'delete', 'select_all', 'invert', 'clear'} -> callable, for editors with a selection."""

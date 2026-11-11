@@ -6,7 +6,9 @@ from vtk.util import numpy_support
 from . import cloud, convert, formats
 from .editor import Editor
 from .formats import CLOUD, GRID, VOXEL
+from .gizmo import AXIS_NAMES, SLICE_DEFAULTS, BoxGizmo, SliceControls, SliceGizmo, Snap
 from .qt import QtCore, QtWidgets
+from .ruler import Ruler3D, measure
 from .scene import VIEWS, Viewport, ramp
 from .widgets import RANGE_LIMIT, AxisRanges, ask_numbers, button, int_spin, spin
 
@@ -17,7 +19,8 @@ PICK_PIXELS = 6
 COLOUR_FIELDS_SKIPPED = {"x", "y", "z", "rgb", "rgba", "red", "green", "blue", "alpha", "r", "g", "b", "a"}
 DEFAULTS = {"radius": 0.10, "point_size": 3, "colour": "height", "front_only": True, "tolerance": 0.10,
             "neighbours": 16, "ratio": 2.0, "sparse_radius": 0.10, "sparse_min": 4, "leaf": 0.05,
-            "box": [(-0.5, 0.5)] * 3, "show_box": False, "range": [(-RANGE_LIMIT, RANGE_LIMIT)] * 3}
+            "box": [(-0.5, 0.5)] * 3, "show_box": False, "range": [(-RANGE_LIMIT, RANGE_LIMIT)] * 3,
+            "slice": SLICE_DEFAULTS}
 
 
 def point_colours(table):
@@ -40,7 +43,7 @@ def point_colours(table):
 
 class CloudEditor(Editor):
     kind = CLOUD
-    tools = (("view", "1"), ("select", "2"), ("delete", "3"))
+    tools = (("view", "H"), ("select", "V"), ("delete", "E"), ("measure", "I"))
     export_filters = (("PCD point cloud", "pcd"), ("PLY point cloud", "ply"), ("XYZ text", "xyz"), ("CSV text", "csv"),
                       ("NumPy array", "npy"), ("NumPy archive", "npz"))
 
@@ -53,7 +56,7 @@ class CloudEditor(Editor):
         self.visible_points = np.zeros((0, 3))
         self._tree = None
         self.panel_values = dict(DEFAULTS)
-        self.viewport = Viewport(window, self._click, self._hover, self._rectangle)
+        self.viewport = Viewport(window, self._click, self._hover, self._rectangle, self._right_click)
         self.widget = self.viewport.widget
         self.polydata = vtk.vtkPolyData()
         mapper = vtk.vtkPolyDataMapper()
@@ -66,6 +69,19 @@ class CloudEditor(Editor):
         self.viewport.renderer.AddActor(self.actor)
         self.hover_source, self.hover_actor = self.viewport.wire_sphere((1, 1, 1))
         self.box_source, self.box_actor = self.viewport.outline((1.0, 0.85, 0.1))
+        self.box_gizmo = BoxGizmo(self.viewport, self._box_dragged, Snap(0.01))
+        self.slice_gizmo = SliceGizmo(self.viewport, self._slice_dragged, Snap(0.01))
+        self.viewport.gizmos = [self.slice_gizmo, self.box_gizmo]
+        self.ruler = Ruler3D(self.viewport.renderer)
+        self.viewport.band_allowed = lambda: self.tool != "measure"
+        self.measurement = None
+        self.data_bounds = (np.zeros(3), np.ones(3))
+        self.hidden = 0
+        self._previous_mode = (False, 2)
+        self._refresh_timer = QtCore.QTimer()
+        self._refresh_timer.setSingleShot(True)
+        self._refresh_timer.setInterval(40)
+        self._refresh_timer.timeout.connect(self.refresh)
 
     @property
     def dirty(self):
@@ -83,6 +99,7 @@ class CloudEditor(Editor):
         alive = self.cloud.xyz[self.cloud.alive]
         extent = float(np.ptp(alive, axis=0).max()) if len(alive) else 1.0
         self.viewport.set_axes_length(max(0.08 * extent, 1e-3))
+        self.clear_ruler()
         self.panel_values["range"] = DEFAULTS["range"]
         if self.panel_values["colour"] not in self.colour_modes():
             self.panel_values["colour"] = "height"
@@ -188,6 +205,7 @@ class CloudEditor(Editor):
         layout.addWidget(group)
 
         group = W.QGroupBox(t("box"))
+        group.setToolTip(t("box_handles_tip"))
         grid = W.QGridLayout(group)
         self.box = AxisRanges(grid, 0, values["box"], 0.05, self._box_changed)
         self.show_box = W.QCheckBox(t("show_box"))
@@ -199,6 +217,19 @@ class CloudEditor(Editor):
         grid.addWidget(button(t("box_delete"), self.box_delete), 5, 0, 1, 3)
         grid.addWidget(button(t("box_delete_outside"), self.box_delete_outside, t("crop_tip")), 6, 0, 1, 3)
         layout.addWidget(group)
+
+        group = W.QGroupBox(t("ruler"))
+        group.setToolTip(t("ruler_tip"))
+        form = W.QFormLayout(group)
+        self.ruler_label = W.QLabel(self._ruler_text(self.measurement)[1] if self.measurement else t("ruler_hint"))
+        self.ruler_label.setWordWrap(True)
+        self.ruler_label.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        form.addRow(self.ruler_label)
+        form.addRow(button(t("ruler_clear"), self.clear_ruler))
+        layout.addWidget(group)
+
+        self.slice = SliceControls(t, values["slice"], 0.01, self._slice_changed, self.restore_view)
+        layout.addWidget(self.slice.group)
 
         group = W.QGroupBox(t("visible_range"))
         group.setToolTip(t("range_tip"))
@@ -215,6 +246,7 @@ class CloudEditor(Editor):
         self._fill_colour_modes()
         self._style_changed()
         self._box_changed()
+        self._update_slice_gizmo()
         return panel
 
     def store_panel(self):
@@ -225,10 +257,11 @@ class CloudEditor(Editor):
                                  "neighbours": self.neighbours.value(), "ratio": self.ratio.value(),
                                  "sparse_radius": self.sparse_radius.value(), "sparse_min": self.sparse_min.value(),
                                  "leaf": self.leaf.value(), "box": self.box.values(), "show_box": self.show_box.isChecked(),
-                                 "range": self.ranges.values()}
+                                 "range": self.ranges.values(), "slice": self.slice.values()}
 
     def view_actions(self):
-        return [(self.tr(f"view_{name}"), lambda d=direction, u=up: self.look_from(d, u)) for name, direction, up in VIEWS]
+        return [(self.tr(f"view_{name}"), lambda d=direction, u=up: self.look_from(d, u), keys)
+                for name, direction, up, keys in VIEWS]
 
     def selection_actions(self):
         return {"delete": self.delete_selection, "select_all": self.select_all, "invert": self.invert_selection,
@@ -239,7 +272,7 @@ class CloudEditor(Editor):
 
     def activate(self):
         self.viewport.initialize()
-        self.look_from(*VIEWS[3][1:])
+        self.look_from(*VIEWS[3][1:3])
 
     def capture(self):
         return self.viewport.capture()
@@ -247,10 +280,14 @@ class CloudEditor(Editor):
     def refresh(self, render=True):
         ids = self.cloud.ids()
         points = self.cloud.xyz[ids]
+        if len(points):
+            self.data_bounds = (points.min(axis=0), points.max(axis=0))
+        total = len(ids)
         if self.panel_alive and len(points):
             low, high = self.ranges.bounds()
-            inside = np.all((points >= low) & (points <= high), axis=1)
+            inside = np.all((points >= low) & (points <= high), axis=1) & self.slice.mask(points)
             ids, points = ids[inside], points[inside]
+        self.hidden = total - len(ids)
         self.visible_ids, self.visible_points = ids, np.ascontiguousarray(points)
         self.selection = self.selection[np.isin(self.selection, ids, assume_unique=True)]
         self._tree = None
@@ -299,7 +336,7 @@ class CloudEditor(Editor):
     def set_tool(self, name):
         self.tool = name
         self.hover_actor.VisibilityOff()
-        self.widget.setCursor(Qt.ArrowCursor if name == "view" else Qt.CrossCursor)
+        self.viewport.set_default_cursor(Qt.ArrowCursor if name == "view" else Qt.CrossCursor)
         self.viewport.render()
 
     def remove(self, ids, label):
@@ -361,7 +398,51 @@ class CloudEditor(Editor):
         low, high = self.box.bounds()
         self.box_source.SetBounds(low[0], high[0], low[1], high[1], low[2], high[2])
         self.box_actor.SetVisibility(self.show_box.isChecked())
+        self.box_gizmo.set_box(low, high)
+        self.box_gizmo.show(self.show_box.isChecked())
         self.viewport.render()
+
+    def _box_dragged(self, low, high):
+        self.box.set(low, high)
+        self.box_source.SetBounds(low[0], high[0], low[1], high[1], low[2], high[2])
+        self.status(self.tr("status_box", x0=low[0], x1=high[0], y0=low[1], y1=high[1], z0=low[2], z1=high[2]), 0)
+
+    def _update_slice_gizmo(self):
+        values = self.slice.values()
+        self.slice_gizmo.update(values["axis"], values["position"], self.data_bounds)
+        self.slice_gizmo.show(values["on"])
+
+    def _slice_changed(self):
+        values = self.slice.values()
+        axis = values["axis"]
+        low, high = self.data_bounds
+        mode = (values["on"], axis)
+        if values["on"] and (mode != self._previous_mode or not low[axis] <= values["position"] <= high[axis]):
+            self.slice.set_position(float((low[axis] + high[axis]) / 2))
+        self._previous_mode = mode
+        self._update_slice_gizmo()
+        self.refresh()
+        self._report_slice()
+
+    def _slice_dragged(self, position):
+        self.slice.set_position(position)
+        self._refresh_timer.start()
+        self._report_slice()
+
+    def _report_slice(self):
+        values = self.slice.values()
+        if values["on"]:
+            self.status(self.tr("status_slice", axis=AXIS_NAMES[values["axis"]],
+                                op="≤" if values["keep"] == "below" else "≥", pos=values["position"], n=self.hidden), 0)
+
+    def restore_view(self):
+        self.slice.enabled.blockSignals(True)
+        self.slice.enabled.setChecked(False)
+        self.slice.enabled.blockSignals(False)
+        self.slice_gizmo.show(False)
+        self.ranges.reset()
+        self.refresh()
+        self.status(self.tr("status_view_restored"))
 
     def _inside_box(self):
         low, high = self.box.bounds()
@@ -414,7 +495,7 @@ class CloudEditor(Editor):
         return GRID, convert.voxels_to_grid(convert.points_to_voxels(xyz, size), size, *sorted(band))
 
     def _pick(self, x, y):
-        origin, direction = self.viewport.ray(x, y)
+        origin, direction = self.viewport.eye_ray(x, y)
         index = cloud.pick_along_ray(origin, direction, self.visible_points, PICK_PIXELS * self.viewport.pixel_angle())
         return None if index is None else self.visible_points[index]
 
@@ -424,8 +505,77 @@ class CloudEditor(Editor):
             self._tree = cKDTree(self.visible_points)
         return self.visible_ids[np.asarray(self._tree.query_ball_point(centre, self.radius.value()), np.int64)]
 
+    def clear_ruler(self):
+        self.ruler.clear()
+        self.measurement = None
+        if self.panel_alive:
+            self.ruler_label.setText(self.tr("ruler_hint"))
+        self.viewport.render()
+
+    def _ruler_text(self, result):
+        short = self.tr("ruler_short", **result)
+        detail = self.tr("ruler_detail_cloud", **result)
+        return short, detail
+
+    def adjust_brush(self, step):
+        self.radius.setValue(self.radius.value() * (1.25 if step > 0 else 0.8))
+
+    def zoom(self, factor):
+        self.viewport.zoom(factor)
+
+    def _ruler_target(self, point):
+        """Second ruler point; with Shift held it is locked to the dominant axis from the first point."""
+        if self.ruler.pending and self.viewport.interactor.GetShiftKey():
+            delta = point - self.ruler.first
+            locked = np.zeros(3)
+            axis = int(np.argmax(np.abs(delta)))
+            locked[axis] = delta[axis]
+            return self.ruler.first + locked
+        return point
+
+    def _measure_hover(self, x, y):
+        point = self.measure_point(x, y)
+        if point is None:
+            return
+        point = self._ruler_target(point)
+        self.status(self.tr("status_hover", x=point[0], y=point[1], z=point[2]), 0)
+        if self.ruler.pending:
+            short, detail = self._ruler_text(measure(self.ruler.first, point))
+            self.ruler.preview(point, short)
+        self.viewport.render()
+
+    def _measure_click(self, x, y):
+        point = self.measure_point(x, y)
+        if point is None:
+            return
+        point = self._ruler_target(point)
+        if self.ruler.pending:
+            self.measurement = measure(self.ruler.first, point)
+            short, detail = self._ruler_text(self.measurement)
+            self.ruler.finish(point, short)
+            self.ruler_label.setText(detail)
+            self.status(detail, 0)
+        else:
+            self.ruler.marker_size = self._marker_size()
+            self.ruler.start(point)
+            self.ruler_label.setText(self.tr("ruler_second"))
+            self.status(self.tr("ruler_second"), 0)
+        self.viewport.render()
+
+    def measure_point(self, x, y):
+        if not len(self.visible_points):
+            return None
+        return self._pick(x, y)
+
+    def _marker_size(self):
+        low, high = self.data_bounds
+        return max(float(np.max(high - low)) * 0.006, 1e-3)
+
     def _hover(self, x, y):
         if self.tool == "view":
+            return
+        if self.tool == "measure":
+            self._measure_hover(x, y)
             return
         centre = None if not len(self.visible_points) else self._pick(x, y)
         if centre is None:
@@ -443,6 +593,9 @@ class CloudEditor(Editor):
     def _click(self, x, y, ctrl):
         if self.tool == "view" or not len(self.visible_points):
             return
+        if self.tool == "measure":
+            self._measure_click(x, y)
+            return
         centre = self._pick(x, y)
         if centre is None:
             return
@@ -452,6 +605,15 @@ class CloudEditor(Editor):
         else:
             self.remove(ids, self.tr("tool_delete"))
         self._hover(x, y)
+
+    def _right_click(self, x, y):
+        if not len(self.selection) or not len(self.visible_points):
+            return
+        centre = self._pick(x, y)
+        if centre is not None:
+            before = len(self.selection)
+            self.select(self._brush_ids(centre), "remove")
+            self.status(self.tr("status_deselected", n=before - len(self.selection)))
 
     def _rectangle(self, corner_a, corner_b, subtract):
         self.hover_actor.VisibilityOff()

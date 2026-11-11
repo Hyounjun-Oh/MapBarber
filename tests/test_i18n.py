@@ -5,7 +5,7 @@ import string
 from mapbarber import i18n
 
 PACKAGE = os.path.dirname(i18n.__file__)
-DYNAMIC = {"tool_": ("view", "select", "delete", "add", "pen", "line", "rectangle", "fill"),
+DYNAMIC = {"tool_": ("view", "select", "delete", "add", "pen", "line", "rectangle", "fill", "measure"),
            "view_": ("top", "front", "side", "iso", "fit"), "kind_": ("voxel", "cloud", "grid"),
            "controls_": ("general", "voxel", "cloud", "grid")}
 

@@ -71,3 +71,23 @@ def test_conversions():
     cells = unpack(walls)
     assert resolution == pytest.approx(0.1) and len(walls) == 9
     assert {tuple(c) for c in cells[:, :2].tolist()} == {(0, 0), (3, 2), (-2, 4)}
+
+
+def test_drawing_constraints():
+    from mapbarber.grid_editor import shape_corners, snap_angle
+    assert snap_angle((10, 10), (12, 30)) == (10, 30)
+    assert snap_angle((10, 10), (30, 11)) == (30, 10)
+    assert snap_angle((10, 10), (19, 21)) == (20, 20)
+    assert snap_angle((10, 10), (2, 17)) == (2, 18)
+    assert shape_corners((10, 10), (14, 20), square=True, centred=False) == ((10, 10), (20, 20))
+    assert shape_corners((10, 10), (14, 20), square=False, centred=True) == ((6, 0), (14, 20))
+    assert shape_corners((10, 10), (7, 12), square=True, centred=True) == ((13, 7), (7, 13))
+
+
+def test_min_pool_keeps_thin_walls():
+    from mapbarber.grid_editor import STATE_RGB, min_pool
+    cells = np.full((40, 40), FREE, np.uint8)
+    cells[:, 17] = OCCUPIED
+    small = min_pool(STATE_RGB[cells], 4)
+    assert small.shape == (10, 10, 3)
+    assert (small[:, 4] == STATE_RGB[OCCUPIED]).all() and (small[:, 0] == STATE_RGB[FREE]).all()

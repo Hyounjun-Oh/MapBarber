@@ -6,8 +6,8 @@ from .qt import QtCore, QtGui, QVTKRenderWindowInteractor
 
 Qt = QtCore.Qt
 CLICK_SLOP = 3
-VIEWS = (("top", (0, 0, 1), (0, 1, 0)), ("front", (1, 0, 0), (0, 0, 1)), ("side", (0, -1, 0), (0, 0, 1)),
-         ("iso", (1, -1, 0.8), (0, 0, 1)))
+VIEWS = (("top", (0, 0, 1), (0, 1, 0), ["7", "Num+7"]), ("front", (1, 0, 0), (0, 0, 1), ["1", "Num+1"]),
+         ("side", (0, -1, 0), (0, 0, 1), ["3", "Num+3"]), ("iso", (1, -1, 0.8), (0, 0, 1), ["Home", "0", "Num+0"]))
 HEIGHT_RAMP = np.array([[59, 76, 192], [51, 153, 230], [38, 204, 178], [120, 220, 80], [240, 215, 50], [245, 130, 40],
                         [200, 40, 30]], np.float64)
 
@@ -22,13 +22,22 @@ def ramp(values, low, high):
 class Viewport:
     """Render window with trackball navigation, click and hover callbacks, and Shift-drag rectangles."""
 
-    def __init__(self, parent, on_click, on_hover, on_rectangle):
+    def __init__(self, parent, on_click, on_hover, on_rectangle, on_right_click=None):
         self.widget = QVTKRenderWindowInteractor(parent)
         self.renderer = vtk.vtkRenderer()
         self.renderer.SetBackground(0.10, 0.11, 0.13)
         self.widget.GetRenderWindow().AddRenderer(self.renderer)
         self.interactor = self.widget.GetRenderWindow().GetInteractor()
         self.on_click, self.on_hover, self.on_rectangle = on_click, on_hover, on_rectangle
+        self.on_right_click = on_right_click
+        self.gizmos = []
+        self.band_allowed = lambda: True
+        self._space = False
+        self._panning = False
+        self.default_cursor = Qt.ArrowCursor
+        self._gizmo = None
+        self._right = None
+        self._band_subtract = False
         self.axes = vtk.vtkAxesActor()
         self.axes.AxisLabelsOff()
         self.renderer.AddActor(self.axes)
@@ -60,7 +69,11 @@ class Viewport:
         self.style.AddObserver("LeftButtonPressEvent", self._on_press)
         self.style.AddObserver("LeftButtonReleaseEvent", self._on_release)
         self.style.AddObserver("MouseMoveEvent", self._on_move)
+        self.style.AddObserver("RightButtonPressEvent", self._on_right_press)
+        self.style.AddObserver("RightButtonReleaseEvent", self._on_right_release)
         self.style.AddObserver("CharEvent", lambda *_: None)
+        self.style.AddObserver("KeyPressEvent", lambda *_: self._key(True))
+        self.style.AddObserver("KeyReleaseEvent", lambda *_: self._key(False))
 
     def initialize(self):
         if not self._initialized:
@@ -109,6 +122,35 @@ class Viewport:
         self.renderer.ResetCamera(*bounds)
         self.render()
 
+    def _key(self, down):
+        if self.interactor.GetKeySym() == "space":
+            self._space = down
+            self.widget.setCursor(Qt.OpenHandCursor if down else self.default_cursor)
+
+    def zoom(self, factor):
+        camera = self.renderer.GetActiveCamera()
+        if camera.GetParallelProjection():
+            camera.SetParallelScale(camera.GetParallelScale() / factor)
+        else:
+            camera.Dolly(factor)
+        self.render()
+
+    def to_display(self, world):
+        self.renderer.SetWorldPoint(world[0], world[1], world[2], 1.0)
+        self.renderer.WorldToDisplay()
+        return self.renderer.GetDisplayPoint()[:2]
+
+    def set_default_cursor(self, cursor):
+        self.default_cursor = cursor
+        self.widget.setCursor(cursor)
+
+    def _gizmo_at(self, x, y):
+        for gizmo in self.gizmos:
+            handle = gizmo.hit(x, y)
+            if handle is not None:
+                return gizmo, handle
+        return None, None
+
     def ray(self, x, y):
         def unproject(depth):
             self.renderer.SetDisplayPoint(x, y, depth)
@@ -118,6 +160,16 @@ class Viewport:
         near, far = unproject(0.0), unproject(1.0)
         direction = far - near
         return near, direction / np.linalg.norm(direction)
+
+    def eye_ray(self, x, y):
+        """Ray from the camera eye through a screen position (for angular picking)."""
+        camera = self.renderer.GetActiveCamera()
+        near, direction = self.ray(x, y)
+        if camera.GetParallelProjection():
+            return near, direction
+        eye = np.array(camera.GetPosition())
+        through = near - eye
+        return eye, through / np.linalg.norm(through)
 
     def pixel_angle(self):
         """Angle in radians covered by one screen pixel at the centre of the view."""
@@ -168,13 +220,52 @@ class Viewport:
     def _on_press(self, *_):
         x, y = self.interactor.GetEventPosition()
         self._press = (x, y)
+        if self._space:
+            self._panning = True
+            self.style.OnMiddleButtonDown()
+            return
+        if self.interactor.GetShiftKey() and self.band_allowed():
+            self._band, self._band_subtract = (x, y), False
+            return
+        gizmo, handle = self._gizmo_at(x, y)
+        if gizmo is not None:
+            self._gizmo = gizmo
+            gizmo.begin(handle, x, y)
+            return
+        self.style.OnLeftButtonDown()
+
+    def _on_right_press(self, *_):
+        x, y = self.interactor.GetEventPosition()
+        self._right = (x, y)
         if self.interactor.GetShiftKey():
-            self._band = (x, y)
+            self._band, self._band_subtract = (x, y), True
         else:
-            self.style.OnLeftButtonDown()
+            self.style.OnRightButtonDown()
+
+    def _on_right_release(self, *_):
+        x, y = self.interactor.GetEventPosition()
+        start, self._right = self._right, None
+        if self._band is not None:
+            self._finish_band(x, y)
+            return
+        self.style.OnRightButtonUp()
+        if start is not None and self.on_right_click and abs(x - start[0]) <= CLICK_SLOP and abs(y - start[1]) <= CLICK_SLOP:
+            self.on_right_click(x, y)
+
+    def _finish_band(self, x, y):
+        start, self._band = self._band, None
+        self.band_actor.VisibilityOff()
+        if abs(x - start[0]) > CLICK_SLOP and abs(y - start[1]) > CLICK_SLOP:
+            self.on_rectangle(start, (x, y), self._band_subtract or bool(self.interactor.GetControlKey()))
+        else:
+            self.render()
 
     def _on_move(self, *_):
         x, y = self.interactor.GetEventPosition()
+        if self._gizmo is not None:
+            self._gizmo.drag(x, y)
+            self.render()
+            return
         if self._band is not None:
             x0, y0 = self._band
             corners = self.band_shape.GetPoints()
@@ -185,20 +276,26 @@ class Viewport:
             self.render()
             return
         self.style.OnMouseMove()
-        if self._press is None:
-            self.on_hover(x, y)
+        if self._press is None and self._right is None:
+            over_handle = self._gizmo_at(x, y)[0] is not None
+            self.widget.setCursor(Qt.SizeAllCursor if over_handle else self.default_cursor)
+            if not over_handle:
+                self.on_hover(x, y)
 
     def _on_release(self, *_):
         x, y = self.interactor.GetEventPosition()
         press, self._press = self._press, None
         ctrl = bool(self.interactor.GetControlKey())
+        if self._panning:
+            self._panning = False
+            self.style.OnMiddleButtonUp()
+            return
+        if self._gizmo is not None:
+            self._gizmo.end()
+            self._gizmo = None
+            return
         if self._band is not None:
-            start, self._band = self._band, None
-            self.band_actor.VisibilityOff()
-            if abs(x - start[0]) > CLICK_SLOP and abs(y - start[1]) > CLICK_SLOP:
-                self.on_rectangle(start, (x, y), ctrl)
-            else:
-                self.render()
+            self._finish_band(x, y)
             return
         self.style.OnLeftButtonUp()
         if press is not None and abs(x - press[0]) <= CLICK_SLOP and abs(y - press[1]) <= CLICK_SLOP:

@@ -6,7 +6,9 @@ from vtk.util import numpy_support
 from . import convert, formats
 from .editor import Editor
 from .formats import CLOUD, GRID, VOXEL
+from .gizmo import AXIS_NAMES, SLICE_DEFAULTS, BoxGizmo, SliceControls, SliceGizmo, Snap
 from .qt import QtCore, QtWidgets
+from .ruler import Ruler3D, measure
 from .scene import VIEWS, Viewport, ramp
 from .voxels import EMPTY, VoxelMap, in_range, pack, ray_pick, unpack
 from .widgets import RANGE_LIMIT, AxisRanges, ask_numbers, button, int_spin, spin
@@ -17,12 +19,13 @@ ADDED_RGB = np.array([245, 245, 245], np.uint8)
 TOOL_RGB = {"select": (1.0, 0.2, 0.8), "delete": (1.0, 0.15, 0.1), "add": (0.2, 1.0, 0.3)}
 MAX_FILL_CELLS = 2_000_000
 DEFAULTS = {"brush": 1, "plane": 0.0, "front_only": True, "tolerance": 0.10, "island": 20,
-            "box": [(-0.2, 0.2)] * 3, "show_box": False, "range": [(-RANGE_LIMIT, RANGE_LIMIT)] * 3}
+            "box": [(-0.2, 0.2)] * 3, "show_box": False, "range": [(-RANGE_LIMIT, RANGE_LIMIT)] * 3,
+            "slice": SLICE_DEFAULTS, "snap": False}
 
 
 class VoxelEditor(Editor):
     kind = VOXEL
-    tools = (("view", "1"), ("select", "2"), ("delete", "3"), ("add", "4"))
+    tools = (("view", "H"), ("select", "V"), ("delete", "E"), ("add", "B"), ("measure", "I"))
     export_filters = (("OctoMap binary", "bt"), ("OctoMap full", "ot"), ("Voxel archive", "npz"),
                       ("PCD point cloud", "pcd"), ("PLY point cloud", "ply"), ("XYZ text", "xyz"), ("CSV text", "csv"),
                       ("NumPy array", "npy"))
@@ -35,7 +38,7 @@ class VoxelEditor(Editor):
         self.visible_centers = np.zeros((0, 3))
         self.height_range = (0.0, 1.0)
         self.panel_values = dict(DEFAULTS)
-        self.viewport = Viewport(window, self._click, self._hover, self._rectangle)
+        self.viewport = Viewport(window, self._click, self._hover, self._rectangle, self._right_click)
         self.widget = self.viewport.widget
 
         self.cube = vtk.vtkCubeSource()
@@ -53,6 +56,19 @@ class VoxelEditor(Editor):
         self.viewport.renderer.AddActor(actor)
         self.hover_source, self.hover_actor = self.viewport.outline((1, 1, 1), 2.5)
         self.box_source, self.box_actor = self.viewport.outline((1.0, 0.85, 0.1))
+        self.box_gizmo = BoxGizmo(self.viewport, self._box_dragged, Snap(self.map.resolution))
+        self.slice_gizmo = SliceGizmo(self.viewport, self._slice_dragged, Snap(self.map.resolution))
+        self.viewport.gizmos = [self.slice_gizmo, self.box_gizmo]
+        self.ruler = Ruler3D(self.viewport.renderer)
+        self.viewport.band_allowed = lambda: self.tool != "measure"
+        self.measurement = None
+        self.data_bounds = (np.zeros(3), np.ones(3))
+        self.hidden = 0
+        self._previous_mode = (False, 2)
+        self._refresh_timer = QtCore.QTimer()
+        self._refresh_timer.setSingleShot(True)
+        self._refresh_timer.setInterval(40)
+        self._refresh_timer.timeout.connect(self.refresh)
 
     @property
     def dirty(self):
@@ -78,6 +94,9 @@ class VoxelEditor(Editor):
             cells = unpack(self.map.occupied)
             extent = float((cells.max(axis=0) - cells.min(axis=0)).max() + 1) * size
         self.viewport.set_axes_length(max(0.08 * extent, 4 * size))
+        self.box_gizmo.snap = Snap(size)
+        self.slice_gizmo.snap = Snap(size)
+        self.clear_ruler()
         self.panel_values["range"] = DEFAULTS["range"]
         if self.panel_alive:
             self.ranges.reset()
@@ -146,6 +165,7 @@ class VoxelEditor(Editor):
         layout.addWidget(group)
 
         group = W.QGroupBox(t("box"))
+        group.setToolTip(t("box_handles_tip"))
         grid = W.QGridLayout(group)
         self.box = AxisRanges(grid, 0, values["box"], step, self._box_changed)
         self.show_box = W.QCheckBox(t("show_box"))
@@ -157,6 +177,22 @@ class VoxelEditor(Editor):
         grid.addWidget(button(t("box_delete"), self.box_delete), 5, 0, 1, 3)
         grid.addWidget(button(t("box_fill"), self.box_fill, t("box_fill_tip")), 6, 0, 1, 3)
         layout.addWidget(group)
+
+        group = W.QGroupBox(t("ruler"))
+        group.setToolTip(t("ruler_tip"))
+        form = W.QFormLayout(group)
+        self.ruler_snap = W.QCheckBox(t("ruler_snap"))
+        self.ruler_snap.setChecked(values["snap"])
+        form.addRow(self.ruler_snap)
+        self.ruler_label = W.QLabel(self._ruler_text(self.measurement)[1] if self.measurement else t("ruler_hint"))
+        self.ruler_label.setWordWrap(True)
+        self.ruler_label.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        form.addRow(self.ruler_label)
+        form.addRow(button(t("ruler_clear"), self.clear_ruler))
+        layout.addWidget(group)
+
+        self.slice = SliceControls(t, values["slice"], step, self._slice_changed, self.restore_view)
+        layout.addWidget(self.slice.group)
 
         group = W.QGroupBox(t("visible_range"))
         group.setToolTip(t("range_tip"))
@@ -171,10 +207,11 @@ class VoxelEditor(Editor):
         legend.setStyleSheet("color: gray;")
         layout.addWidget(legend)
         self._box_changed()
+        self._update_slice_gizmo()
         return panel
 
     def _step_boxes(self):
-        boxes = [self.plane, self.tolerance]
+        boxes = [self.plane, self.tolerance, self.slice.position]
         for ranges in (self.box, self.ranges):
             boxes += [b for pair in ranges.pairs for b in pair]
         return boxes
@@ -184,10 +221,12 @@ class VoxelEditor(Editor):
             self.panel_values = {"brush": self.brush.value(), "plane": self.plane.value(),
                                  "front_only": self.front_only.isChecked(), "tolerance": self.tolerance.value(),
                                  "island": self.island_size.value(), "box": self.box.values(),
-                                 "show_box": self.show_box.isChecked(), "range": self.ranges.values()}
+                                 "show_box": self.show_box.isChecked(), "range": self.ranges.values(),
+                                 "slice": self.slice.values(), "snap": self.ruler_snap.isChecked()}
 
     def view_actions(self):
-        return [(self.tr(f"view_{name}"), lambda d=direction, u=up: self.look_from(d, u)) for name, direction, up in VIEWS]
+        return [(self.tr(f"view_{name}"), lambda d=direction, u=up: self.look_from(d, u), keys)
+                for name, direction, up, keys in VIEWS]
 
     def selection_actions(self):
         return {"delete": self.delete_selection, "select_all": self.select_all, "invert": self.invert_selection,
@@ -198,7 +237,7 @@ class VoxelEditor(Editor):
 
     def activate(self):
         self.viewport.initialize()
-        self.look_from(*VIEWS[3][1:])
+        self.look_from(*VIEWS[3][1:3])
 
     def capture(self):
         return self.viewport.capture()
@@ -208,6 +247,12 @@ class VoxelEditor(Editor):
         all_centers = (unpack(self.map.occupied) + 0.5) * self.map.resolution
         low, high = self.ranges.bounds() if self.panel_alive else (-np.inf, np.inf)
         shown = np.all((all_centers >= low) & (all_centers <= high), axis=1) if len(all_centers) else np.zeros(0, bool)
+        if self.panel_alive:
+            shown &= self.slice.mask(all_centers)
+        if len(all_centers):
+            half = self.map.resolution / 2
+            self.data_bounds = (all_centers.min(axis=0) - half, all_centers.max(axis=0) + half)
+        self.hidden = int(len(all_centers) - shown.sum())
         self.visible_keys = self.map.occupied[shown]
         self.visible_centers = np.ascontiguousarray(all_centers[shown])
         self.selection = self.selection[np.isin(self.selection, self.visible_keys, assume_unique=True)]
@@ -245,7 +290,7 @@ class VoxelEditor(Editor):
     def set_tool(self, name):
         self.tool = name
         self.hover_actor.VisibilityOff()
-        self.widget.setCursor(Qt.ArrowCursor if name == "view" else Qt.CrossCursor)
+        self.viewport.set_default_cursor(Qt.ArrowCursor if name == "view" else Qt.CrossCursor)
         self.viewport.render()
 
     def edit(self, add=None, remove=None, label=""):
@@ -295,7 +340,51 @@ class VoxelEditor(Editor):
         low, high = self.box.bounds()
         self.box_source.SetBounds(low[0], high[0], low[1], high[1], low[2], high[2])
         self.box_actor.SetVisibility(self.show_box.isChecked())
+        self.box_gizmo.set_box(low, high)
+        self.box_gizmo.show(self.show_box.isChecked())
         self.viewport.render()
+
+    def _box_dragged(self, low, high):
+        self.box.set(low, high)
+        self.box_source.SetBounds(low[0], high[0], low[1], high[1], low[2], high[2])
+        self.status(self.tr("status_box", x0=low[0], x1=high[0], y0=low[1], y1=high[1], z0=low[2], z1=high[2]), 0)
+
+    def _update_slice_gizmo(self):
+        values = self.slice.values()
+        self.slice_gizmo.update(values["axis"], values["position"], self.data_bounds)
+        self.slice_gizmo.show(values["on"])
+
+    def _slice_changed(self):
+        values = self.slice.values()
+        axis = values["axis"]
+        low, high = self.data_bounds
+        mode = (values["on"], axis)
+        if values["on"] and (mode != self._previous_mode or not low[axis] <= values["position"] <= high[axis]):
+            self.slice.set_position(float((low[axis] + high[axis]) / 2))
+        self._previous_mode = mode
+        self._update_slice_gizmo()
+        self.refresh()
+        self._report_slice()
+
+    def _slice_dragged(self, position):
+        self.slice.set_position(position)
+        self._refresh_timer.start()
+        self._report_slice()
+
+    def _report_slice(self):
+        values = self.slice.values()
+        if values["on"]:
+            self.status(self.tr("status_slice", axis=AXIS_NAMES[values["axis"]],
+                                op="≤" if values["keep"] == "below" else "≥", pos=values["position"], n=self.hidden), 0)
+
+    def restore_view(self):
+        self.slice.enabled.blockSignals(True)
+        self.slice.enabled.setChecked(False)
+        self.slice.enabled.blockSignals(False)
+        self.slice_gizmo.show(False)
+        self.ranges.reset()
+        self.refresh()
+        self.status(self.tr("status_view_restored"))
 
     def _keys_in_box(self):
         if not len(self.visible_centers):
@@ -335,7 +424,17 @@ class VoxelEditor(Editor):
             QtWidgets.QMessageBox.warning(self.window, self.tr("box_fill"), self.tr("box_too_large", n=int(total)))
             return
         cells = np.stack(np.meshgrid(*[np.arange(a, b + 1) for a, b in zip(first, last)], indexing="ij"), -1).reshape(-1, 3)
-        self.edit(add=pack(cells[in_range(cells)]), label=self.tr("box_fill"))
+        self.edit(add=pack(self.editable(cells)), label=self.tr("box_fill"))
+
+    def editable(self, cells):
+        """Cells inside the visible range and on the kept side of the slice."""
+        cells = cells[in_range(cells)]
+        if not self.panel_alive or not len(cells):
+            return cells
+        centres = (cells + 0.5) * self.map.resolution
+        low, high = self.ranges.bounds()
+        keep = np.all((centres >= low) & (centres <= high), axis=1) & self.slice.mask(centres)
+        return cells[keep]
 
     def to_cloud(self):
         return CLOUD, (convert.voxels_to_points(self.map.occupied, self.map.resolution), None)
@@ -351,15 +450,16 @@ class VoxelEditor(Editor):
             return None
         return GRID, convert.voxels_to_grid(self.map.occupied, self.map.resolution, *sorted(band))
 
-    def target_cells(self, x, y):
-        """Cells the active tool would change at a screen position (None when nothing is under the cursor)."""
+    def target_cells(self, x, y, tool=None):
+        """Cells a tool (the active one by default) would change at a screen position, or None."""
+        tool = tool or self.tool
         size = self.map.resolution
         width = self.brush.value()
         offsets = np.arange(width) - width // 2
         origin, direction = self.viewport.ray(x, y)
         hit = ray_pick(origin, direction, self.visible_centers, size / 2.0)
         if hit is None:
-            if self.tool != "add" or abs(direction[2]) < 1e-9:
+            if tool != "add" or abs(direction[2]) < 1e-9:
                 return None
             distance = (self.plane.value() - origin[2]) / direction[2]
             if distance <= 0:
@@ -371,9 +471,9 @@ class VoxelEditor(Editor):
         else:
             index, axis, sign = hit
             base = unpack(self.visible_keys[index:index + 1])[0]
-            if self.tool == "add":
+            if tool == "add":
                 base[axis] += sign
-        if self.tool == "add":
+        if tool == "add":
             u, v = [a for a in range(3) if a != axis]
             cells = np.repeat(base[None, :], width * width, axis=0)
             grid_u, grid_v = np.meshgrid(offsets, offsets, indexing="ij")
@@ -381,10 +481,84 @@ class VoxelEditor(Editor):
             cells[:, v] += grid_v.ravel()
         else:
             cells = base[None, :] + np.stack(np.meshgrid(offsets, offsets, offsets, indexing="ij"), -1).reshape(-1, 3)
-        return cells[in_range(cells)]
+        return self.editable(cells)
+
+    def clear_ruler(self):
+        self.ruler.clear()
+        self.measurement = None
+        if self.panel_alive:
+            self.ruler_label.setText(self.tr("ruler_hint"))
+        self.viewport.render()
+
+    def _ruler_text(self, result):
+        short = self.tr("ruler_short", **result)
+        detail = self.tr("ruler_detail_voxel", **result)
+        return short, detail
+
+    def adjust_brush(self, step):
+        self.brush.stepBy(step)
+
+    def zoom(self, factor):
+        self.viewport.zoom(factor)
+
+    def _ruler_target(self, point):
+        """Second ruler point; with Shift held it is locked to the dominant axis from the first point."""
+        if self.ruler.pending and self.viewport.interactor.GetShiftKey():
+            delta = point - self.ruler.first
+            locked = np.zeros(3)
+            axis = int(np.argmax(np.abs(delta)))
+            locked[axis] = delta[axis]
+            return self.ruler.first + locked
+        return point
+
+    def _measure_hover(self, x, y):
+        point = self.measure_point(x, y)
+        if point is None:
+            return
+        point = self._ruler_target(point)
+        self.status(self.tr("status_hover", x=point[0], y=point[1], z=point[2]), 0)
+        if self.ruler.pending:
+            short, detail = self._ruler_text(measure(self.ruler.first, point, self.map.resolution))
+            self.ruler.preview(point, short)
+        self.viewport.render()
+
+    def _measure_click(self, x, y):
+        point = self.measure_point(x, y)
+        if point is None:
+            return
+        point = self._ruler_target(point)
+        if self.ruler.pending:
+            self.measurement = measure(self.ruler.first, point, self.map.resolution)
+            short, detail = self._ruler_text(self.measurement)
+            self.ruler.finish(point, short)
+            self.ruler_label.setText(detail)
+            self.status(detail, 0)
+        else:
+            self.ruler.marker_size = self.map.resolution * 0.35
+            self.ruler.start(point)
+            self.ruler_label.setText(self.tr("ruler_second"))
+            self.status(self.tr("ruler_second"), 0)
+        self.viewport.render()
+
+    def measure_point(self, x, y):
+        """Where the cursor ray meets a visible voxel: the surface point, or the voxel centre when snapping."""
+        origin, direction = self.viewport.ray(x, y)
+        half = self.map.resolution / 2.0
+        hit = ray_pick(origin, direction, self.visible_centers, half)
+        if hit is None:
+            return None
+        index, axis, sign = hit
+        centre = self.visible_centers[index]
+        if self.ruler_snap.isChecked():
+            return centre.copy()
+        distance = (centre[axis] + sign * half - origin[axis]) / direction[axis]
+        return origin + distance * direction
 
     def _hover(self, x, y):
         if self.tool == "view":
+            return
+        if self.tool == "measure":
+            self._measure_hover(x, y)
             return
         cells = self.target_cells(x, y)
         if cells is None or not len(cells):
@@ -404,6 +578,9 @@ class VoxelEditor(Editor):
     def _click(self, x, y, ctrl):
         if self.tool == "view":
             return
+        if self.tool == "measure":
+            self._measure_click(x, y)
+            return
         cells = self.target_cells(x, y)
         if cells is None or not len(cells):
             return
@@ -415,6 +592,13 @@ class VoxelEditor(Editor):
         else:
             self.edit(add=keys, label=self.tr("tool_add"))
         self._hover(x, y)
+
+    def _right_click(self, x, y):
+        cells = self.target_cells(x, y, "select")
+        if cells is not None and len(cells) and len(self.selection):
+            before = len(self.selection)
+            self.select(pack(cells), "remove")
+            self.status(self.tr("status_deselected", n=before - len(self.selection)))
 
     def _rectangle(self, corner_a, corner_b, subtract):
         self.hover_actor.VisibilityOff()
