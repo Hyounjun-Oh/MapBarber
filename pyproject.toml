@@ -1,0 +1,36 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mapbarber"
+dynamic = ["version"]
+description = "A barbershop for robot maps: edit OctoMap octrees, point clouds and 2D occupancy grids in one tool"
+readme = "README.md"
+license = "Unlicense"
+license-files = ["LICENSE"]
+requires-python = ">=3.9"
+dependencies = ["numpy>=1.21", "scipy>=1.7", "vtk>=9.1", "PySide6>=6.4"]
+keywords = ["octomap", "occupancy grid", "point cloud", "ros", "map editor", "voxel", "robotics"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Topic :: Scientific/Engineering :: Visualization",
+    "Intended Audience :: Science/Research",
+    "Environment :: X11 Applications :: Qt",
+]
+
+[project.optional-dependencies]
+dev = ["pytest", "pillow"]
+
+[project.scripts]
+mapbarber = "mapbarber.__main__:main"
+
+[tool.setuptools]
+packages = ["mapbarber", "mapbarber.locales", "mapbarber.assets"]
+
+[tool.setuptools.package-data]
+"mapbarber.locales" = ["*.json"]
+"mapbarber.assets" = ["*.svg"]
+
+[tool.setuptools.dynamic]
+version = { attr = "mapbarber.__version__" }
