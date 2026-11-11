@@ -635,3 +635,27 @@ def test_measurements_accumulate_in_the_corner_overlay(workbench):
     assert grid_editor.measurement["px"] == pytest.approx(40.0) and grid_editor.ruler_line.isVisible()
     window.close_all(ask=False)
     assert not dialogs
+
+
+def test_far_chunks_are_drawn_coarser_and_edits_touch_few_chunks(workbench):
+    from mapbarber.formats import VOXEL
+    from mapbarber.voxels import pack
+    window, _folder, pump, dialogs = workbench
+    floor = np.stack(np.meshgrid(np.arange(600), np.arange(600), [0, 1], indexing="ij"), -1).reshape(-1, 3)
+    editor = window.show_document(VOXEL, (pack(floor), 0.05))
+    pump(0.4)
+    assert len(editor.map.chunks) == 100 and editor.visible_count == len(floor)
+    assert editor.view.drawn() < len(floor) / 3 and max(editor.view.levels.values()) >= 1
+    editor.viewport.zoom(12.0)
+    editor.update_levels()
+    assert min(editor.view.levels.values()) == 0
+    width, height = editor.viewport.renderer.GetSize()
+    window.set_tool("delete")
+    cells = editor.target_cells(width // 2, height // 2)
+    assert cells is not None and len(cells) == 1
+    editor._click(width // 2, height // 2, False)
+    assert editor.map.changes() == (0, 1) and len(editor.map.touched) == 1
+    editor.undo()
+    assert not editor.map.dirty and editor.visible_count == len(floor)
+    window.close_all(ask=False)
+    assert not dialogs

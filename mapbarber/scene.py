@@ -176,6 +176,18 @@ class Viewport:
         height = max(self.renderer.GetSize()[1], 1)
         return np.radians(self.renderer.GetActiveCamera().GetViewAngle()) / height
 
+    def project(self, points):
+        """World points (N, 3) -> (screen x, screen y, in front of the camera)."""
+        width, height = self.renderer.GetSize()
+        camera = self.renderer.GetActiveCamera()
+        matrix = camera.GetCompositeProjectionTransformMatrix(self.renderer.GetTiledAspectRatio(), -1, 1)
+        m = np.array([[matrix.GetElement(i, j) for j in range(4)] for i in range(4)])
+        clip = points @ m[:3, :3].T + m[:3, 3]
+        w = points @ m[3, :3] + m[3, 3]
+        ahead = w > 1e-9
+        safe = np.where(ahead, w, 1.0)
+        return (clip[:, 0] / safe + 1) / 2 * width, (clip[:, 1] / safe + 1) / 2 * height, ahead
+
     def rectangle_hits(self, points, corner_a, corner_b, front_only, tolerance, footprint=0.0):
         """Indices of points that project into a screen rectangle, optionally only the front layer."""
         if not len(points):
