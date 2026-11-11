@@ -15,6 +15,7 @@ Qt = QtCore.Qt
 STATE_RGB = np.array([[250, 250, 250], [20, 20, 24], [128, 132, 140]], np.uint8)
 STATES = ((OCCUPIED, "state_occupied", "O"), (FREE, "state_free", "F"), (UNKNOWN, "state_unknown", "U"))
 TOOL_PEN = {"pen", "line", "rectangle"}
+DEFAULTS = {"brush": 1, "state": OCCUPIED, "speckle": 4}
 
 
 def cosmetic_pen(rgb, width=1.5, style=Qt.SolidLine):

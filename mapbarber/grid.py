@@ -227,7 +227,6 @@ def shape_corners(start, end, square, centred):
     if centred:
         return (start[0] - dr, start[1] - dc), (start[0] + dr, start[1] + dc)
     return start, (start[0] + dr, start[1] + dc)
-DEFAULTS = {"brush": 1, "state": OCCUPIED, "speckle": 4}
 
 
 def min_pool(rgb, step):

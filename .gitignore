@@ -7,3 +7,4 @@ dist/
 .pytest_cache/
 *.bak_*
 demo/large/
+!demo/*.bak_*
