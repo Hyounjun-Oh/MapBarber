@@ -241,24 +241,81 @@ class VoxelMap(KeySet):
         return len(self.added), len(self.removed)
 
     def islands(self, max_size):
-        """Keys of 26-connected components with at most max_size cells -> (keys, component count)."""
+        """Keys of 26-connected components with at most max_size cells -> (keys, component count).
+
+        Components are found inside each chunk first and then joined across chunk borders, so the
+        size of the map does not matter.
+        """
         from scipy import ndimage
-        occupied = self.occupied
-        if not len(occupied):
+        from scipy.sparse import coo_matrix
+        from scipy.sparse.csgraph import connected_components
+        if not self.chunks:
             return EMPTY, 0
-        ijk = unpack(occupied)
-        low = ijk.min(axis=0)
-        dims = ijk.max(axis=0) - low + 1
-        if float(np.prod(dims.astype(np.float64))) > 4e8:
-            raise MemoryError("map extent is too large for connected-component analysis")
-        grid = np.zeros(dims, bool)
-        rel = ijk - low
-        grid[rel[:, 0], rel[:, 1], rel[:, 2]] = True
-        labels, _ = ndimage.label(grid, structure=np.ones((3, 3, 3), bool))
-        sizes = np.bincount(labels.ravel())
-        mine = labels[rel[:, 0], rel[:, 1], rel[:, 2]]
-        small = sizes[mine] <= max_size
-        return occupied[small], int(len(np.unique(mine[small])))
+        structure = np.ones((3, 3, 3), bool)
+        mask = CHUNK - 1
+        chunk_keys = list(self.chunks)
+        coords, labels, offsets, sizes = {}, {}, {}, []
+        total = 0
+        for chunk_key in chunk_keys:
+            local = self.chunks[chunk_key]
+            xyz = np.stack([local & mask, (local >> CHUNK_BITS) & mask, (local >> (2 * CHUNK_BITS)) & mask], axis=1)
+            grid = np.zeros((CHUNK, CHUNK, CHUNK), bool)
+            grid[xyz[:, 0], xyz[:, 1], xyz[:, 2]] = True
+            labelled, count = ndimage.label(grid, structure=structure)
+            mine = labelled[xyz[:, 0], xyz[:, 1], xyz[:, 2]] - 1
+            coords[chunk_key], labels[chunk_key], offsets[chunk_key] = xyz, mine + total, total
+            sizes.append(np.bincount(mine, minlength=count))
+            total += count
+        sizes = np.concatenate(sizes)
+
+        def border(chunk_key, direction, far_side):
+            """Component ids on the face, edge or corner of a chunk that looks along `direction`."""
+            xyz, ids = coords[chunk_key], labels[chunk_key]
+            keep = np.ones(len(xyz), bool)
+            free = []
+            for axis, step in enumerate(direction):
+                if step == 0:
+                    free.append(axis)
+                else:
+                    keep &= xyz[:, axis] == (mask if (step > 0) == far_side else 0)
+            image = np.full((CHUNK,) * len(free), -1, np.int64)
+            if free:
+                image[tuple(xyz[keep][:, axis] for axis in free)] = ids[keep]
+            elif keep.any():
+                image[()] = ids[keep][0]
+            return image
+
+        axis_mask = (1 << _AXIS_BITS) - 1
+        first, second = [], []
+        directions = [d for d in np.ndindex(3, 3, 3) if d > (1, 1, 1)]
+        for chunk_key in chunk_keys:
+            base = np.array([chunk_key >> (2 * _AXIS_BITS), (chunk_key >> _AXIS_BITS) & axis_mask, chunk_key & axis_mask])
+            for direction in directions:
+                step = np.array(direction) - 1
+                other = base + step
+                if (other < 0).any() or (other > axis_mask).any():
+                    continue
+                other_key = int((other[0] << (2 * _AXIS_BITS)) | (other[1] << _AXIS_BITS) | other[2])
+                if other_key not in coords:
+                    continue
+                here, there = border(chunk_key, step, True), border(other_key, step, False)
+                for shift in np.ndindex(*(3,) * here.ndim):
+                    a = tuple(slice(max(0, 1 - s), CHUNK - max(0, s - 1)) for s in shift)
+                    b = tuple(slice(max(0, s - 1), CHUNK - max(0, 1 - s)) for s in shift)
+                    touching = (here[a] >= 0) & (there[b] >= 0)
+                    if touching.any():
+                        first.append(here[a][touching])
+                        second.append(there[b][touching])
+        if first:
+            rows, columns = np.concatenate(first), np.concatenate(second)
+            graph = coo_matrix((np.ones(len(rows), np.int8), (rows, columns)), shape=(total, total))
+            groups, root = connected_components(graph, directed=False)
+        else:
+            groups, root = total, np.arange(total)
+        whole = np.bincount(root, weights=sizes, minlength=groups)
+        small = whole[root] <= max_size
+        keys = [pack(self.cells(chunk_key)[small[labels[chunk_key]]]) for chunk_key in chunk_keys]
+        return np.sort(np.concatenate(keys)), int((whole <= max_size).sum())
 
 
 def ray_boxes(origin, direction, low, high):

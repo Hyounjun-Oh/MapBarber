@@ -14,7 +14,7 @@ from .i18n import LANGUAGES, Translator
 from .qt import QAction, QActionGroup, QtCore, QtGui, QtWidgets, run
 from .voxel_editor import VoxelEditor
 from .voxels import EMPTY
-from .widgets import WheelGuard, ask_numbers
+from .widgets import BusyDialog, WheelGuard, ask_numbers
 
 Qt = QtCore.Qt
 EDITORS = {VOXEL: VoxelEditor, CLOUD: CloudEditor, GRID: GridEditor}
@@ -338,19 +338,12 @@ class Workbench(QtWidgets.QMainWindow):
         return True
 
     def busy(self, title, work):
-        """Run `work()` on a worker thread behind a progress dialog so the window keeps repainting.
+        """Run `work()` on a worker thread behind a busy dialog so the window keeps repainting.
 
-        Returns (result, dialog); the caller advances and closes the dialog. Errors from `work` are re-raised.
+        Returns (result, dialog); the caller may report progress on the dialog and must call dialog.finish().
+        Errors from `work` are re-raised after the dialog is closed.
         """
-        dialog = QtWidgets.QProgressDialog(title, "", 0, 0, self)
-        dialog.setWindowTitle("MapBarber")
-        dialog.setCancelButton(None)
-        dialog.setWindowModality(Qt.WindowModal)
-        dialog.setMinimumDuration(250)
-        dialog.setMinimumWidth(380)
-        dialog.setAutoClose(False)
-        dialog.setAutoReset(False)
-        dialog.setValue(0)
+        dialog = BusyDialog(self, title)
         outcome = {}
 
         def run():
@@ -365,25 +358,22 @@ class Workbench(QtWidgets.QMainWindow):
             QtWidgets.QApplication.processEvents()
             worker.join(0.02)
         if "error" in outcome:
-            dialog.close()
-            dialog.deleteLater()
+            dialog.finish()
             raise outcome["error"]
         return outcome["result"], dialog
 
     def _stage(self, dialog, text):
         """Returns a progress callback (done, total) that updates the dialog for one stage of work."""
         def step(done, total):
-            dialog.setMaximum(max(total, 1))
-            dialog.setValue(done)
-            dialog.setLabelText(text)
+            dialog.set_progress(done, total, text)
             QtWidgets.QApplication.processEvents()
         return step
 
-    def show_document(self, kind, payload):
+    def show_document(self, kind, payload, progress=None):
         """Open data that is not (yet) a file in a new tab."""
         editor = EDITORS[kind](self)
         editor.widget.hide()
-        editor.set_document(payload)
+        editor.set_document(payload, progress=progress)
         self._add_document(editor)
         return editor
 
@@ -405,7 +395,7 @@ class Workbench(QtWidgets.QMainWindow):
                 editor.set_document(payload, path, formats.detect(path) if kind != GRID else None,
                                     self._stage(dialog, self.tr_("loading_view", name=name)))
             finally:
-                dialog.close()
+                dialog.finish()
         except Exception as error:
             if editor is not None:
                 self._dispose(editor)
@@ -445,13 +435,21 @@ class Workbench(QtWidgets.QMainWindow):
             self.show_document(GRID, GridMap(np.full((height, width), UNKNOWN, np.uint8), resolution))
             self.set_tool("pen")
 
-    def convert(self, make):
-        result = make()
-        if result is None:
+    def convert(self, prepare):
+        """Run a conversion: `prepare()` asks its questions and returns the work to do, or None when cancelled."""
+        work = prepare()
+        if work is None:
             return
         source = self.tr_("kind_" + self.editor.kind)
-        kind, payload = result
-        self.show_document(kind, payload)
+        try:
+            (kind, payload), dialog = self.busy(self.tr_("converting"), work)
+        except Exception as error:
+            QtWidgets.QMessageBox.critical(self, self.tr_("menu_convert").replace("&", ""), str(error))
+            return
+        try:
+            self.show_document(kind, payload, self._stage(dialog, self.tr_("converting")))
+        finally:
+            dialog.finish()
         self.statusBar().showMessage(self.tr_("status_converted", source=source, kind=self.tr_("kind_" + kind)), 10000)
 
     def save(self):
@@ -489,7 +487,7 @@ class Workbench(QtWidgets.QMainWindow):
                 shutil.copy2(path, backup)
                 notes.append(t("status_backup", name=os.path.basename(backup)))
             _, dialog = self.busy(t("saving", name=os.path.basename(path)), lambda: editor.export(path, fmt))
-            dialog.close()
+            dialog.finish()
             editor.mark_saved()
         except Exception as error:
             QtWidgets.QMessageBox.critical(self, t("save_failed"), f"{path}\n\n{error}")

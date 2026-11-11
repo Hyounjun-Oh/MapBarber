@@ -195,5 +195,6 @@
  "loading_read": "{name} を読み込み中 …",
  "loading_view": "{name} の表示を準備中 …",
  "saving": "{name} を保存中 …",
- "slice_tilt": "{axis} 軸まわりの傾き [°]"
+ "slice_tilt": "{axis} 軸まわりの傾き [°]",
+ "converting": "変換中 …"
 }

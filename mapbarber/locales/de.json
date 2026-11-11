@@ -195,5 +195,6 @@
  "loading_read": "{name} wird gelesen …",
  "loading_view": "Ansicht von {name} wird vorbereitet …",
  "saving": "{name} wird gespeichert …",
- "slice_tilt": "Neigung um {axis} [°]"
+ "slice_tilt": "Neigung um {axis} [°]",
+ "converting": "Umwandlung läuft …"
 }

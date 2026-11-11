@@ -711,7 +711,8 @@ class CloudEditor(Editor):
         xyz, size = self._ask_size()
         if size is None:
             return None
-        return VOXEL, (convert.points_to_voxels(xyz, size), size, {"xyz": xyz, "table": self.cloud.surviving()[1]})
+        table = self.cloud.surviving()[1]
+        return lambda: (VOXEL, (convert.points_to_voxels(xyz, size), size, {"xyz": xyz, "table": table}))
 
     def to_grid(self):
         xyz, size = self._ask_size()
@@ -722,7 +723,7 @@ class CloudEditor(Editor):
             (self.tr("band_high"), float(xyz[:, 2].max()), -RANGE_LIMIT, RANGE_LIMIT, 3)])
         if band is None:
             return None
-        return GRID, convert.voxels_to_grid(convert.points_to_voxels(xyz, size), size, *sorted(band))
+        return lambda: (GRID, convert.voxels_to_grid(convert.points_to_voxels(xyz, size), size, *sorted(band)))
 
     def _pick(self, x, y):
         """Nearest visible point close to the cursor ray, searching only the chunks the ray passes."""

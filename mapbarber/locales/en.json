@@ -195,5 +195,6 @@
  "loading_read": "Reading {name} …",
  "loading_view": "Preparing the view of {name} …",
  "saving": "Saving {name} …",
- "slice_tilt": "Tilt about {axis} [°]"
+ "slice_tilt": "Tilt about {axis} [°]",
+ "converting": "Converting …"
 }

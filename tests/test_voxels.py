@@ -72,3 +72,36 @@ def test_chunks_follow_edits_and_track_changes():
     emptied = VoxelMap(pack([[5, 5, 5]]), 0.1)
     emptied.apply(remove=pack([[5, 5, 5]]))
     assert not emptied.chunks and len(emptied) == 0 and emptied.bounds() is None
+
+
+def dense_islands(keys, max_size):
+    from scipy import ndimage
+    cells = unpack(keys)
+    low = cells.min(axis=0)
+    grid = np.zeros(cells.max(axis=0) - low + 1, bool)
+    rel = cells - low
+    grid[rel[:, 0], rel[:, 1], rel[:, 2]] = True
+    labels, _ = ndimage.label(grid, structure=np.ones((3, 3, 3), bool))
+    sizes = np.bincount(labels.ravel())
+    mine = labels[rel[:, 0], rel[:, 1], rel[:, 2]]
+    small = sizes[mine] <= max_size
+    return np.sort(keys[small]), len(np.unique(mine[small]))
+
+
+def test_islands_join_across_chunk_borders():
+    rng = np.random.default_rng(11)
+    scattered = rng.integers(40, 150, size=(6000, 3))
+    across_face = [[63, 10, 10], [64, 10, 10], [65, 10, 10]]
+    across_edge = [[63, 63, 20], [64, 64, 20]]
+    across_corner = [[127, 127, 127], [128, 128, 128], [129, 129, 129], [130, 130, 130]]
+    wall = [[x, 70, z] for x in range(50, 140) for z in range(50, 140)]
+    keys = np.unique(pack(np.array(scattered.tolist() + across_face + across_edge + across_corner + wall)))
+    vmap = VoxelMap(keys, 0.1)
+    assert len(vmap.chunks) >= 8
+    for limit in (1, 2, 3, 4, 50):
+        found, count = vmap.islands(limit)
+        expected, expected_count = dense_islands(keys, limit)
+        assert np.array_equal(found, expected) and count == expected_count, limit
+    lonely = VoxelMap(pack(np.array(across_edge)), 0.1)
+    assert len(lonely.islands(1)[0]) == 0 and lonely.islands(1)[1] == 0
+    assert len(lonely.islands(2)[0]) == 2 and lonely.islands(2)[1] == 1

@@ -193,3 +193,86 @@ def ask_numbers(parent, title, fields):
     if run(dialog) != QtWidgets.QDialog.Accepted:
         return None
     return [box.value() for box in boxes]
+
+
+class Spinner(QtWidgets.QWidget):
+    """A turning arc, shown while work of unknown length is running."""
+
+    def __init__(self, size=36):
+        super().__init__()
+        self.setFixedSize(size, size)
+        self.angle = 0
+        self.timer = QtCore.QTimer(self)
+        self.timer.setInterval(40)
+        self.timer.timeout.connect(self._turn)
+        self.timer.start()
+
+    def _turn(self):
+        self.angle = (self.angle + 24) % 360
+        self.update()
+
+    def paintEvent(self, _event):
+        from .qt import QtGui
+        painter = QtGui.QPainter(self)
+        painter.setRenderHint(QtGui.QPainter.Antialiasing)
+        box = QtCore.QRectF(4, 4, self.width() - 8, self.height() - 8)
+        painter.setPen(QtGui.QPen(QtGui.QColor(128, 128, 128, 70), 4))
+        painter.drawEllipse(box)
+        pen = QtGui.QPen(QtGui.QColor(79, 156, 247), 4)
+        pen.setCapStyle(QtCore.Qt.RoundCap)
+        painter.setPen(pen)
+        painter.drawArc(box, -self.angle * 16, 100 * 16)
+        painter.end()
+
+
+class BusyDialog(QtWidgets.QDialog):
+    """Modal notice for running work: a spinner while the length is unknown, a bar once progress is reported.
+
+    It appears only if the work lasts longer than a moment and never after finish() was called.
+    """
+
+    DELAY_MS = 250
+
+    def __init__(self, parent, text):
+        super().__init__(parent)
+        self.setWindowTitle("MapBarber")
+        self.setWindowModality(QtCore.Qt.WindowModal)
+        self.setWindowFlag(QtCore.Qt.WindowCloseButtonHint, False)
+        self.setMinimumWidth(400)
+        self.finished_work = False
+        layout = QtWidgets.QVBoxLayout(self)
+        row = QtWidgets.QHBoxLayout()
+        self.spinner = Spinner()
+        row.addWidget(self.spinner)
+        self.label = QtWidgets.QLabel(text)
+        self.label.setWordWrap(True)
+        row.addWidget(self.label, 1)
+        layout.addLayout(row)
+        self.bar = QtWidgets.QProgressBar()
+        self.bar.setTextVisible(True)
+        self.bar.hide()
+        layout.addWidget(self.bar)
+        QtCore.QTimer.singleShot(self.DELAY_MS, self._appear)
+
+    def _appear(self):
+        if not self.finished_work:
+            self.show()
+
+    def set_progress(self, done, total, text=None):
+        """Switch from the spinner to a bar showing done out of total."""
+        if text:
+            self.label.setText(text)
+        self.spinner.hide()
+        self.bar.show()
+        self.bar.setRange(0, max(int(total), 1))
+        self.bar.setValue(int(done))
+
+    def finish(self):
+        """Close for good; a pending delayed appearance is cancelled."""
+        self.finished_work = True
+        self.spinner.timer.stop()
+        self.hide()
+        self.deleteLater()
+
+    def reject(self):
+        """Ignore Escape: the work cannot be cancelled half-way."""

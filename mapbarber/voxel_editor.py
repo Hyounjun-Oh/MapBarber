@@ -636,14 +636,9 @@ class VoxelEditor(Editor):
         self.select(np.setdiff1d(self.visible_keys, self.selection, assume_unique=True), "replace", trusted=True)
 
     def select_islands(self):
-        QtWidgets.QApplication.setOverrideCursor(Qt.WaitCursor)
-        try:
-            keys, count = self.map.islands(self.island_size.value())
-        except MemoryError as error:
-            QtWidgets.QMessageBox.warning(self.window, self.tr("islands"), str(error))
-            return
-        finally:
-            QtWidgets.QApplication.restoreOverrideCursor()
+        size = self.island_size.value()
+        (keys, count), dialog = self.window.busy(self.tr("select_islands") + " …", lambda: self.map.islands(size))
+        dialog.finish()
         self.select(keys, "replace")
         self.status(self.tr("status_islands", n=count, m=len(self.selected)), 10000)
 
@@ -778,21 +773,25 @@ class VoxelEditor(Editor):
     def to_cloud(self):
         """Voxels -> points. A map that came from a cloud gives back that cloud's own points, not voxel centres."""
         origin = {"resolution": self.map.resolution}
-        if self.source is not None:
-            xyz, table = convert.restore_points(self.source["xyz"], self.source["table"], self.map.resolution, self.map)
-            return CLOUD, (xyz, table, origin)
-        return CLOUD, (convert.voxels_to_points(self.map.occupied, self.map.resolution), None, origin)
+
+        def work():
+            if self.source is not None:
+                xyz, table = convert.restore_points(self.source["xyz"], self.source["table"], self.map.resolution,
+                                                    self.map)
+                return CLOUD, (xyz, table, origin)
+            return CLOUD, (convert.voxels_to_points(self.map.occupied, self.map.resolution), None, origin)
+        return work
 
     def to_grid(self):
         if not len(self.map):
             return None
-        z = (unpack(self.map.occupied)[:, 2] + 0.5) * self.map.resolution
+        low, high = self.data_bounds
         band = ask_numbers(self.window, self.tr("band_title"), [
-            (self.tr("band_low"), float(z.min()), -RANGE_LIMIT, RANGE_LIMIT, 3),
-            (self.tr("band_high"), float(z.max()), -RANGE_LIMIT, RANGE_LIMIT, 3)])
+            (self.tr("band_low"), float(low[2]), -RANGE_LIMIT, RANGE_LIMIT, 3),
+            (self.tr("band_high"), float(high[2]), -RANGE_LIMIT, RANGE_LIMIT, 3)])
         if band is None:
             return None
-        return GRID, convert.voxels_to_grid(self.map.occupied, self.map.resolution, *sorted(band))
+        return lambda: (GRID, convert.voxels_to_grid(self.map.occupied, self.map.resolution, *sorted(band)))
 
     def target_cells(self, x, y, tool=None):
         """Cells a tool (the active one by default) would change at a screen position, or None."""

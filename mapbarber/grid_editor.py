@@ -562,4 +562,4 @@ class GridEditor(Editor):
         answer = ask_numbers(self.window, self.tr("extrude_title"), [(self.tr("wall_height"), 1.0, 1e-3, RANGE_LIMIT, 3)])
         if answer is None:
             return None
-        return VOXEL, convert.grid_to_voxels(self.map, answer[0])
+        return lambda: (VOXEL, convert.grid_to_voxels(self.map, answer[0]))
