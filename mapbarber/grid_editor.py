@@ -8,6 +8,7 @@ from .editor import Editor
 from .formats import GRID, VOXEL
 from .grid import FREE, OCCUPIED, UNKNOWN, GridMap, min_pool, shape_corners, snap_angle
 from .qt import QtCore, QtGui, QtWidgets
+from .measure_panel import MeasureOverlay
 from .ruler import RULER_RGB, measure
 from .widgets import ask_numbers, button, danger_button, int_spin, RANGE_LIMIT, Section, set_quietly, spin
 
@@ -175,6 +176,8 @@ class GridEditor(Editor):
         self.ruler_first = None
         self.ruler_done = False
         self.measurement = None
+        self.overlay = MeasureOverlay(self.canvas, lambda entry: self.tr("ruler_detail_grid", **entry),
+                                      self._show_measurement, lambda: self.tr)
         self._before = None
         self._start = None
         self._last = None
@@ -361,6 +364,20 @@ class GridEditor(Editor):
             self.status(self.tr("status_painted", what=label, n=changed))
 
     def clear_ruler(self):
+        """Remove the ruler from the view and forget every stored measurement."""
+        self.overlay.clear()
+        self._hide_ruler()
+
+    def _show_measurement(self, entry):
+        """Draw a stored measurement on the map (called when its tab is chosen)."""
+        self._hide_ruler()
+        if entry is not None:
+            self.ruler_first, self.ruler_done, self.measurement = entry["start"], True, entry
+            self._draw_ruler(entry["end"])
+            if self.panel_alive:
+                self.ruler_label.setText(self._ruler_detail())
+
+    def _hide_ruler(self):
         self.ruler_first, self.ruler_done, self.measurement = None, False, None
         for item in (self.ruler_line, self.ruler_text, *self.ruler_ends):
             item.hide()
@@ -411,7 +428,7 @@ class GridEditor(Editor):
 
     def _measure_press(self, row, column, modifiers=Qt.NoModifier):
         if self.ruler_first is None or self.ruler_done:
-            self.clear_ruler()
+            self._hide_ruler()
             self.ruler_first = (row, column)
             self.ruler_ends[0].setPos(self._scene_centre(self.ruler_first))
             self.ruler_ends[0].show()
@@ -421,6 +438,7 @@ class GridEditor(Editor):
         end = snap_angle(self.ruler_first, (row, column)) if modifiers & Qt.ShiftModifier else (row, column)
         self.measurement = self._draw_ruler(end)
         self.ruler_done = True
+        self.overlay.add(dict(self.measurement, start=self.ruler_first, end=end))
         detail = self._ruler_detail()
         self.ruler_label.setText(detail)
         self.status(detail.replace("\n", "  ·  "), 0)

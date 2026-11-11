@@ -172,7 +172,7 @@
  "ruler_snap": "吸附到体素中心",
  "ruler_hint": "测量工具: 先点击第一个点，再点击第二个点。",
  "ruler_second": "已设置第一个点 — 请点击第二个点",
- "ruler_clear": "清除标尺",
+ "ruler_clear": "清除所有测量",
  "ruler_short": "{d:.3f} m",
  "ruler_short_grid": "{d:.3f} m · {px:.1f} px",
  "ruler_detail_voxel": "距离 {d:.3f} m  ·  {cells:.1f} 个体素\nΔx {dx:+.3f}   Δy {dy:+.3f}   Δz {dz:+.3f} m",
@@ -187,5 +187,6 @@
  "zoom_out": "缩小",
  "full_screen": "全屏",
  "brush_smaller": "缩小画笔",
- "brush_larger": "放大画笔"
+ "brush_larger": "放大画笔",
+ "ruler_total": "合计 {d:.3f} m (共 {n} 次测量)"
 }

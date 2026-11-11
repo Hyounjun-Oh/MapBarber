@@ -172,7 +172,7 @@
  "ruler_snap": "Snap to voxel centres",
  "ruler_hint": "Measure tool: click a first point, then a second.",
  "ruler_second": "First point set — click the second point",
- "ruler_clear": "Clear ruler",
+ "ruler_clear": "Clear all measurements",
  "ruler_short": "{d:.3f} m",
  "ruler_short_grid": "{d:.3f} m · {px:.1f} px",
  "ruler_detail_voxel": "Distance {d:.3f} m  ·  {cells:.1f} voxels\nΔx {dx:+.3f}   Δy {dy:+.3f}   Δz {dz:+.3f} m",
@@ -187,5 +187,6 @@
  "zoom_out": "Zoom out",
  "full_screen": "Full screen",
  "brush_smaller": "Smaller brush",
- "brush_larger": "Larger brush"
+ "brush_larger": "Larger brush",
+ "ruler_total": "Total {d:.3f} m over {n} measurements"
 }

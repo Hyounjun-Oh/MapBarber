@@ -239,6 +239,8 @@ class Workbench(QtWidgets.QMainWindow):
         self.tr_ = Translator(code)
         self.settings.setValue("language", code)
         self._build_ui()
+        for document in self.documents:
+            document.overlay.refresh()
 
     def toggle_full_screen(self):
         if self.isFullScreen():
@@ -450,13 +452,16 @@ class Workbench(QtWidgets.QMainWindow):
         """The whole window as a QImage, including the 3D view."""
         image = self.grab().toImage()
         if self.editor is not None:
+            painter = QtGui.QPainter(image)
             view = self.editor.capture()
             if view is not None:
-                painter = QtGui.QPainter(image)
                 corner = self.editor.widget.mapTo(self, QtCore.QPoint(0, 0))
                 ratio = image.devicePixelRatio()
                 painter.drawImage(QtCore.QRectF(corner.x(), corner.y(), view.width() / ratio, view.height() / ratio), view)
-                painter.end()
+            overlay = self.editor.overlay
+            if overlay.isVisible():
+                painter.drawPixmap(overlay.mapTo(self, QtCore.QPoint(0, 0)), overlay.grab())
+            painter.end()
         return image
 
     def save_screenshot(self):

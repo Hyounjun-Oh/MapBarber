@@ -8,6 +8,7 @@ from .editor import Editor
 from .formats import CLOUD, GRID, VOXEL
 from .gizmo import AXIS_NAMES, SLICE_DEFAULTS, BoxGizmo, SliceControls, SliceGizmo, Snap
 from .qt import QtCore, QtWidgets
+from .measure_panel import MeasureOverlay
 from .ruler import RULER_RGB, Ruler3D, measure
 from .scene import VIEWS, Viewport, ramp
 from .voxels import EMPTY, VoxelMap, in_range, pack, ray_pick, unpack
@@ -60,6 +61,8 @@ class VoxelEditor(Editor):
         self.slice_gizmo = SliceGizmo(self.viewport, self._slice_dragged, Snap(self.map.resolution))
         self.viewport.gizmos = [self.slice_gizmo, self.box_gizmo]
         self.ruler = Ruler3D(self.viewport.renderer)
+        self.overlay = MeasureOverlay(self.widget, lambda entry: self._ruler_text(entry)[1], self._show_measurement,
+                                      lambda: self.tr)
         self.viewport.band_allowed = lambda: self.tool != "measure"
         self.measurement = None
         self.data_bounds = (np.zeros(3), np.ones(3))
@@ -484,10 +487,25 @@ class VoxelEditor(Editor):
         return self.editable(cells)
 
     def clear_ruler(self):
+        """Remove the ruler from the view and forget every stored measurement."""
         self.ruler.clear()
         self.measurement = None
+        self.overlay.clear()
         if self.panel_alive:
             self.ruler_label.setText(self.tr("ruler_hint"))
+        self.viewport.render()
+
+    def _show_measurement(self, entry):
+        """Draw a stored measurement in the view (called when its tab is chosen)."""
+        if entry is None:
+            self.ruler.clear()
+        else:
+            self.measurement = entry
+            short, detail = self._ruler_text(entry)
+            self.ruler.first = entry["a"]
+            self.ruler.finish(entry["b"], short)
+            if self.panel_alive:
+                self.ruler_label.setText(detail)
         self.viewport.render()
 
     def _ruler_text(self, result):
@@ -536,6 +554,7 @@ class VoxelEditor(Editor):
             self.ruler.finish(point, short)
             self.ruler_label.setText(detail)
             self.status(detail, 0)
+            self.overlay.add(dict(self.measurement, a=self.ruler.first.copy(), b=self.ruler.second.copy()))
         else:
             self.ruler.marker_size = self.map.resolution * 0.35
             self.ruler.start(point)

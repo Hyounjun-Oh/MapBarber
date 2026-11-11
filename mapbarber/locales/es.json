@@ -172,7 +172,7 @@
  "ruler_snap": "Ajustar a los centros de vóxel",
  "ruler_hint": "Herramienta Medir: haz clic en un primer punto y luego en un segundo.",
  "ruler_second": "Primer punto fijado — haz clic en el segundo",
- "ruler_clear": "Borrar regla",
+ "ruler_clear": "Borrar todas las mediciones",
  "ruler_short": "{d:.3f} m",
  "ruler_short_grid": "{d:.3f} m · {px:.1f} px",
  "ruler_detail_voxel": "Distancia {d:.3f} m  ·  {cells:.1f} vóxeles\nΔx {dx:+.3f}   Δy {dy:+.3f}   Δz {dz:+.3f} m",
@@ -187,5 +187,6 @@
  "zoom_out": "Alejar",
  "full_screen": "Pantalla completa",
  "brush_smaller": "Pincel más pequeño",
- "brush_larger": "Pincel más grande"
+ "brush_larger": "Pincel más grande",
+ "ruler_total": "Total {d:.3f} m en {n} mediciones"
 }

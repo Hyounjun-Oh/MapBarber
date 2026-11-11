@@ -172,7 +172,7 @@
  "ruler_snap": "ボクセル中心にスナップ",
  "ruler_hint": "計測ツール: 1点目をクリックしてから2点目をクリックします。",
  "ruler_second": "1点目を設定しました — 2点目をクリックしてください",
- "ruler_clear": "ルーラーを消去",
+ "ruler_clear": "計測をすべて消去",
  "ruler_short": "{d:.3f} m",
  "ruler_short_grid": "{d:.3f} m · {px:.1f} px",
  "ruler_detail_voxel": "距離 {d:.3f} m  ·  {cells:.1f} ボクセル\nΔx {dx:+.3f}   Δy {dy:+.3f}   Δz {dz:+.3f} m",
@@ -187,5 +187,6 @@
  "zoom_out": "縮小",
  "full_screen": "全画面表示",
  "brush_smaller": "ブラシを小さく",
- "brush_larger": "ブラシを大きく"
+ "brush_larger": "ブラシを大きく",
+ "ruler_total": "合計 {d:.3f} m (計測 {n} 回)"
 }

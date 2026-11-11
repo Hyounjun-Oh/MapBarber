@@ -172,7 +172,7 @@
  "ruler_snap": "복셀 중심에 맞추기",
  "ruler_hint": "자 도구: 첫 번째 점을 클릭한 뒤 두 번째 점을 클릭하세요.",
  "ruler_second": "첫 번째 점을 찍었습니다 — 두 번째 점을 클릭하세요",
- "ruler_clear": "자 지우기",
+ "ruler_clear": "측정 모두 지우기",
  "ruler_short": "{d:.3f} m",
  "ruler_short_grid": "{d:.3f} m · {px:.1f} px",
  "ruler_detail_voxel": "거리 {d:.3f} m  ·  복셀 {cells:.1f}개\nΔx {dx:+.3f}   Δy {dy:+.3f}   Δz {dz:+.3f} m",
@@ -187,5 +187,6 @@
  "zoom_out": "축소",
  "full_screen": "전체 화면",
  "brush_smaller": "붓 작게",
- "brush_larger": "붓 크게"
+ "brush_larger": "붓 크게",
+ "ruler_total": "합계 {d:.3f} m (측정 {n}회)"
 }

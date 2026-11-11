@@ -172,7 +172,7 @@
  "ruler_snap": "An Voxelmitten einrasten",
  "ruler_hint": "Messwerkzeug: zuerst einen Punkt anklicken, dann einen zweiten.",
  "ruler_second": "Erster Punkt gesetzt — zweiten Punkt anklicken",
- "ruler_clear": "Lineal löschen",
+ "ruler_clear": "Alle Messungen löschen",
  "ruler_short": "{d:.3f} m",
  "ruler_short_grid": "{d:.3f} m · {px:.1f} px",
  "ruler_detail_voxel": "Abstand {d:.3f} m  ·  {cells:.1f} Voxel\nΔx {dx:+.3f}   Δy {dy:+.3f}   Δz {dz:+.3f} m",
@@ -187,5 +187,6 @@
  "zoom_out": "Verkleinern",
  "full_screen": "Vollbild",
  "brush_smaller": "Kleinerer Pinsel",
- "brush_larger": "Größerer Pinsel"
+ "brush_larger": "Größerer Pinsel",
+ "ruler_total": "Summe {d:.3f} m aus {n} Messungen"
 }

@@ -586,3 +586,52 @@ def test_ruler_shows_axis_offsets(workbench):
     assert not any(leg.isVisible() for leg, _, _ in grid_editor.ruler_legs)
     window.close_all(ask=False)
     assert not dialogs
+
+
+def test_measurements_accumulate_in_the_corner_overlay(workbench):
+    from mapbarber.formats import GRID, VOXEL
+    from mapbarber.grid import FREE, GridMap
+    window, _folder, pump, dialogs = workbench
+    editor = window.show_document(VOXEL, floor_map())
+    pump()
+    editor.look_from((0, 0, 1), (0, 1, 0))
+    window.set_tool("measure")
+    editor.ruler_snap.setChecked(True)
+    overlay = editor.overlay
+    assert not overlay.isVisible()
+    for end in ((1.25, 0.25), (0.25, 1.75), (1.25, 0.75)):
+        vtk_click(editor.viewport, *screen(editor, (0.25, 0.25, 0.1)))
+        vtk_click(editor.viewport, *screen(editor, (*end, 0.1)))
+    pump(0.1)
+    assert overlay.isVisible() and len(overlay.entries) == 3
+    assert [overlay.tabs.tabText(i) for i in range(overlay.tabs.count())] == ["Σ", "1", "2", "3"]
+    assert overlay.tabs.currentIndex() == 3 and "1.118" in overlay.text.text()
+    right_edge = overlay.x() + overlay.width()
+    assert editor.widget.width() - right_edge == 12 and overlay.y() == 12
+
+    overlay.tabs.setCurrentIndex(2)
+    assert "1.500" in overlay.text.text() and editor.measurement["d"] == pytest.approx(1.5)
+    assert np.allclose(editor.ruler.second, (0.25, 1.75, 0.05))
+    overlay.tabs.setCurrentIndex(0)
+    assert "#1   1.000 m" in overlay.text.text() and "3.618" in overlay.text.text() and not overlay.schematic.isVisible()
+    assert overlay.total() == pytest.approx(1.0 + 1.5 + 1.25 ** 0.5)
+    overlay.tabs.tabCloseRequested.emit(1)
+    assert len(overlay.entries) == 2 and overlay.total() == pytest.approx(1.5 + 1.25 ** 0.5)
+    window.set_language("ko")
+    assert "합계" in overlay.text.text() or overlay.tabs.currentIndex() != 0
+    window.set_language("en")
+    editor = window.editor
+    editor.clear_ruler()
+    assert not editor.overlay.isVisible() and not editor.overlay.entries
+
+    grid_editor = window.show_document(GRID, GridMap(np.full((60, 80), FREE, np.uint8), 0.05))
+    pump()
+    window.set_tool("measure")
+    for start, end in (((10, 10), (10, 50)), ((10, 10), (40, 10))):
+        grid_editor._measure_press(*start)
+        grid_editor._measure_press(*end)
+    assert len(grid_editor.overlay.entries) == 2 and grid_editor.overlay.total() == pytest.approx(3.5)
+    grid_editor.overlay.tabs.setCurrentIndex(1)
+    assert grid_editor.measurement["px"] == pytest.approx(40.0) and grid_editor.ruler_line.isVisible()
+    window.close_all(ask=False)
+    assert not dialogs
