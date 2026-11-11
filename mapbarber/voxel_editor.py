@@ -6,6 +6,7 @@ import numpy as np
 from . import convert, formats
 from .editor import Editor
 from .formats import CLOUD, GRID, VOXEL
+from .grid import FREE, UNKNOWN
 from .gizmo import AXIS_NAMES, SLICE_DEFAULTS, BoxGizmo, SliceControls, SliceGizmo, Snap
 from .qt import QtCore, QtWidgets
 from .measure_panel import MeasureOverlay
@@ -788,10 +789,12 @@ class VoxelEditor(Editor):
         low, high = self.data_bounds
         band = ask_numbers(self.window, self.tr("band_title"), [
             (self.tr("band_low"), float(low[2]), -RANGE_LIMIT, RANGE_LIMIT, 3),
-            (self.tr("band_high"), float(high[2]), -RANGE_LIMIT, RANGE_LIMIT, 3)])
+            (self.tr("band_high"), float(high[2]), -RANGE_LIMIT, RANGE_LIMIT, 3),
+            (self.tr("empty_as_free"), False)])
         if band is None:
             return None
-        return lambda: (GRID, convert.voxels_to_grid(self.map.occupied, self.map.resolution, *sorted(band)))
+        empty = FREE if band[2] else UNKNOWN
+        return lambda: (GRID, convert.voxels_to_grid(self.map.occupied, self.map.resolution, *sorted(band[:2]), empty))
 
     def target_cells(self, x, y, tool=None):
         """Cells a tool (the active one by default) would change at a screen position, or None."""

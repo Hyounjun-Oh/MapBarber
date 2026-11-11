@@ -175,15 +175,25 @@ class AxisRanges:
 
 
 def ask_numbers(parent, title, fields):
-    """Modal form of numeric fields [(label, value, low, high, decimals)] -> list of values or None."""
+    """Modal form of fields -> list of values or None.
+
+    A field is (label, value, low, high, decimals) for a number or (label, bool) for a tick box.
+    """
     dialog = QtWidgets.QDialog(parent)
     dialog.setWindowTitle(title)
     form = QtWidgets.QFormLayout(dialog)
     boxes = []
-    for label, value, low, high, decimals in fields:
-        box = int_spin(int(low), int(high), int(value)) if decimals == 0 else spin(low, high, value, 10 ** -decimals, None,
-                                                                                   decimals)
-        form.addRow(label, box)
+    for field in fields:
+        if len(field) == 2:
+            box = QtWidgets.QCheckBox(field[0])
+            box.setChecked(bool(field[1]))
+            box.value = box.isChecked
+            form.addRow(box)
+        else:
+            label, value, low, high, decimals = field
+            box = int_spin(int(low), int(high), int(value)) if decimals == 0 else spin(low, high, value, 10 ** -decimals,
+                                                                                       None, decimals)
+            form.addRow(label, box)
         boxes.append(box)
     buttons = QtWidgets.QDialogButtonBox(QtWidgets.QDialogButtonBox.Ok | QtWidgets.QDialogButtonBox.Cancel)
     buttons.accepted.connect(dialog.accept)

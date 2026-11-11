@@ -9,6 +9,8 @@ EMPTY = np.zeros(0, np.int64)
 def pack(ijk):
     """Pack integer cell indices (N, 3) into sortable int64 keys."""
     k = np.asarray(ijk, np.int64).reshape(-1, 3) + OFFSET
+    if len(k) and (k.min() < 0 or k.max() > 0xFFFF):
+        raise ValueError(f"cell index outside the supported range of ±{OFFSET} cells per axis; use a larger voxel size")
     return (k[:, 0] << 32) | (k[:, 1] << 16) | k[:, 2]
 
 
@@ -28,6 +30,8 @@ def centers(keys, resolution):
 
 def voxelize(points, resolution):
     """Points (N, 3) -> unique keys of the cells that contain them."""
+    if not resolution > 0:
+        raise ValueError("the voxel size must be greater than zero")
     points = np.asarray(points, np.float64).reshape(-1, 3)
     points = points[np.all(np.isfinite(points), axis=1)]
     ijk = np.floor(points / resolution + 1e-9).astype(np.int64)

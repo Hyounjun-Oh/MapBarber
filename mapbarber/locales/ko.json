@@ -196,5 +196,6 @@
  "loading_view": "{name} 화면 준비 중 …",
  "saving": "{name} 저장 중 …",
  "slice_tilt": "{axis} 축 기준 기울기 [°]",
- "converting": "변환 중 …"
+ "converting": "변환 중 …",
+ "empty_as_free": "장애물이 없는 칸을 빈 공간으로 표시 (끄면 미지)"
 }

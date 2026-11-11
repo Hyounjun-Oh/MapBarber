@@ -145,6 +145,9 @@ The interface speaks English, 한국어, 日本語, 简体中文, Deutsch and Es
 - **PCD / PLY** keep all per-point fields. Organized PCDs open with invalid (NaN) points skipped and are saved unorganized. `.xyz`, `.csv` and `.npy` hold coordinates only, except that `.xyz` keeps RGB columns when you save to PCD or PLY. Compressed binary PCD is not supported.
 - **Grids** follow the map_server rules: `trinary`, `scale` and `raw` modes, `negate`, and the occupied/free thresholds stored in the YAML.
 - **Backups:** overwriting a file keeps the previous one as `name.bak_YYYYmmdd_HHMMSS`. Turn this off in the File menu.
+- **Safe saving:** every file is written to a temporary name and put in place only when complete, so a failed save never damages the existing file (a map image and its YAML are replaced together). Origins and resolutions are written with full precision.
+- **3D to 2D:** a voxel map or cloud records obstacles only, so cells without one become *unknown* in the grid. Tick the option in the conversion dialog (or pass `--empty-free`) to mark them free when the whole area was observed.
+- **Bad input:** truncated or malformed files end in an error message, and cell indices outside ±32768 per axis are refused instead of wrapping around. See [SECURITY.md](SECURITY.md).
 
 ## How it works
 

@@ -196,5 +196,6 @@
  "loading_view": "Preparando la vista de {name} …",
  "saving": "Guardando {name} …",
  "slice_tilt": "Inclinación sobre {axis} [°]",
- "converting": "Convirtiendo …"
+ "converting": "Convirtiendo …",
+ "empty_as_free": "Marcar como libres las celdas sin obstáculo (si no, desconocidas)"
 }

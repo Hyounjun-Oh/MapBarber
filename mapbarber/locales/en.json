@@ -196,5 +196,6 @@
  "loading_view": "Preparing the view of {name} …",
  "saving": "Saving {name} …",
  "slice_tilt": "Tilt about {axis} [°]",
- "converting": "Converting …"
+ "converting": "Converting …",
+ "empty_as_free": "Mark cells without an obstacle as free (otherwise unknown)"
 }

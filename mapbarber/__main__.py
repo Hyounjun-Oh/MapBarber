@@ -33,6 +33,8 @@ def build_parser():
     conversion.add_argument("-r", "--resolution", type=float, help="voxel size [m] when points become voxels")
     conversion.add_argument("--z-band", type=float, nargs=2, metavar=("LOW", "HIGH"),
                             help="height band [m] projected when making a 2D grid")
+    conversion.add_argument("--empty-free", action="store_true",
+                            help="when making a 2D grid from 3D data, mark cells without obstacles free instead of unknown")
     conversion.add_argument("--wall-height", type=float, default=1.0, help="wall height [m] when a 2D grid becomes 3D")
     parser.add_argument("--version", action="version", version=f"mapbarber {__version__}")
     return parser
@@ -83,6 +85,8 @@ def clean(kind, payload, args):
         print(f"cleared {cells} cells in {groups} speckles")
     if kind == CLOUD and args.remove_outliers:
         xyz, table = payload
+        finite = np.all(np.isfinite(xyz), axis=1)
+        xyz, table = xyz[finite], (None if table is None else table[finite])
         neighbours, ratio = int(args.remove_outliers[0]), args.remove_outliers[1]
         drop = cloud.statistical_outliers(xyz, neighbours, ratio)
         keep = np.setdiff1d(np.arange(len(xyz)), drop)
@@ -97,7 +101,7 @@ def to_voxels(kind, payload, args):
     if kind == GRID:
         return convert.grid_to_voxels(payload, args.wall_height)
     xyz, _ = payload
-    resolution = args.resolution or formats.estimate_resolution(xyz)
+    resolution = formats.estimate_resolution(xyz) if args.resolution is None else args.resolution
     return convert.points_to_voxels(xyz, resolution), resolution
 
 
@@ -113,7 +117,7 @@ def write(path, kind, payload, args):
     elif target == GRID:
         keys, resolution = to_voxels(kind, payload, args)
         band = sorted(args.z_band) if args.z_band else (-np.inf, np.inf)
-        grid.save(path, convert.voxels_to_grid(keys, resolution, *band))
+        grid.save(path, convert.voxels_to_grid(keys, resolution, *band, grid.FREE if args.empty_free else grid.UNKNOWN))
     elif target == CLOUD and kind == VOXEL:
         formats.save_voxels(path, *payload)
     elif target == CLOUD:
@@ -142,9 +146,13 @@ def main(argv=None):
         return 1
     if args.info:
         print(describe(kind, payload))
-    payload = clean(kind, payload, args)
-    if args.output:
-        write(args.output, kind, payload, args)
+    try:
+        payload = clean(kind, payload, args)
+        if args.output:
+            write(args.output, kind, payload, args)
+    except (OSError, ValueError) as error:
+        print(f"mapbarber: {error}", file=sys.stderr)
+        return 1
     return 0
 
 

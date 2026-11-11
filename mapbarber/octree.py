@@ -8,6 +8,7 @@ import struct
 
 import numpy as np
 
+from .safeio import replacing
 from .voxels import DEPTH, EMPTY, OFFSET, pack, unpack
 
 OCCUPIED_LOG_ODDS = 3.5
@@ -193,9 +194,9 @@ def _octants(codes, low, high, level):
 
 
 def _write(path, magic, body, count, resolution):
-    with open(path, "wb") as f:
+    with replacing(path) as part, open(part, "wb") as f:
         f.write(magic + b"\n# (written by MapBarber)\n")
-        f.write(f"id OcTree\nsize {count}\nres {resolution:g}\ndata\n".encode())
+        f.write(f"id OcTree\nsize {count}\nres {float(resolution)!r}\ndata\n".encode())
         f.write(body)
 
 

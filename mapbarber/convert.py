@@ -1,7 +1,7 @@
 """Conversions between voxel maps, point clouds and 2D occupancy grids."""
 import numpy as np
 
-from .grid import FREE, OCCUPIED, GridMap
+from .grid import OCCUPIED, UNKNOWN, GridMap
 from .voxels import centers, pack, unpack, voxelize
 
 
@@ -35,8 +35,12 @@ def restore_points(xyz, table, resolution, voxel_map):
     return points, rows
 
 
-def voxels_to_grid(keys, resolution, z_low=-np.inf, z_high=np.inf):
-    """Project the voxels of a height band onto the ground plane; cells without an obstacle become free."""
+def voxels_to_grid(keys, resolution, z_low=-np.inf, z_high=np.inf, empty=UNKNOWN):
+    """Project the voxels of a height band onto the ground plane.
+
+    A voxel map records obstacles only, so cells without one are unknown by default. Pass empty=FREE
+    only when the whole area is known to have been observed.
+    """
     cells = unpack(keys)
     z = (cells[:, 2] + 0.5) * resolution
     cells = cells[(z >= z_low) & (z <= z_high)]
@@ -44,13 +48,15 @@ def voxels_to_grid(keys, resolution, z_low=-np.inf, z_high=np.inf):
         raise ValueError("no voxels inside the height band")
     low = cells[:, :2].min(axis=0)
     size = cells[:, :2].max(axis=0) - low + 1
-    grid = np.full((size[1], size[0]), FREE, np.uint8)
+    grid = np.full((size[1], size[0]), empty, np.uint8)
     grid[cells[:, 1] - low[1], cells[:, 0] - low[0]] = OCCUPIED
     return GridMap(grid, resolution, (low[0] * resolution, low[1] * resolution, 0.0))
 
 
 def grid_to_voxels(grid, height):
     """Extrude occupied cells into walls of the given height -> (keys, resolution)."""
+    if not height > 0:
+        raise ValueError("the wall height must be greater than zero")
     rows, columns = np.nonzero(grid.cells == OCCUPIED)
     x, y = grid.world(rows, columns)
     layers = max(int(round(height / grid.resolution)), 1)

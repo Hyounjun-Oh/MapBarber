@@ -4,6 +4,7 @@ import os
 import numpy as np
 
 from . import octree
+from .safeio import replacing
 from .voxels import centers, voxelize
 
 VOXEL, CLOUD, GRID = "voxel", "cloud", "grid"
@@ -206,8 +207,13 @@ def _xyz_table(xyz):
 
 
 def save_cloud(path, xyz, table=None, fmt=None):
-    """Write points; PCD and PLY keep every field of the record array."""
+    """Write points; PCD and PLY keep every field of the record array. The file is replaced only on success."""
     fmt = fmt or _EXTENSIONS.get(os.path.splitext(path)[1].lower())
+    with replacing(path) as part:
+        _save_cloud(part, xyz, table, fmt, path)
+
+
+def _save_cloud(path, xyz, table, fmt, target):
     if fmt in ("pcd", "ply") and table is None:
         table = _xyz_table(xyz)
     if fmt == "pcd":
@@ -234,7 +240,7 @@ def save_cloud(path, xyz, table=None, fmt=None):
             f.write(header.encode("ascii"))
             f.write(little.tobytes())
     elif fmt == "xyz":
-        np.savetxt(path, xyz, fmt="%.6f", delimiter="," if path.lower().endswith(".csv") else " ")
+        np.savetxt(path, xyz, fmt="%.6f", delimiter="," if target.lower().endswith(".csv") else " ")
     elif fmt == "npy":
         with open(path, "wb") as f:
             np.save(f, xyz)
@@ -242,7 +248,7 @@ def save_cloud(path, xyz, table=None, fmt=None):
         with open(path, "wb") as f:
             np.savez_compressed(f, points=xyz)
     else:
-        raise ValueError(f"unsupported point format: {path}")
+        raise ValueError(f"unsupported point format: {target}")
 
 
 def estimate_resolution(points, default=0.05):
@@ -287,7 +293,7 @@ def save_voxels(path, keys, resolution, fmt=None):
     elif fmt == "ot":
         octree.write_ot(path, keys, resolution)
     elif fmt == "npz":
-        with open(path, "wb") as f:
+        with replacing(path) as part, open(part, "wb") as f:
             np.savez_compressed(f, centers=centers(keys, resolution), resolution=np.float64(resolution))
     else:
         save_cloud(path, centers(keys, resolution), fmt=fmt)

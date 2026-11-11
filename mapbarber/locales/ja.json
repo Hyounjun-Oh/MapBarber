@@ -196,5 +196,6 @@
  "loading_view": "{name} の表示を準備中 …",
  "saving": "{name} を保存中 …",
  "slice_tilt": "{axis} 軸まわりの傾き [°]",
- "converting": "変換中 …"
+ "converting": "変換中 …",
+ "empty_as_free": "障害物のないセルを空きにする (オフなら未知)"
 }

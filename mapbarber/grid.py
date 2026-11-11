@@ -4,6 +4,8 @@ import os
 
 import numpy as np
 
+from .safeio import replacing
+
 FREE, OCCUPIED, UNKNOWN = 0, 1, 2
 DEFAULT_META = {"negate": 0, "occupied_thresh": 0.65, "free_thresh": 0.196, "mode": "trinary"}
 RAW_UNKNOWN = 255
@@ -31,27 +33,45 @@ def _parse_yaml(text):
     return meta
 
 
+MAX_SIDE = 100_000
+
+
 def read_pgm(path):
     with open(path, "rb") as f:
         data = f.read()
     tokens, pos = [], 0
     while len(tokens) < 4:
-        while data[pos:pos + 1].isspace():
+        while pos < len(data) and data[pos:pos + 1].isspace():
             pos += 1
+        if pos >= len(data):
+            raise ValueError("the PGM header is incomplete")
         if data[pos:pos + 1] == b"#":
-            pos = data.index(b"\n", pos) + 1
+            end = data.find(b"\n", pos)
+            if end < 0:
+                raise ValueError("the PGM header is incomplete")
+            pos = end + 1
             continue
         end = pos
-        while not data[end:end + 1].isspace():
+        while end < len(data) and not data[end:end + 1].isspace():
             end += 1
         tokens.append(data[pos:end])
         pos = end
-    magic, width, height, peak = tokens[0], int(tokens[1]), int(tokens[2]), int(tokens[3])
+    try:
+        magic, width, height, peak = tokens[0], int(tokens[1]), int(tokens[2]), int(tokens[3])
+    except ValueError:
+        raise ValueError("the PGM header does not hold a width, height and maximum value") from None
+    if not (0 < width <= MAX_SIDE and 0 < height <= MAX_SIDE and 0 < peak < 65536):
+        raise ValueError(f"unusable PGM dimensions: {width} x {height}, maximum value {peak}")
     if magic == b"P5":
-        dtype = np.dtype(">u2") if peak > 255 else np.uint8
+        dtype = np.dtype(">u2") if peak > 255 else np.dtype(np.uint8)
+        if len(data) - (pos + 1) < width * height * dtype.itemsize:
+            raise ValueError("the PGM file is shorter than its header says")
         pixels = np.frombuffer(data, dtype, count=width * height, offset=pos + 1).reshape(height, width)
     elif magic == b"P2":
-        pixels = np.array(data[pos:].split(), np.int64).reshape(height, width)
+        values = data[pos:].split()
+        if len(values) < width * height:
+            raise ValueError("the PGM file is shorter than its header says")
+        pixels = np.array(values[:width * height], np.int64).reshape(height, width)
     else:
         raise ValueError("only greyscale PGM images (P2, P5) are supported")
     return (pixels.astype(np.float64) * (255.0 / peak)).round().astype(np.uint8)
@@ -84,7 +104,7 @@ def _write_image(path, pixels):
     from .qt import QtGui
     pixels = np.ascontiguousarray(pixels, np.uint8)
     image = QtGui.QImage(pixels.data, pixels.shape[1], pixels.shape[0], pixels.shape[1], QtGui.QImage.Format_Grayscale8)
-    if not image.save(path):
+    if not image.save(path, os.path.splitext(path)[1].lstrip(".").upper()):
         raise ValueError(f"cannot write image: {path}")
 
 
@@ -289,18 +309,28 @@ def load(path, resolution=None):
                 return load(companion, resolution)
         meta, image = {}, path
     pixels = _read_image(image)
+    if not float(resolution or meta.get("resolution", 0.05)) > 0:
+        raise ValueError("the map resolution must be greater than zero")
     origin = (list(meta.get("origin", [])) + [0.0, 0.0, 0.0])[:3]
     return GridMap(np.flipud(classify(pixels, meta)), resolution or meta.get("resolution", 0.05), origin,
                    {key: meta[key] for key in DEFAULT_META if key in meta})
 
 
 def save(path, grid):
-    """Write a GridMap as image plus YAML; `path` may name either file."""
+    """Write a GridMap as image plus YAML; `path` may name either file.
+
+    Both files are written to temporary names first and only then put in place, so a failed save
+    leaves the previous pair untouched. Numbers are written with full precision.
+    """
     stem, ext = os.path.splitext(path)
-    image = path if ext.lower() not in (".yaml", ".yml") else stem + ".pgm"
-    _write_image(image, render(np.flipud(grid.cells), grid.meta))
-    with open(os.path.splitext(image)[0] + ".yaml", "w") as f:
-        f.write(f"image: {os.path.basename(image)}\nmode: {grid.meta['mode']}\nresolution: {grid.resolution:g}\n"
-                f"origin: [{grid.origin[0]:.6g}, {grid.origin[1]:.6g}, {grid.origin[2]:.6g}]\n"
-                f"negate: {int(grid.meta['negate'])}\noccupied_thresh: {grid.meta['occupied_thresh']}\n"
-                f"free_thresh: {grid.meta['free_thresh']}\n")
+    described = ext.lower() in (".yaml", ".yml")
+    image = stem + ".pgm" if described else path
+    description = path if described else os.path.splitext(image)[0] + ".yaml"
+    origin = ", ".join(repr(float(value)) for value in grid.origin)
+    with replacing(image, description) as (image_part, description_part):
+        _write_image(image_part, render(np.flipud(grid.cells), grid.meta))
+        with open(description_part, "w") as f:
+            f.write(f"image: {os.path.basename(image)}\nmode: {grid.meta['mode']}\n"
+                    f"resolution: {float(grid.resolution)!r}\norigin: [{origin}]\n"
+                    f"negate: {int(grid.meta['negate'])}\noccupied_thresh: {grid.meta['occupied_thresh']}\n"
+                    f"free_thresh: {grid.meta['free_thresh']}\n")

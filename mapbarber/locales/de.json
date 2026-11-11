@@ -196,5 +196,6 @@
  "loading_view": "Ansicht von {name} wird vorbereitet …",
  "saving": "{name} wird gespeichert …",
  "slice_tilt": "Neigung um {axis} [°]",
- "converting": "Umwandlung läuft …"
+ "converting": "Umwandlung läuft …",
+ "empty_as_free": "Zellen ohne Hindernis als frei markieren (sonst unbekannt)"
 }
