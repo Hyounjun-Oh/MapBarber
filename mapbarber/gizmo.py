@@ -56,9 +56,11 @@ class Gizmo:
 
     def _axis_shift(self, x, y):
         """Distance moved along the dragged axis since the drag started, in metres."""
-        anchor, axis, length, start = self._drag["anchor"], self._drag["axis"], self._drag["length"], self._drag["mouse"]
-        direction = np.zeros(3)
-        direction[axis] = 1.0
+        anchor, length, start = self._drag["anchor"], self._drag["length"], self._drag["mouse"]
+        direction = self._drag.get("direction")
+        if direction is None:
+            direction = np.zeros(3)
+            direction[self._drag["axis"]] = 1.0
         per_metre = (self._screen(anchor + direction * length) - self._screen(anchor)) / length
         norm = float(np.dot(per_metre, per_metre))
         if norm < 1e-6:
@@ -144,56 +146,77 @@ class BoxGizmo(Gizmo):
         self._drag = None
 
 
+def plane_normal(axis, tilt):
+    """Unit normal of a plane that starts perpendicular to `axis` and is tilted about the two other axes (degrees)."""
+    u, v = [a for a in range(3) if a != axis]
+    normal = np.zeros(3)
+    normal[axis] = 1.0
+    for about, angle in ((u, tilt[0]), (v, tilt[1])):
+        c, s = np.cos(np.radians(angle)), np.sin(np.radians(angle))
+        i, j = [a for a in range(3) if a != about]
+        normal[i], normal[j] = c * normal[i] - s * normal[j], s * normal[i] + c * normal[j]
+    return normal
+
+
 class SliceGizmo(Gizmo):
     def __init__(self, viewport, on_change, snap):
         super().__init__(viewport, snap)
         self.on_change = on_change
         self.axis, self.position = 2, 0.0
-        self.data_bounds = (np.zeros(3), np.ones(3))
-        self.bounds = self.data_bounds
+        self.normal = np.array([0.0, 0.0, 1.0])
+        self.pivot = np.zeros(3)
+        self.extent = 1.0
+        self.limits = (0.0, 1.0)
         self.plane = vtk.vtkPlaneSource()
         self.plane_actor = _actor(self.plane, AXIS_RGB[2], 0.18)
         self.plane_actor.GetProperty().LightingOff()
-        self.edge = vtk.vtkOutlineSource()
-        self.edge_actor = _actor(self.edge, AXIS_RGB[2])
+        self.edge_actor = _actor(self.plane, AXIS_RGB[2])
+        self.edge_actor.GetProperty().SetRepresentationToWireframe()
         self.edge_actor.GetProperty().SetLineWidth(2.0)
+        self.edge_actor.GetProperty().LightingOff()
         self.arrow = _arrow(AXIS_RGB[2])
         for actor in (self.plane_actor, self.edge_actor, self.arrow):
             viewport.renderer.AddActor(actor)
 
     def length(self):
-        low, high = self.bounds
-        return max(0.12 * float(np.max(high - low)), 0.15)
+        return max(0.12 * self.extent, 0.15)
 
     def centre(self):
-        low, high = self.bounds
-        point = (low + high) / 2
-        point[self.axis] = self.position
-        return point
+        return self.pivot.copy()
 
-    def update(self, axis, position, bounds):
+    def update(self, axis, position, bounds, normal=None, centre=None):
+        """Place the plane: it passes through the pivot (the centre, moved to `position` on the axis)."""
+        low, high = np.asarray(bounds[0], float), np.asarray(bounds[1], float)
         self.axis, self.position = axis, float(position)
-        self.data_bounds = (np.asarray(bounds[0], float), np.asarray(bounds[1], float))
-        margin = 0.05 * float(np.max(bounds[1] - bounds[0])) + 0.05
-        low, high = np.asarray(bounds[0], float) - margin, np.asarray(bounds[1], float) + margin
-        self.bounds = (low, high)
-        u, v = [a for a in range(3) if a != axis]
-        corner = low.copy()
-        corner[axis] = self.position
-        first, second = corner.copy(), corner.copy()
-        first[u], second[v] = high[u], high[v]
+        self.extent = float(np.max(high - low))
+        self.limits = (float(low[axis]), float(high[axis]))
+        self.normal = np.zeros(3)
+        self.normal[axis] = 1.0
+        if normal is not None:
+            self.normal = np.asarray(normal, float)
+        self.pivot = np.array((low + high) / 2 if centre is None else centre, float)
+        self.pivot[axis] = self.position
+        helper = np.zeros(3)
+        helper[int(np.argmin(np.abs(self.normal)))] = 1.0
+        first = np.cross(self.normal, helper)
+        first /= np.linalg.norm(first)
+        second = np.cross(self.normal, first)
+        reach = 0.6 * float(np.linalg.norm(high - low)) + 0.05
+        corner = self.pivot - first * reach - second * reach
         self.plane.SetOrigin(*corner)
-        self.plane.SetPoint1(*first)
-        self.plane.SetPoint2(*second)
-        box = [low[0], high[0], low[1], high[1], low[2], high[2]]
-        box[2 * axis] = box[2 * axis + 1] = self.position
-        self.edge.SetBounds(*box)
+        self.plane.SetPoint1(*(corner + 2 * reach * first))
+        self.plane.SetPoint2(*(corner + 2 * reach * second))
         rgb = AXIS_RGB[axis]
         for actor in (self.plane_actor, self.edge_actor, self.arrow):
             actor.GetProperty().SetColor(*rgb)
-        self.arrow.SetPosition(*self.centre())
-        self.arrow.SetOrientation(*ORIENTATION[axis])
-        self.arrow.SetScale(self.length())
+        matrix = vtk.vtkMatrix4x4()
+        length = self.length()
+        for row in range(3):
+            matrix.SetElement(row, 0, self.normal[row] * length)
+            matrix.SetElement(row, 1, first[row] * length)
+            matrix.SetElement(row, 2, second[row] * length)
+            matrix.SetElement(row, 3, self.pivot[row])
+        self.arrow.SetUserMatrix(matrix)
 
     def show(self, visible):
         self.visible = visible
@@ -203,26 +226,22 @@ class SliceGizmo(Gizmo):
     def hit(self, x, y):
         if not self.visible:
             return None
-        centre = self.centre()
-        tip = centre.copy()
-        tip[self.axis] += self.length()
+        tip = self.pivot + self.normal * self.length()
         mouse = np.array([x, y], float)
-        if _segment_distance(mouse, self._screen(centre), self._screen(tip)) <= HIT_PIXELS:
+        if _segment_distance(mouse, self._screen(self.pivot), self._screen(tip)) <= HIT_PIXELS:
             return "slice", self.axis, None
         return None
 
     def begin(self, handle, x, y):
-        self._drag = {"axis": self.axis, "mouse": np.array([x, y], float), "anchor": self.centre(),
-                      "length": self.length(), "position": self.position}
+        self._drag = {"axis": self.axis, "direction": self.normal.copy(), "mouse": np.array([x, y], float),
+                      "anchor": self.pivot.copy(), "length": self.length(), "position": self.position}
 
     def drag(self, x, y):
         if self._drag is None:
             return
-        low, high = self.bounds
-        position = float(np.clip(self._drag["position"] + self.snap(self._axis_shift(x, y)), low[self.axis],
-                                 high[self.axis]))
-        self.update(self.axis, position, self.data_bounds)
-        self.on_change(position)
+        along_axis = self._axis_shift(x, y) / self.normal[self.axis]
+        self.position = float(np.clip(self._drag["position"] + self.snap(along_axis), *self.limits))
+        self.on_change(self.position)
 
     def end(self):
         self._drag = None
@@ -240,7 +259,7 @@ class Snap:
 
 
 class SliceControls:
-    """Panel section that cuts the view with an axis-aligned plane."""
+    """Panel section that cuts the view with a plane: an axis, a position along it and two tilt angles."""
 
     def __init__(self, tr, values, step, on_change, on_restore):
         W = QtWidgets
@@ -260,6 +279,17 @@ class SliceControls:
         form.addRow(tr("slice_axis"), row)
         self.position = spin(-RANGE_LIMIT, RANGE_LIMIT, values["position"], step)
         form.addRow(tr("slice_position"), self.position)
+        self.tr = tr
+        self.centre = np.array(values["centre"], float)
+        self.tilts, self.tilt_labels = [], []
+        for angle in values["tilt"]:
+            box = spin(-80.0, 80.0, angle, 5.0, decimals=1)
+            label = W.QLabel()
+            form.addRow(label, box)
+            self.tilts.append(box)
+            self.tilt_labels.append(label)
+            box.valueChanged.connect(lambda *_: on_change())
+        self._name_tilts()
         self.keep = W.QComboBox()
         self.keep.addItem(tr("slice_below"), "below")
         self.keep.addItem(tr("slice_above"), "above")
@@ -270,27 +300,58 @@ class SliceControls:
         row.addWidget(button(tr("slice_restore"), on_restore))
         form.addRow(row)
         self.enabled.toggled.connect(lambda *_: on_change())
-        self.axes.buttonClicked.connect(lambda *_: on_change())
+        self.axes.buttonClicked.connect(lambda *_: (self._name_tilts(), on_change()))
         self.position.valueChanged.connect(lambda *_: on_change())
         self.keep.currentIndexChanged.connect(lambda *_: on_change())
 
     def flip(self):
         self.keep.setCurrentIndex(1 - self.keep.currentIndex())
 
+    def _name_tilts(self):
+        others = [name.upper() for axis, name in enumerate(AXIS_NAMES) if axis != self.axes.checkedId()]
+        for label, name in zip(self.tilt_labels, others):
+            label.setText(self.tr("slice_tilt", axis=name))
+
     def values(self):
         return {"on": self.enabled.isChecked(), "axis": self.axes.checkedId(), "position": self.position.value(),
-                "keep": self.keep.currentData()}
+                "keep": self.keep.currentData(), "tilt": tuple(box.value() for box in self.tilts),
+                "centre": tuple(self.centre)}
 
     def set_position(self, value):
         set_quietly(self.position, value)
+
+    def normal(self):
+        values = self.values()
+        return plane_normal(values["axis"], values["tilt"])
+
+    def pivot(self):
+        """Point the plane passes through: the stored centre, moved to the position on the slicing axis."""
+        point = self.centre.copy()
+        point[self.axes.checkedId()] = self.position.value()
+        return point
+
+    def signed(self, points):
+        """Signed distance of points from the plane (positive on the side the normal points to)."""
+        return (points - self.pivot()) @ self.normal()
 
     def mask(self, points):
         """True for points on the kept side (all True when slicing is off)."""
         values = self.values()
         if not values["on"] or not len(points):
             return np.ones(len(points), bool)
-        coordinate = points[:, values["axis"]]
-        return coordinate <= values["position"] if values["keep"] == "below" else coordinate >= values["position"]
+        distance = self.signed(points)
+        return distance <= 1e-9 if values["keep"] == "below" else distance >= -1e-9
+
+    def box_side(self, low, high):
+        """Where a box lies: -1 wholly on the hidden side, 1 wholly on the kept side, 0 cut by the plane."""
+        values = self.values()
+        normal = self.normal()
+        middle = ((low + high) / 2 - self.pivot()) @ normal
+        reach = float(np.abs(normal) @ ((high - low) / 2))
+        nearest, farthest = middle - reach, middle + reach
+        if values["keep"] == "below":
+            return 1 if farthest <= 1e-9 else -1 if nearest > 1e-9 else 0
+        return 1 if nearest >= -1e-9 else -1 if farthest < -1e-9 else 0
 
 
-SLICE_DEFAULTS = {"on": False, "axis": 2, "position": 0.0, "keep": "below"}
+SLICE_DEFAULTS = {"on": False, "axis": 2, "position": 0.0, "keep": "below", "tilt": (0.0, 0.0), "centre": (0.0, 0.0, 0.0)}

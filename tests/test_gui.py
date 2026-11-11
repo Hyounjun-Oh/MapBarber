@@ -830,3 +830,41 @@ def test_conversions_between_cloud_and_voxels_lose_nothing(workbench):
         (document.cloud if hasattr(document, "cloud") else document.map).mark_saved()
     window.close_all(ask=False)
     assert not dialogs
+
+
+def test_slice_plane_can_be_tilted(workbench):
+    from mapbarber.formats import CLOUD, VOXEL
+    from mapbarber.voxels import unpack
+    window, _folder, pump, dialogs = workbench
+    editor = window.show_document(VOXEL, floor_map())
+    pump()
+    editor.slice.axes.button(0).click()
+    editor.slice.enabled.setChecked(True)
+    assert editor.slice.position.value() == pytest.approx(1.0)
+    upright = len(editor.visible_keys)
+    editor.slice.tilts[1].setValue(45.0)
+    pump()
+    assert [label.text() for label in editor.slice.tilt_labels] == ["Tilt about Y [°]", "Tilt about Z [°]"]
+    centres = (unpack(editor.visible_keys) + 0.5) * 0.1
+    assert len(centres) and (centres[:, 0] + centres[:, 1] <= 2.0 + 1e-6).all()
+    assert abs(len(centres) - upright) <= 20 and editor.hidden == 400 - len(centres)
+    assert np.allclose(editor.slice_gizmo.normal, (0.5 ** 0.5, 0.5 ** 0.5, 0.0))
+    total = len(editor.map)
+    editor.select_all()
+    editor.delete_selection()
+    assert len(editor.map) == total - len(centres)
+    editor.undo()
+    editor.restore_view()
+    assert len(editor.visible_keys) == total
+
+    xy = np.stack(np.meshgrid(np.arange(0, 4.01, 0.25), np.arange(0, 4.01, 0.25), indexing="ij"), -1).reshape(-1, 2)
+    cloud = window.show_document(CLOUD, (np.column_stack([xy, np.zeros(len(xy))]), None))
+    pump()
+    cloud.slice.axes.button(0).click()
+    cloud.slice.enabled.setChecked(True)
+    cloud.slice.tilts[1].setValue(45.0)
+    pump()
+    shown = cloud.visible_points
+    assert 0 < len(shown) < len(xy) and (shown[:, 0] + shown[:, 1] <= 4.0 + 1e-6).all()
+    window.close_all(ask=False)
+    assert not dialogs

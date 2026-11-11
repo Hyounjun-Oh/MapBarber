@@ -54,7 +54,7 @@ Detection looks at the extension first and the file signature second, so a backu
 - **Large maps:** the map is stored in chunks; distant chunks are drawn coarser and edits redraw only what they touch, so a 35-million-voxel building stays interactive.
 - **Select islands** finds groups of voxels that touch nothing else — the floating specks depth cameras produce. It only selects, so you can look before pressing `Delete`.
 - **Box:** drag the coloured arrows in the 3D view to move it along x, y or z, and the dots on its faces to resize it (or type the bounds). Then select, erase or fill everything inside.
-- **Slice:** cut the space with a plane on x, y or z and work on one side; the other side is hidden and protected. Drag the plane's arrow, flip sides, and *Restore view* when done.
+- **Slice:** cut the space with a plane on x, y or z and work on one side; the other side is hidden and protected. Tilt the plane with two angles, drag its arrow to move it along its normal, flip sides, and *Restore view* when done.
 - **Ruler:** click two voxels to read the distance, Δx/Δy/Δz and the length in voxels. Hold `Shift` to lock the measurement to an axis; tick *Snap to voxel centres* for centre-to-centre readings. The voxel under the cursor is outlined, and the offsets along x, y and z are drawn as coloured legs with their values. A read-out in the top-right corner repeats each measurement as a clear diagram, keeps every measurement in its own tab, and sums them on the Σ tab.
 - Voxels added since the last save are drawn white; the selection is pink.
 - Panel sections carry an icon and a colour stripe, and buttons are tinted by purpose: red erases, green adds, pink selects.

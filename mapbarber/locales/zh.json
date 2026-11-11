@@ -194,5 +194,6 @@
  "status_brush": "画笔内 {n} 个点  ·  距相机 {d:.2f} m",
  "loading_read": "正在读取 {name} …",
  "loading_view": "正在准备 {name} 的视图 …",
- "saving": "正在保存 {name} …"
+ "saving": "正在保存 {name} …",
+ "slice_tilt": "绕 {axis} 轴倾斜 [°]"
 }

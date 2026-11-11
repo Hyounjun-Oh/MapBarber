@@ -632,7 +632,8 @@ class CloudEditor(Editor):
 
     def _update_slice_gizmo(self):
         values = self.slice.values()
-        self.slice_gizmo.update(values["axis"], values["position"], self.data_bounds)
+        self.slice_gizmo.update(values["axis"], values["position"], self.data_bounds, self.slice.normal(),
+                                self.slice.centre)
         self.slice_gizmo.show(values["on"])
 
     def _slice_changed(self):
@@ -641,6 +642,7 @@ class CloudEditor(Editor):
         low, high = self.data_bounds
         mode = (values["on"], axis)
         if values["on"] and (mode != self._previous_mode or not low[axis] <= values["position"] <= high[axis]):
+            self.slice.centre = (low + high) / 2
             self.slice.set_position(float((low[axis] + high[axis]) / 2))
         self._previous_mode = mode
         self._update_slice_gizmo()
@@ -649,6 +651,7 @@ class CloudEditor(Editor):
 
     def _slice_dragged(self, position):
         self.slice.set_position(position)
+        self._update_slice_gizmo()
         self._refresh_timer.start()
         self._report_slice()
 

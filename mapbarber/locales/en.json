@@ -194,5 +194,6 @@
  "status_brush": "{n} points in the brush  ·  {d:.2f} m from the camera",
  "loading_read": "Reading {name} …",
  "loading_view": "Preparing the view of {name} …",
- "saving": "Saving {name} …"
+ "saving": "Saving {name} …",
+ "slice_tilt": "Tilt about {axis} [°]"
 }

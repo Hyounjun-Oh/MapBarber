@@ -345,17 +345,14 @@ class VoxelEditor(Editor):
             return
         low, high = filters
         half = self.map.resolution / 2
-        cut = self.slice.values()
+        sliced = self.slice.values()["on"]
         for chunk in chunks:
             first, last = self.chunk_bounds[chunk][0] + half, self.chunk_bounds[chunk][1] - half
             outside = (last < low).any() or (first > high).any()
             inside = (first >= low).all() and (last <= high).all()
-            if cut["on"]:
-                a, position = cut["axis"], cut["position"]
-                if cut["keep"] == "below":
-                    outside, inside = outside or first[a] > position, inside and last[a] <= position
-                else:
-                    outside, inside = outside or last[a] < position, inside and first[a] >= position
+            if sliced:
+                side = self.slice.box_side(first, last)
+                outside, inside = outside or side < 0, inside and side > 0
             self._clip[chunk] = OUT if outside else IN if inside else CROSS
 
     def _levels(self, chunks):
@@ -665,7 +662,8 @@ class VoxelEditor(Editor):
 
     def _update_slice_gizmo(self):
         values = self.slice.values()
-        self.slice_gizmo.update(values["axis"], values["position"], self.data_bounds)
+        self.slice_gizmo.update(values["axis"], values["position"], self.data_bounds, self.slice.normal(),
+                                self.slice.centre)
         self.slice_gizmo.show(values["on"])
 
     def _slice_changed(self):
@@ -674,6 +672,7 @@ class VoxelEditor(Editor):
         low, high = self.data_bounds
         mode = (values["on"], axis)
         if values["on"] and (mode != self._previous_mode or not low[axis] <= values["position"] <= high[axis]):
+            self.slice.centre = (low + high) / 2
             self.slice.set_position(float((low[axis] + high[axis]) / 2))
         self._previous_mode = mode
         self._update_slice_gizmo()
@@ -682,6 +681,7 @@ class VoxelEditor(Editor):
 
     def _slice_dragged(self, position):
         self.slice.set_position(position)
+        self._update_slice_gizmo()
         self._refresh_timer.start()
         self._report_slice()
 

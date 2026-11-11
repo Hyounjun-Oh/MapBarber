@@ -194,5 +194,6 @@
  "status_brush": "{n} puntos en el pincel  ·  a {d:.2f} m de la cámara",
  "loading_read": "Leyendo {name} …",
  "loading_view": "Preparando la vista de {name} …",
- "saving": "Guardando {name} …"
+ "saving": "Guardando {name} …",
+ "slice_tilt": "Inclinación sobre {axis} [°]"
 }

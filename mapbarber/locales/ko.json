@@ -194,5 +194,6 @@
  "status_brush": "붓 안의 점 {n}개  ·  카메라에서 {d:.2f} m",
  "loading_read": "{name} 읽는 중 …",
  "loading_view": "{name} 화면 준비 중 …",
- "saving": "{name} 저장 중 …"
+ "saving": "{name} 저장 중 …",
+ "slice_tilt": "{axis} 축 기준 기울기 [°]"
 }
