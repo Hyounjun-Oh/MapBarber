@@ -66,7 +66,7 @@ class Canvas(QtWidgets.QGraphicsView):
         self.editor = editor
         self.setScene(QtWidgets.QGraphicsScene(self))
         self.setBackgroundBrush(QtGui.QColor(26, 28, 33))
-        self.setTransformationAnchor(QtWidgets.QGraphicsView.AnchorUnderMouse)
+        self.setTransformationAnchor(QtWidgets.QGraphicsView.NoAnchor)
         self.setResizeAnchor(QtWidgets.QGraphicsView.AnchorViewCenter)
         self.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
@@ -91,8 +91,18 @@ class Canvas(QtWidgets.QGraphicsView):
         super().keyReleaseEvent(event)
 
     def wheelEvent(self, event):
-        factor = 1.2 ** (event.angleDelta().y() / 120.0)
+        position = event.position().toPoint() if hasattr(event, "position") else event.pos()
+        self.zoom(1.2 ** (event.angleDelta().y() / 120.0), position)
+
+    def zoom(self, factor, position=None):
+        """Scale the view so that the scene point under `position` (the view centre by default) stays put."""
+        if position is None:
+            position = self.viewport().rect().center()
+        before = self.mapToScene(position)
+        self.setTransformationAnchor(QtWidgets.QGraphicsView.NoAnchor)
         self.scale(factor, factor)
+        after = self.mapToScene(position)
+        self.translate(after.x() - before.x(), after.y() - before.y())
 
     def _scene_point(self, event):
         position = event.position().toPoint() if hasattr(event, "position") else event.pos()
@@ -310,7 +320,7 @@ class GridEditor(Editor):
         self.brush.stepBy(step)
 
     def zoom(self, factor):
-        self.canvas.scale(factor, factor)
+        self.canvas.zoom(factor)
 
     def conversions(self):
         return [(self.tr("to_voxels"), self.to_voxels)]
@@ -321,7 +331,7 @@ class GridEditor(Editor):
     def redraw(self):
         self.item.set_image(STATE_RGB[np.flipud(self.map.cells)])
         height, width = self.map.shape
-        margin = max(width, height) * 0.1
+        margin = max(width, height) * 4.0
         self.canvas.scene().setSceneRect(-margin, -margin, width + 2 * margin, height + 2 * margin)
         self._draw_axes()
         self.changed()

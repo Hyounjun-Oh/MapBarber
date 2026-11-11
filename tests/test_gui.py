@@ -868,3 +868,32 @@ def test_slice_plane_can_be_tilted(workbench):
     assert 0 < len(shown) < len(xy) and (shown[:, 0] + shown[:, 1] <= 4.0 + 1e-6).all()
     window.close_all(ask=False)
     assert not dialogs
+
+
+def test_grid_zoom_keeps_the_point_under_the_cursor(workbench):
+    from mapbarber.formats import GRID
+    from mapbarber.grid import FREE, GridMap
+    from mapbarber.qt import QtCore, QtGui, QtWidgets
+    window, _folder, pump, dialogs = workbench
+    editor = window.show_document(GRID, GridMap(np.full((300, 400), FREE, np.uint8), 0.05))
+    pump()
+    canvas = editor.canvas
+    for spot in (QtCore.QPoint(40, 30), QtCore.QPoint(canvas.viewport().width() - 30, canvas.viewport().height() - 40)):
+        for delta in (120, 120, 120, 120, -120, -120, 120):
+            before = canvas.mapToScene(spot)
+            scale = canvas.transform().m11()
+            event = QtGui.QWheelEvent(QtCore.QPointF(spot), QtCore.QPointF(canvas.viewport().mapToGlobal(spot)),
+                                      QtCore.QPoint(0, 0), QtCore.QPoint(0, delta), QtCore.Qt.NoButton,
+                                      QtCore.Qt.NoModifier, QtCore.Qt.NoScrollPhase, False)
+            QtWidgets.QApplication.sendEvent(canvas.viewport(), event)
+            pump(0.02)
+            after = canvas.mapToScene(spot)
+            assert canvas.transform().m11() != scale
+            assert abs(after.x() - before.x()) < 1.5 / scale and abs(after.y() - before.y()) < 1.5 / scale
+    centre = canvas.viewport().rect().center()
+    before = canvas.mapToScene(centre)
+    editor.zoom(2.0)
+    after = canvas.mapToScene(centre)
+    assert abs(after.x() - before.x()) < 1.0 and abs(after.y() - before.y()) < 1.0
+    window.close_all(ask=False)
+    assert not dialogs
