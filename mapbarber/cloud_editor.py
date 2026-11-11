@@ -8,7 +8,7 @@ from .editor import Editor
 from .formats import CLOUD, GRID, VOXEL
 from .gizmo import AXIS_NAMES, SLICE_DEFAULTS, BoxGizmo, SliceControls, SliceGizmo, Snap
 from .qt import QtCore, QtWidgets
-from .ruler import Ruler3D, measure
+from .ruler import RULER_RGB, Ruler3D, measure
 from .scene import VIEWS, Viewport, ramp
 from .widgets import ask_numbers, AxisRanges, button, danger_button, int_spin, RANGE_LIMIT, Section, select_button, spin
 
@@ -536,6 +536,9 @@ class CloudEditor(Editor):
     def _measure_hover(self, x, y):
         point = self.measure_point(x, y)
         if point is None:
+            if self.hover_actor.GetVisibility():
+                self.hover_actor.VisibilityOff()
+                self.viewport.render()
             return
         point = self._ruler_target(point)
         self.status(self.tr("status_hover", x=point[0], y=point[1], z=point[2]), 0)
@@ -563,9 +566,14 @@ class CloudEditor(Editor):
         self.viewport.render()
 
     def measure_point(self, x, y):
-        if not len(self.visible_points):
-            return None
-        return self._pick(x, y)
+        """Point under the cursor, marked with a small sphere so it is clear what will be measured."""
+        point = self._pick(x, y) if len(self.visible_points) else None
+        if point is not None:
+            self.hover_source.SetCenter(*point)
+            self.hover_source.SetRadius(self._marker_size() * 2.5)
+            self.hover_actor.GetProperty().SetColor(*RULER_RGB)
+            self.hover_actor.VisibilityOn()
+        return point
 
     def _marker_size(self):
         low, high = self.data_bounds

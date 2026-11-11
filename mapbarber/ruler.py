@@ -3,6 +3,8 @@ import numpy as np
 import vtk
 
 RULER_RGB = (1.0, 0.82, 0.15)
+AXIS_RGB = ((0.95, 0.32, 0.25), (0.35, 0.85, 0.35), (0.32, 0.56, 1.0))
+AXIS_NAMES = "xyz"
 
 
 def measure(a, b, cell=None):
@@ -50,6 +52,26 @@ class Ruler3D:
         self.label.VisibilityOff()
         renderer.AddActor(self.label)
         self.marker_size = 0.02
+        self.legs = []
+        for rgb in AXIS_RGB:
+            source = vtk.vtkLineSource()
+            actor = self._actor(source)
+            actor.GetProperty().SetColor(*rgb)
+            actor.GetProperty().SetLineWidth(2.5)
+            actor.GetProperty().LightingOff()
+            text = vtk.vtkBillboardTextActor3D()
+            prop = text.GetTextProperty()
+            prop.SetFontSize(14)
+            prop.SetBold(True)
+            prop.SetColor(*rgb)
+            prop.SetBackgroundColor(0.08, 0.09, 0.12)
+            prop.SetBackgroundOpacity(0.8)
+            prop.SetJustificationToCentered()
+            prop.SetVerticalJustificationToTop()
+            text.PickableOff()
+            text.VisibilityOff()
+            renderer.AddActor(text)
+            self.legs.append((source, actor, text))
 
     def _actor(self, source):
         mapper = vtk.vtkPolyDataMapper()
@@ -71,6 +93,31 @@ class Ruler3D:
         self.first = self.second = None
         for actor in [self.line_actor, self.label] + [actor for _, actor in self.ends]:
             actor.VisibilityOff()
+        self._hide_legs()
+
+    def _hide_legs(self):
+        for _, actor, text in self.legs:
+            actor.VisibilityOff()
+            text.VisibilityOff()
+
+    def _draw_legs(self, a, b):
+        """Per-axis offsets as a coloured path from a to b: along x, then y, then z."""
+        a, b = np.asarray(a, float), np.asarray(b, float)
+        delta = b - a
+        start = a.copy()
+        several = np.count_nonzero(np.abs(delta) > 1e-9) > 1
+        for axis, (source, actor, text) in enumerate(self.legs):
+            end = start.copy()
+            end[axis] = b[axis]
+            shown = bool(several and abs(delta[axis]) > 1e-9)
+            actor.SetVisibility(shown)
+            text.SetVisibility(shown)
+            if shown:
+                source.SetPoint1(*start)
+                source.SetPoint2(*end)
+                text.SetPosition(*((start + end) / 2))
+                text.SetInput(f"d{AXIS_NAMES[axis]} {delta[axis]:+.3f}")
+            start = end
 
     def _draw(self, a, b, text):
         self.line.SetPoint1(*a)
@@ -83,6 +130,7 @@ class Ruler3D:
         self.label.SetPosition(*((np.asarray(a) + np.asarray(b)) / 2))
         self.label.SetInput(text)
         self.label.VisibilityOn()
+        self._draw_legs(a, b)
 
     def start(self, point):
         self.first, self.second = np.asarray(point, float), None
@@ -92,6 +140,7 @@ class Ruler3D:
         actor.VisibilityOn()
         for item in (self.line_actor, self.label, self.ends[1][1]):
             item.VisibilityOff()
+        self._hide_legs()
 
     def preview(self, point, text):
         if self.pending:

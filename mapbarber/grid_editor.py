@@ -155,6 +155,16 @@ class GridEditor(Editor):
             end = scene.addEllipse(QtCore.QRectF(-5, -5, 10, 10), cosmetic_pen((20, 20, 24), 1.5), QtGui.QBrush(QtGui.QColor(*ruler_rgb)))
             end.setFlag(QtWidgets.QGraphicsItem.ItemIgnoresTransformations, True)
             self.ruler_ends.append(end)
+        self.ruler_legs = []
+        for rgb in ((242, 82, 64), (89, 217, 89)):
+            leg = scene.addLine(QtCore.QLineF(), cosmetic_pen(rgb, 2.0, Qt.DashLine))
+            label = QtWidgets.QGraphicsTextItem()
+            label.setFlag(QtWidgets.QGraphicsItem.ItemIgnoresTransformations, True)
+            scene.addItem(label)
+            for item in (leg, label):
+                item.setZValue(3)
+                item.hide()
+            self.ruler_legs.append((leg, label, "#%02x%02x%02x" % rgb))
         self.ruler_text = QtWidgets.QGraphicsTextItem()
         self.ruler_text.setFlag(QtWidgets.QGraphicsItem.ItemIgnoresTransformations, True)
         scene.addItem(self.ruler_text)
@@ -337,6 +347,7 @@ class GridEditor(Editor):
     def set_tool(self, name):
         self.tool = name
         self.hover.hide()
+        self.hover.setPen(cosmetic_pen((255, 210, 40), 3.0 if name == "measure" else 1.5))
         self.canvas.setCursor(Qt.OpenHandCursor if name == "view" else Qt.CrossCursor)
 
     def _cell(self, point):
@@ -353,6 +364,9 @@ class GridEditor(Editor):
         self.ruler_first, self.ruler_done, self.measurement = None, False, None
         for item in (self.ruler_line, self.ruler_text, *self.ruler_ends):
             item.hide()
+        for leg, label, _ in self.ruler_legs:
+            leg.hide()
+            label.hide()
         if self.panel_alive:
             self.ruler_label.setText(self.tr("ruler_hint"))
 
@@ -382,6 +396,17 @@ class GridEditor(Editor):
         self.ruler_text.setPos((a + b) / 2)
         for item in (self.ruler_line, self.ruler_text):
             item.show()
+        start, end = self.map.world(*self.ruler_first), self.map.world(*end)
+        corner = self._scene_of_world(end[0], start[1])
+        both = abs(result["dx"]) > 1e-9 and abs(result["dy"]) > 1e-9
+        for (leg, label, colour), (p0, p1), name in zip(self.ruler_legs, ((a, corner), (corner, b)), ("dx", "dy")):
+            leg.setVisible(both)
+            label.setVisible(both)
+            if both:
+                leg.setLine(QtCore.QLineF(p0, p1))
+                label.setHtml(f'<div style="background-color:#15171e; color:{colour}; font-weight:600;">'
+                              f'&nbsp;Δ{name[1]} {result[name]:+.3f}&nbsp;</div>')
+                label.setPos((p0 + p1) / 2)
         return result
 
     def _measure_press(self, row, column, modifiers=Qt.NoModifier):

@@ -1,7 +1,19 @@
 """Small widget helpers shared by the editors."""
-from .qt import QtWidgets
+from .qt import QtCore, QtWidgets
 
 RANGE_LIMIT = 1000.0
+
+
+class WheelGuard(QtCore.QObject):
+    """Lets the mouse wheel change a value only in a field that was clicked first; otherwise the panel scrolls."""
+
+    GUARDED = (QtWidgets.QAbstractSpinBox, QtWidgets.QComboBox, QtWidgets.QAbstractSlider)
+
+    def eventFilter(self, target, event):
+        if event.type() == QtCore.QEvent.Wheel and isinstance(target, self.GUARDED) and not target.hasFocus():
+            event.ignore()
+            return True
+        return False
 
 
 def spin(low, high, value, step=0.05, slot=None, decimals=3):

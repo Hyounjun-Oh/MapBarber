@@ -477,3 +477,95 @@ def test_cloud_rectangle_select_is_dense(workbench):
     assert counts[0] > 5000 and counts[1] > 0.97 * counts[0], counts
     window.close_all(ask=False)
     assert not dialogs
+
+
+def test_wheel_changes_values_only_in_focused_fields(workbench):
+    from mapbarber.formats import VOXEL
+    from mapbarber.qt import QtCore, QtGui, QtWidgets
+    window, _folder, pump, dialogs = workbench
+    editor = window.show_document(VOXEL, floor_map())
+    window.activateWindow()
+    pump()
+    box = editor.brush
+
+    def wheel():
+        centre = QtCore.QPointF(box.rect().center())
+        event = QtGui.QWheelEvent(centre, QtCore.QPointF(box.mapToGlobal(box.rect().center())), QtCore.QPoint(0, 0),
+                                  QtCore.QPoint(0, 120), QtCore.Qt.NoButton, QtCore.Qt.NoModifier,
+                                  QtCore.Qt.NoScrollPhase, False)
+        QtWidgets.QApplication.sendEvent(box, event)
+        pump(0.05)
+
+    editor.widget.setFocus()
+    pump(0.1)
+    before = box.value()
+    wheel()
+    assert box.value() == before and not box.hasFocus()
+    box.setFocus()
+    pump(0.1)
+    if box.hasFocus():
+        wheel()
+        assert box.value() > before
+    window.close_all(ask=False)
+    assert not dialogs
+
+
+def test_ruler_highlights_what_is_under_the_cursor(workbench):
+    from mapbarber.formats import CLOUD, VOXEL
+    window, _folder, pump, dialogs = workbench
+    editor = window.show_document(VOXEL, floor_map())
+    pump()
+    editor.look_from((0, 0, 1), (0, 1, 0))
+    window.set_tool("measure")
+    spot = screen(editor, (0.75, 0.75, 0.1)).astype(int)
+    editor.viewport.interactor.SetEventInformation(int(spot[0]), int(spot[1]), 0, 0)
+    editor.viewport.interactor.MouseMoveEvent()
+    bounds = editor.hover_source.GetBounds()
+    assert editor.hover_actor.GetVisibility() and bounds[0] < 0.75 < bounds[1] and bounds[1] - bounds[0] < 0.12
+    editor.viewport.interactor.SetEventInformation(2, 2, 0, 0)
+    editor.viewport.interactor.MouseMoveEvent()
+    assert not editor.hover_actor.GetVisibility()
+    xy = np.stack(np.meshgrid(np.arange(0, 3.01, 0.5), np.arange(0, 3.01, 0.5), indexing="ij"), -1).reshape(-1, 2)
+    cloud = window.show_document(CLOUD, (np.column_stack([xy, np.zeros(len(xy))]), None))
+    pump()
+    cloud.look_from((0, 0, 1), (0, 1, 0))
+    window.set_tool("measure")
+    spot = screen(cloud, (1.5, 1.0, 0.0)).astype(int)
+    cloud.viewport.interactor.SetEventInformation(int(spot[0]), int(spot[1]), 0, 0)
+    cloud.viewport.interactor.MouseMoveEvent()
+    assert cloud.hover_actor.GetVisibility() and np.allclose(cloud.hover_source.GetCenter(), (1.5, 1.0, 0.0))
+    window.close_all(ask=False)
+    assert not dialogs
+
+
+def test_ruler_shows_axis_offsets(workbench):
+    from mapbarber.formats import GRID, VOXEL
+    from mapbarber.grid import FREE, GridMap
+    window, _folder, pump, dialogs = workbench
+    editor = window.show_document(VOXEL, floor_map())
+    pump()
+    editor.look_from((0, 0, 1), (0, 1, 0))
+    window.set_tool("measure")
+    editor.ruler_snap.setChecked(True)
+    vtk_click(editor.viewport, *screen(editor, (0.25, 0.25, 0.1)))
+    vtk_click(editor.viewport, *screen(editor, (1.25, 0.75, 0.1)))
+    shown = [bool(actor.GetVisibility()) for _, actor, _ in editor.ruler.legs]
+    assert shown == [True, True, False]
+    x_leg, y_leg = editor.ruler.legs[0][0], editor.ruler.legs[1][0]
+    assert np.allclose(x_leg.GetPoint2(), (1.25, 0.25, 0.05)) and np.allclose(y_leg.GetPoint2(), (1.25, 0.75, 0.05))
+    assert editor.ruler.legs[0][2].GetInput() == "dx +1.000"
+    vtk_click(editor.viewport, *screen(editor, (0.25, 0.25, 0.1)))
+    vtk_click(editor.viewport, *screen(editor, (1.25, 0.25, 0.1)))
+    assert not any(actor.GetVisibility() for _, actor, _ in editor.ruler.legs)
+
+    grid_editor = window.show_document(GRID, GridMap(np.full((60, 80), FREE, np.uint8), 0.05))
+    pump()
+    window.set_tool("measure")
+    grid_editor._measure_press(10, 10)
+    grid_editor._measure_press(30, 50)
+    assert all(leg.isVisible() for leg, _, _ in grid_editor.ruler_legs)
+    assert "+2.000" in grid_editor.ruler_legs[0][1].toPlainText() and "+1.000" in grid_editor.ruler_legs[1][1].toPlainText()
+    grid_editor.clear_ruler()
+    assert not any(leg.isVisible() for leg, _, _ in grid_editor.ruler_legs)
+    window.close_all(ask=False)
+    assert not dialogs

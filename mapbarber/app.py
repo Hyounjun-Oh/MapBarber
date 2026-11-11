@@ -13,7 +13,7 @@ from .i18n import LANGUAGES, Translator
 from .qt import QAction, QActionGroup, QtCore, QtGui, QtWidgets, run
 from .voxel_editor import VoxelEditor
 from .voxels import EMPTY
-from .widgets import ask_numbers
+from .widgets import WheelGuard, ask_numbers
 
 Qt = QtCore.Qt
 EDITORS = {VOXEL: VoxelEditor, CLOUD: CloudEditor, GRID: GridEditor}
@@ -484,6 +484,9 @@ def launch(paths=None, language=None):
     app = QtWidgets.QApplication.instance() or QtWidgets.QApplication(["mapbarber"])
     app.setApplicationName("MapBarber")
     app.setWindowIcon(QtGui.QIcon(ICON))
+    if not hasattr(app, "wheel_guard"):
+        app.wheel_guard = WheelGuard(app)
+        app.installEventFilter(app.wheel_guard)
     window = Workbench(paths, language)
     window.show()
     return app, window

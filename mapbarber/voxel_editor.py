@@ -8,7 +8,7 @@ from .editor import Editor
 from .formats import CLOUD, GRID, VOXEL
 from .gizmo import AXIS_NAMES, SLICE_DEFAULTS, BoxGizmo, SliceControls, SliceGizmo, Snap
 from .qt import QtCore, QtWidgets
-from .ruler import Ruler3D, measure
+from .ruler import RULER_RGB, Ruler3D, measure
 from .scene import VIEWS, Viewport, ramp
 from .voxels import EMPTY, VoxelMap, in_range, pack, ray_pick, unpack
 from .widgets import add_button, ask_numbers, AxisRanges, button, danger_button, int_spin, RANGE_LIMIT, Section, select_button, spin
@@ -514,6 +514,9 @@ class VoxelEditor(Editor):
     def _measure_hover(self, x, y):
         point = self.measure_point(x, y)
         if point is None:
+            if self.hover_actor.GetVisibility():
+                self.hover_actor.VisibilityOff()
+                self.viewport.render()
             return
         point = self._ruler_target(point)
         self.status(self.tr("status_hover", x=point[0], y=point[1], z=point[2]), 0)
@@ -549,6 +552,9 @@ class VoxelEditor(Editor):
             return None
         index, axis, sign = hit
         centre = self.visible_centers[index]
+        self.hover_source.SetBounds(*[centre[a] + s * half * 1.08 for a in range(3) for s in (-1, 1)])
+        self.hover_actor.GetProperty().SetColor(*RULER_RGB)
+        self.hover_actor.VisibilityOn()
         if self.ruler_snap.isChecked():
             return centre.copy()
         distance = (centre[axis] + sign * half - origin[axis]) / direction[axis]
