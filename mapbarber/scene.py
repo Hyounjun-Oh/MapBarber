@@ -176,7 +176,7 @@ class Viewport:
         height = max(self.renderer.GetSize()[1], 1)
         return np.radians(self.renderer.GetActiveCamera().GetViewAngle()) / height
 
-    def rectangle_hits(self, points, corner_a, corner_b, front_only, tolerance):
+    def rectangle_hits(self, points, corner_a, corner_b, front_only, tolerance, footprint=0.0):
         """Indices of points that project into a screen rectangle, optionally only the front layer."""
         if not len(points):
             return np.zeros(0, np.int64)
@@ -194,14 +194,21 @@ class Viewport:
         y0, y1 = sorted((corner_a[1], corner_b[1]))
         chosen = np.flatnonzero(ahead & (sx >= x0) & (sx <= x1) & (sy >= y0) & (sy <= y1))
         if front_only and len(chosen):
-            # Keep only points close to the nearest one in each small screen tile.
+            # Keep only points close to the nearest one in each screen tile. A tile is about as large as one
+            # item on screen, so neighbours on the same surface never hide each other.
             eye, forward = np.array(camera.GetPosition()), np.array(camera.GetDirectionOfProjection())
             depth = (points[chosen] - eye) @ forward
-            tile = (sx[chosen] // 8).astype(np.int64) * 100_000 + (sy[chosen] // 8).astype(np.int64)
+            per_pixel = max(float(np.median(depth)), 1e-6) * self.pixel_angle()
+            size = 3.0
+            if footprint > 0:
+                size = float(np.clip(footprint / per_pixel, 2.0, 64.0))
+            else:
+                footprint = 2.0 * size * per_pixel
+            tile = (sx[chosen] // size).astype(np.int64) * 100_000 + (sy[chosen] // size).astype(np.int64)
             _, inverse = np.unique(tile, return_inverse=True)
             nearest = np.full(int(inverse.max()) + 1, np.inf)
             np.minimum.at(nearest, inverse, depth)
-            chosen = chosen[depth <= nearest[inverse] + tolerance]
+            chosen = chosen[depth <= nearest[inverse] + tolerance + footprint]
         return chosen
 
     def capture(self):

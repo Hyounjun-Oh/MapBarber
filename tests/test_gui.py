@@ -423,3 +423,57 @@ def test_voxel_ruler_shift_locks_axis(workbench):
     assert editor.measurement["d"] == pytest.approx(1.0) and editor.measurement["dy"] == pytest.approx(0.0)
     window.close_all(ask=False)
     assert not dialogs
+
+
+def test_rectangle_select_is_dense_on_surfaces(workbench):
+    from mapbarber.formats import VOXEL
+    from mapbarber.voxels import pack, unpack
+    window, _folder, pump, dialogs = workbench
+    floor = np.stack(np.meshgrid(np.arange(200), np.arange(200), [0], indexing="ij"), -1).reshape(-1, 3)
+    wall = np.stack(np.meshgrid(np.arange(200), [199], np.arange(1, 60), indexing="ij"), -1).reshape(-1, 3)
+    editor = window.show_document(VOXEL, (pack(np.vstack([floor, wall])), 0.05))
+    pump()
+    width, height = editor.viewport.renderer.GetSize()
+    corners = ((width * 0.3, height * 0.3), (width * 0.7, height * 0.7))
+    for zoom in (1.0, 3.0):
+        editor.look_from((1, -1, 0.8), (0, 0, 1))
+        editor.viewport.zoom(zoom)
+        pump(0.1)
+        editor.front_only.setChecked(False)
+        editor._rectangle(*corners, False)
+        everything = len(editor.selection)
+        editor.clear_selection()
+        editor.front_only.setChecked(True)
+        editor._rectangle(*corners, False)
+        assert everything > 500 and len(editor.selection) > 0.97 * everything, (zoom, len(editor.selection), everything)
+        editor.clear_selection()
+    near = np.stack(np.meshgrid(np.arange(200), [100], np.arange(1, 60), indexing="ij"), -1).reshape(-1, 3)
+    editor.edit(add=pack(near))
+    editor.look_from((0, -1, 0), (0, 0, 1))
+    pump(0.1)
+    editor._rectangle((0, 0), (width, height), False)
+    rows = unpack(editor.selection)
+    front, back = (rows[:, 1] == 100).sum(), ((rows[:, 1] == 199) & (rows[:, 2] > 0)).sum()
+    assert front > 0.97 * len(near) and back < 0.05 * len(wall), (front, back)
+    editor.map.mark_saved()
+    window.close_all(ask=False)
+    assert not dialogs
+
+
+def test_cloud_rectangle_select_is_dense(workbench):
+    from mapbarber.formats import CLOUD
+    window, _folder, pump, dialogs = workbench
+    xy = np.stack(np.meshgrid(np.arange(0, 10, 0.02), np.arange(0, 10, 0.02), indexing="ij"), -1).reshape(-1, 2)
+    editor = window.show_document(CLOUD, (np.column_stack([xy, np.zeros(len(xy))]), None))
+    pump()
+    width, height = editor.viewport.renderer.GetSize()
+    corners = ((width * 0.3, height * 0.3), (width * 0.7, height * 0.7))
+    counts = []
+    for front in (False, True):
+        editor.front_only.setChecked(front)
+        editor._rectangle(*corners, False)
+        counts.append(len(editor.selection))
+        editor.clear_selection()
+    assert counts[0] > 5000 and counts[1] > 0.97 * counts[0], counts
+    window.close_all(ask=False)
+    assert not dialogs

@@ -603,6 +603,6 @@ class VoxelEditor(Editor):
     def _rectangle(self, corner_a, corner_b, subtract):
         self.hover_actor.VisibilityOff()
         chosen = self.viewport.rectangle_hits(self.visible_centers, corner_a, corner_b, self.front_only.isChecked(),
-                                              self.tolerance.value())
+                                              self.tolerance.value(), self.map.resolution)
         self.select(self.visible_keys[chosen], "remove" if subtract else "add")
         self.status(self.tr("status_rectangle", n=len(chosen), t=len(self.selection)))
