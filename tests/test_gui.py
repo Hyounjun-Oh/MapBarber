@@ -479,33 +479,50 @@ def test_cloud_rectangle_select_is_dense(workbench):
     assert not dialogs
 
 
-def test_wheel_changes_values_only_in_focused_fields(workbench):
+def test_wheel_scrolls_the_panel_unless_a_field_was_clicked(workbench):
     from mapbarber.formats import VOXEL
-    from mapbarber.qt import QtCore, QtGui, QtWidgets
+    from mapbarber.qt import QtCore, QtGui, QtTest, QtWidgets
     window, _folder, pump, dialogs = workbench
     editor = window.show_document(VOXEL, floor_map())
-    window.activateWindow()
+    size = window.size()
+    window.resize(1200, 480)
     pump()
-    box = editor.brush
+    bar = window.dock.widget().verticalScrollBar()
+    assert bar.maximum() > 0
 
-    def wheel():
-        centre = QtCore.QPointF(box.rect().center())
-        event = QtGui.QWheelEvent(centre, QtCore.QPointF(box.mapToGlobal(box.rect().center())), QtCore.QPoint(0, 0),
-                                  QtCore.QPoint(0, 120), QtCore.Qt.NoButton, QtCore.Qt.NoModifier,
+    def wheel(box, delta=-120):
+        target = box.findChild(QtWidgets.QLineEdit) or box
+        centre = target.rect().center()
+        event = QtGui.QWheelEvent(QtCore.QPointF(centre), QtCore.QPointF(target.mapToGlobal(centre)), QtCore.QPoint(0, 0),
+                                  QtCore.QPoint(0, delta), QtCore.Qt.NoButton, QtCore.Qt.NoModifier,
                                   QtCore.Qt.NoScrollPhase, False)
-        QtWidgets.QApplication.sendEvent(box, event)
+        QtWidgets.QApplication.sendEvent(target, event)
         pump(0.05)
 
-    editor.widget.setFocus()
-    pump(0.1)
-    before = box.value()
-    wheel()
-    assert box.value() == before and not box.hasFocus()
-    box.setFocus()
-    pump(0.1)
-    if box.hasFocus():
-        wheel()
-        assert box.value() > before
+    for box in (editor.brush, editor.plane, editor.tolerance):
+        bar.setValue(0)
+        value = box.value()
+        wheel(box)
+        assert box.value() == value and bar.value() > 0, box
+
+    bar.setValue(0)
+    box = editor.plane
+    QtTest.QTest.mouseClick(box.findChild(QtWidgets.QLineEdit), QtCore.Qt.LeftButton)
+    pump(0.05)
+    value = box.value()
+    wheel(box, 120)
+    assert box.value() > value and bar.value() == 0
+    other = editor.brush.value()
+    wheel(editor.brush)
+    assert editor.brush.value() == other and bar.value() > 0
+
+    QtWidgets.QApplication.sendEvent(box, QtCore.QEvent(QtCore.QEvent.Leave))
+    bar.setValue(0)
+    value = box.value()
+    wheel(box, 120)
+    wheel(box, -120)
+    assert box.value() == value and bar.value() > 0
+    window.resize(size)
     window.close_all(ask=False)
     assert not dialogs
 

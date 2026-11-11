@@ -5,14 +5,43 @@ RANGE_LIMIT = 1000.0
 
 
 class WheelGuard(QtCore.QObject):
-    """Lets the mouse wheel change a value only in a field that was clicked first; otherwise the panel scrolls."""
+    """The wheel edits a number field or list only after it was clicked and while the pointer stays on it.
+
+    Anywhere else the wheel scrolls the surrounding panel, so values never change by accident.
+    """
 
     GUARDED = (QtWidgets.QAbstractSpinBox, QtWidgets.QComboBox, QtWidgets.QAbstractSlider)
 
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.armed = None
+
+    def _field(self, target):
+        if isinstance(target, QtWidgets.QScrollBar):
+            return None
+        if isinstance(target, self.GUARDED):
+            return target
+        parent = target.parent() if isinstance(target, QtWidgets.QLineEdit) else None
+        return parent if isinstance(parent, self.GUARDED) else None
+
     def eventFilter(self, target, event):
-        if event.type() == QtCore.QEvent.Wheel and isinstance(target, self.GUARDED) and not target.hasFocus():
-            event.ignore()
-            return True
+        kind = event.type()
+        if kind == QtCore.QEvent.MouseButtonPress and isinstance(target, QtWidgets.QWidget):
+            self.armed = self._field(target)
+        elif kind == QtCore.QEvent.Leave and target is self.armed:
+            self.armed = None
+        elif kind == QtCore.QEvent.Wheel and isinstance(target, QtWidgets.QWidget):
+            field = self._field(target)
+            if field is not None and field is not self.armed:
+                area = field.parent()
+                while area is not None and not isinstance(area, QtWidgets.QAbstractScrollArea):
+                    area = area.parent()
+                if area is not None:
+                    QtWidgets.QApplication.sendEvent(area.verticalScrollBar(), event)
+                return True
+            if field is not None and field is not target:
+                QtWidgets.QApplication.sendEvent(field, event)
+                return True
         return False
 
 
