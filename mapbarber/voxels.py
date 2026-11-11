@@ -34,25 +34,134 @@ def voxelize(points, resolution):
     return np.unique(pack(ijk[in_range(ijk)]))
 
 
+CHUNK_BITS = 6
+CHUNK = 1 << CHUNK_BITS
+_LOCAL_BITS = 3 * CHUNK_BITS
+_AXIS_BITS = DEPTH - CHUNK_BITS
+_AXIS_OFFSET = 1 << (_AXIS_BITS - 1)
+
+
 class VoxelMap:
-    """A set of occupied cells on a regular grid, with undo/redo."""
+    """Occupied cells on a regular grid, stored in cubic chunks of 64 cells so edits touch only what they change.
+
+    Each chunk holds the sorted local indices (x | y << 6 | z << 12) of its occupied cells.
+    """
 
     def __init__(self, keys=EMPTY, resolution=0.05):
         self.resolution = float(resolution)
-        self.occupied = np.unique(np.asarray(keys, np.int64))
-        self.saved = self.occupied.copy()
+        self.chunks = {}
+        self.count = 0
+        self.added, self.removed = EMPTY, EMPTY
         self._undo, self._redo = [], []
+        self._insert(np.asarray(keys, np.int64))
+        self.count = sum(len(local) for local in self.chunks.values())
 
     def __len__(self):
-        return len(self.occupied)
+        return self.count
+
+    @staticmethod
+    def split(keys):
+        """Keys -> (chunk key per cell, local index per cell)."""
+        cells = unpack(keys)
+        local = cells & (CHUNK - 1)
+        index = (local[:, 0] | (local[:, 1] << CHUNK_BITS) | (local[:, 2] << (2 * CHUNK_BITS))).astype(np.int32)
+        chunk = (cells >> CHUNK_BITS) + _AXIS_OFFSET
+        return (chunk[:, 0] << (2 * _AXIS_BITS)) | (chunk[:, 1] << _AXIS_BITS) | chunk[:, 2], index
+
+    @staticmethod
+    def chunk_origin(chunk_key):
+        """First cell (x, y, z) of a chunk."""
+        mask = (1 << _AXIS_BITS) - 1
+        chunk = np.array([chunk_key >> (2 * _AXIS_BITS), (chunk_key >> _AXIS_BITS) & mask, chunk_key & mask], np.int64)
+        return (chunk - _AXIS_OFFSET) << CHUNK_BITS
+
+    def _groups(self, keys):
+        """Yield (chunk key, sorted unique local indices) for a set of keys."""
+        if not len(keys):
+            return
+        chunk, local = self.split(keys)
+        code = (chunk << _LOCAL_BITS) | local
+        code = np.unique(code)
+        chunk, local = code >> _LOCAL_BITS, (code & ((1 << _LOCAL_BITS) - 1)).astype(np.int32)
+        cuts = np.flatnonzero(np.diff(chunk)) + 1
+        for start, end in zip(np.concatenate([[0], cuts]), np.concatenate([cuts, [len(chunk)]])):
+            yield int(chunk[start]), local[start:end]
+
+    def _insert(self, keys):
+        for chunk_key, local in self._groups(keys):
+            current = self.chunks.get(chunk_key)
+            self.chunks[chunk_key] = local if current is None else np.union1d(current, local)
+
+    def cells(self, chunk_key, local=None):
+        """Cell indices (N, 3) of a chunk's occupied cells, or of the given local indices."""
+        local = self.chunks[chunk_key] if local is None else local
+        mask = CHUNK - 1
+        offsets = np.stack([local & mask, (local >> CHUNK_BITS) & mask, (local >> (2 * CHUNK_BITS)) & mask], axis=1)
+        return offsets.astype(np.int64) + self.chunk_origin(chunk_key)
+
+    def keys(self, chunk_key):
+        return pack(self.cells(chunk_key))
+
+    @property
+    def occupied(self):
+        """Every occupied key, sorted. Costs a pass over the whole map; meant for saving and conversion."""
+        if not self.chunks:
+            return EMPTY
+        return np.sort(np.concatenate([self.keys(chunk_key) for chunk_key in self.chunks]))
+
+    @property
+    def saved(self):
+        """Keys as they were at the last save."""
+        return np.union1d(np.setdiff1d(self.occupied, self.added, assume_unique=True), self.removed)
+
+    def contains(self, keys):
+        """Boolean mask: which of the keys are occupied."""
+        keys = np.asarray(keys, np.int64)
+        found = np.zeros(len(keys), bool)
+        if not len(keys):
+            return found
+        chunk, local = self.split(keys)
+        order = np.argsort(chunk, kind="stable")
+        cuts = np.flatnonzero(np.diff(chunk[order])) + 1
+        for start, end in zip(np.concatenate([[0], cuts]), np.concatenate([cuts, [len(order)]])):
+            rows = order[start:end]
+            stored = self.chunks.get(int(chunk[rows[0]]))
+            if stored is not None:
+                found[rows] = np.isin(local[rows], stored)
+        return found
+
+    def _change(self, add, remove):
+        """Add and remove keys that are known to be absent and present; returns the touched chunk keys."""
+        touched = set()
+        for chunk_key, local in self._groups(remove):
+            left = np.setdiff1d(self.chunks[chunk_key], local, assume_unique=True)
+            if len(left):
+                self.chunks[chunk_key] = left
+            else:
+                del self.chunks[chunk_key]
+            touched.add(chunk_key)
+        for chunk_key, local in self._groups(add):
+            current = self.chunks.get(chunk_key)
+            self.chunks[chunk_key] = local if current is None else np.union1d(current, local)
+            touched.add(chunk_key)
+        self.count += len(add) - len(remove)
+        again = np.intersect1d(add, self.removed)
+        gone = np.intersect1d(remove, self.added)
+        self.added = np.setdiff1d(np.union1d(self.added, np.setdiff1d(add, again, assume_unique=True)), gone)
+        self.removed = np.setdiff1d(np.union1d(self.removed, np.setdiff1d(remove, gone, assume_unique=True)), again)
+        self.touched = touched
+        return touched
 
     def apply(self, add=None, remove=None):
         """Apply an edit and return (added, removed) counts of cells that actually changed."""
-        add = EMPTY if add is None else np.setdiff1d(np.asarray(add, np.int64), self.occupied)
-        remove = EMPTY if remove is None else np.intersect1d(np.asarray(remove, np.int64), self.occupied)
+        add = EMPTY if add is None else np.unique(np.asarray(add, np.int64))
+        remove = EMPTY if remove is None else np.unique(np.asarray(remove, np.int64))
+        add = add[~self.contains(add)]
+        remove = remove[self.contains(remove)]
+        self.touched = set()
         if not len(add) and not len(remove):
             return 0, 0
-        self.occupied = np.union1d(np.setdiff1d(self.occupied, remove, assume_unique=True), add)
+        self._change(add, remove)
         self._undo.append((add, remove))
         self._redo.clear()
         return len(add), len(remove)
@@ -61,7 +170,7 @@ class VoxelMap:
         if not self._undo:
             return False
         add, remove = self._undo.pop()
-        self.occupied = np.union1d(np.setdiff1d(self.occupied, add, assume_unique=True), remove)
+        self._change(remove, add)
         self._redo.append((add, remove))
         return True
 
@@ -69,28 +178,39 @@ class VoxelMap:
         if not self._redo:
             return False
         add, remove = self._redo.pop()
-        self.occupied = np.union1d(np.setdiff1d(self.occupied, remove, assume_unique=True), add)
+        self._change(add, remove)
         self._undo.append((add, remove))
         return True
 
     @property
     def dirty(self):
-        return not np.array_equal(self.occupied, self.saved)
+        return bool(len(self.added) or len(self.removed))
 
     def mark_saved(self):
-        self.saved = self.occupied.copy()
+        self.added, self.removed = EMPTY, EMPTY
 
     def changes(self):
         """(added, removed) cell counts relative to the last saved state."""
-        return (len(np.setdiff1d(self.occupied, self.saved, assume_unique=True)),
-                len(np.setdiff1d(self.saved, self.occupied, assume_unique=True)))
+        return len(self.added), len(self.removed)
+
+    def bounds(self):
+        """(lowest cell, highest cell) over the whole map, or None when it is empty."""
+        if not self.chunks:
+            return None
+        low = np.array([np.iinfo(np.int64).max] * 3)
+        high = -low
+        for chunk_key in self.chunks:
+            cells = self.cells(chunk_key)
+            low, high = np.minimum(low, cells.min(axis=0)), np.maximum(high, cells.max(axis=0))
+        return low, high
 
     def islands(self, max_size):
         """Keys of 26-connected components with at most max_size cells -> (keys, component count)."""
         from scipy import ndimage
-        if not len(self.occupied):
+        occupied = self.occupied
+        if not len(occupied):
             return EMPTY, 0
-        ijk = unpack(self.occupied)
+        ijk = unpack(occupied)
         low = ijk.min(axis=0)
         dims = ijk.max(axis=0) - low + 1
         if float(np.prod(dims.astype(np.float64))) > 4e8:
@@ -102,7 +222,7 @@ class VoxelMap:
         sizes = np.bincount(labels.ravel())
         mine = labels[rel[:, 0], rel[:, 1], rel[:, 2]]
         small = sizes[mine] <= max_size
-        return self.occupied[small], int(len(np.unique(mine[small])))
+        return occupied[small], int(len(np.unique(mine[small])))
 
 
 def ray_pick(origin, direction, box_centers, half):

@@ -13,7 +13,7 @@
 
 [![tests](https://github.com/Hyounjun-Oh/mapbarber/actions/workflows/tests.yml/badge.svg)](https://github.com/Hyounjun-Oh/mapbarber/actions/workflows/tests.yml)
 ![python](https://img.shields.io/badge/python-3.10%2B-blue)
-![license](https://img.shields.io/badge/license-Unlicense-green)
+![license](https://img.shields.io/badge/license-Unlicense%20OR%20MIT-green)
 
 ![3 種類のマップをタブで開き、ボクセルマップを 2D グリッドに変換し、言語を切り替える様子](docs/overview.gif)
 
@@ -165,4 +165,6 @@ MAPBARBER_GUI_TESTS=1 .venv/bin/pytest            # 実際のウィンドウで�
 
 ## ライセンス
 
-[Unlicense](LICENSE) によるパブリックドメインです。クレジットの有無を問わず、どんな用途にも使えます。依存ライブラリはそれぞれのライセンスに従います。PySide6 (LGPL-3.0)、VTK (BSD-3-Clause)、NumPy・SciPy (BSD-3-Clause)。
+[Unlicense](UNLICENSE) または [MIT ライセンス](LICENSE-MIT) のどちらかを選べるデュアルライセンスです ([COPYING](COPYING) を参照)。要するに、クレジットの有無を問わず、どんな用途にも使えます。コード、翻訳、ロゴ、アイコン、サンプルとデモのマップのすべてが対象で、いずれもこのプロジェクトのために作ったものです。
+
+依存ライブラリはそれぞれのライセンスに従います。PySide6 (LGPL-3.0)、VTK・NumPy・SciPy (BSD-3-Clause)。ソースから実行する場合や pip でインストールする場合は追加の対応は不要です。これらを同梱して再配布する場合は [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) を参照してください。コントリビューションも同じ条件で受け付けます ([CONTRIBUTING.md](CONTRIBUTING.md))。
