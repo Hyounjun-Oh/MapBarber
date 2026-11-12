@@ -197,5 +197,13 @@
  "saving": "Saving {name} …",
  "slice_tilt": "Tilt about {axis} [°]",
  "converting": "Converting …",
- "empty_as_free": "Mark cells without an obstacle as free (otherwise unknown)"
+ "empty_as_free": "Mark cells without an obstacle as free (otherwise unknown)",
+ "loss_title": "Not everything fits this format",
+ "loss_intro": "A {format} file cannot store everything this map holds. This will be left out:",
+ "loss_save": "Save anyway",
+ "loss_free_space": "Free space: only occupied cells are written, the rest becomes unknown",
+ "loss_values": "Occupancy values: every cell is written as simply occupied or free",
+ "loss_colours": "Voxel colours",
+ "loss_fields": "Point fields: {detail}",
+ "loss_elements": "Other parts of the PLY file: {detail}"
 }

@@ -11,11 +11,24 @@ DEFAULT_META = {"negate": 0, "occupied_thresh": 0.65, "free_thresh": 0.196, "mod
 RAW_UNKNOWN = 255
 
 
+def _without_comment(line):
+    """Cut a trailing `# comment`, leaving a `#` inside quotes alone."""
+    quote = None
+    for index, char in enumerate(line):
+        if quote:
+            quote = None if char == quote else quote
+        elif char in "\"'":
+            quote = char
+        elif char == "#" and (index == 0 or line[index - 1].isspace()):
+            return line[:index]
+    return line
+
+
 def _parse_yaml(text):
     """Flat `key: value` reader, enough for map description files."""
     meta = {}
     for line in text.splitlines():
-        line = line.split("#", 1)[0].strip()
+        line = _without_comment(line).strip()
         if ":" not in line:
             continue
         key, value = (part.strip() for part in line.split(":", 1))
@@ -111,8 +124,10 @@ def _write_image(path, pixels):
 class GridMap:
     """Cells are stored with row 0 at the bottom, so cell (row, column) sits at origin + (column, row) * resolution."""
 
-    def __init__(self, cells, resolution=0.05, origin=(0.0, 0.0, 0.0), meta=None):
+    def __init__(self, cells, resolution=0.05, origin=(0.0, 0.0, 0.0), meta=None, pixels=None):
+        """pixels: the image the cells were read from, in the same layout, so untouched cells keep their exact value."""
         self.cells = np.ascontiguousarray(cells, np.uint8)
+        self.pixels = pixels
         self.resolution = float(resolution)
         self.origin = tuple(float(v) for v in origin)
         self.meta = dict(DEFAULT_META, **(meta or {}))
@@ -127,11 +142,11 @@ class GridMap:
         return [int(v) for v in np.bincount(self.cells.ravel(), minlength=3)[:3]]
 
     def snapshot(self):
-        return self.cells.copy(), self.origin, self.resolution
+        return self.cells.copy(), self.origin, self.resolution, self.pixels
 
     def commit(self, before):
         """Record the change since `before` (from snapshot()); returns the number of changed cells."""
-        cells, origin, resolution = before
+        cells, origin, resolution = before[:3]
         if cells.shape != self.cells.shape:
             changed = max(cells.size, self.cells.size)
         else:
@@ -146,7 +161,7 @@ class GridMap:
         if not source:
             return False
         target.append(self.snapshot())
-        self.cells, self.origin, self.resolution = source.pop()
+        self.cells, self.origin, self.resolution, self.pixels = source.pop()
         return True
 
     def undo(self):
@@ -157,7 +172,7 @@ class GridMap:
 
     @property
     def dirty(self):
-        cells, origin, resolution = self._saved
+        cells, origin, resolution = self._saved[:3]
         return (origin != self.origin or resolution != self.resolution or cells.shape != self.cells.shape
                 or not np.array_equal(cells, self.cells))
 
@@ -225,7 +240,17 @@ class GridMap:
         c, s = np.cos(self.origin[2]), np.sin(self.origin[2])
         self.origin = (float(self.origin[0] + c * x - s * y), float(self.origin[1] + s * x + c * y), self.origin[2])
         self.cells = np.ascontiguousarray(self.cells[r0:r1, c0:c1])
+        if self.pixels is not None:
+            self.pixels = self.pixels[r0:r1, c0:c1]
         return True
+
+    def image(self):
+        """Pixels to store, top row first: cells that still read as they did in the source image keep its value."""
+        pixels = render(self.cells, self.meta)
+        if self.pixels is not None and self.pixels.shape == self.cells.shape:
+            same = classify(self.pixels, self.meta) == self.cells
+            pixels[same] = self.pixels[same]
+        return np.flipud(pixels)
 
 
 def snap_angle(start, end):
@@ -313,14 +338,15 @@ def load(path, resolution=None):
         raise ValueError("the map resolution must be greater than zero")
     origin = (list(meta.get("origin", [])) + [0.0, 0.0, 0.0])[:3]
     return GridMap(np.flipud(classify(pixels, meta)), resolution or meta.get("resolution", 0.05), origin,
-                   {key: meta[key] for key in DEFAULT_META if key in meta})
+                   {key: meta[key] for key in DEFAULT_META if key in meta}, np.flipud(pixels))
 
 
 def save(path, grid):
     """Write a GridMap as image plus YAML; `path` may name either file.
 
     Both files are written to temporary names first and only then put in place, so a failed save
-    leaves the previous pair untouched. Numbers are written with full precision.
+    leaves the previous pair untouched. Numbers are written with full precision, and cells that were
+    not edited keep the pixel value of the image they were read from.
     """
     stem, ext = os.path.splitext(path)
     described = ext.lower() in (".yaml", ".yml")
@@ -328,7 +354,7 @@ def save(path, grid):
     description = path if described else os.path.splitext(image)[0] + ".yaml"
     origin = ", ".join(repr(float(value)) for value in grid.origin)
     with replacing(image, description) as (image_part, description_part):
-        _write_image(image_part, render(np.flipud(grid.cells), grid.meta))
+        _write_image(image_part, grid.image())
         with open(description_part, "w") as f:
             f.write(f"image: {os.path.basename(image)}\nmode: {grid.meta['mode']}\n"
                     f"resolution: {float(grid.resolution)!r}\norigin: [{origin}]\n"

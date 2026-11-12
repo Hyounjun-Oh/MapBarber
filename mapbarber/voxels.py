@@ -177,6 +177,7 @@ class VoxelMap(KeySet):
     def __init__(self, keys=EMPTY, resolution=0.05):
         super().__init__(keys)
         self.resolution = float(resolution)
+        self.leaves = None
         self.added, self.removed = EMPTY, EMPTY
         self.touched = set()
         self._undo, self._redo = [], []

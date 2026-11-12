@@ -197,5 +197,13 @@
  "saving": "正在保存 {name} …",
  "slice_tilt": "绕 {axis} 轴倾斜 [°]",
  "converting": "正在转换 …",
- "empty_as_free": "将没有障碍物的格子标为空闲 (否则为未知)"
+ "empty_as_free": "将没有障碍物的格子标为空闲 (否则为未知)",
+ "loss_title": "此格式无法保存全部信息",
+ "loss_intro": "{format} 文件无法保存此地图的全部信息。以下内容将被舍弃：",
+ "loss_save": "仍然保存",
+ "loss_free_space": "空闲空间：只写入占用单元，其余变为未知",
+ "loss_values": "占用概率值：所有单元只按占用或空闲写入",
+ "loss_colours": "体素颜色",
+ "loss_fields": "点字段：{detail}",
+ "loss_elements": "PLY 文件中的其他元素：{detail}"
 }

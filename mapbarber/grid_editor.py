@@ -210,6 +210,7 @@ class GridEditor(Editor):
 
     def export(self, path, fmt=None):
         grid.save(path, self.map)
+        self.map.pixels = np.flipud(self.map.image())
 
     def mark_saved(self):
         self.map.mark_saved()

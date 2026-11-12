@@ -70,7 +70,7 @@ def test_failed_save_leaves_the_previous_files_untouched(tmp_path, monkeypatch):
     keys = pack(np.array([[1, 2, 3]]))
     octree.write_bt(voxels, keys, 0.05)
     good = open(voxels, "rb").read()
-    monkeypatch.setattr(octree, "_preorder", broken)
+    monkeypatch.setattr(octree, "_build", broken)
     with pytest.raises(OSError):
         octree.write_bt(voxels, pack(np.array([[4, 5, 6], [7, 8, 9]])), 0.05)
     assert open(voxels, "rb").read() == good and not [n for n in os.listdir(tmp_path) if ".part" in n]

@@ -5,7 +5,7 @@ import numpy as np
 import vtk
 from vtk.util import numpy_support
 
-from . import cloud, convert, formats
+from . import cloud, convert, formats, loss
 from .chunk_view import PointChunkView
 from .editor import Editor
 from .formats import CLOUD, GRID, VOXEL
@@ -151,6 +151,9 @@ class CloudEditor(Editor):
         if not len(xyz):
             raise ValueError(self.tr("empty_map"))
         formats.save_cloud(path, xyz, table, fmt)
+
+    def losses(self, fmt):
+        return loss.cloud_losses(self.cloud.table, fmt)
 
     def mark_saved(self):
         self.cloud.mark_saved()

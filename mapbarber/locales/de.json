@@ -197,5 +197,13 @@
  "saving": "{name} wird gespeichert …",
  "slice_tilt": "Neigung um {axis} [°]",
  "converting": "Umwandlung läuft …",
- "empty_as_free": "Zellen ohne Hindernis als frei markieren (sonst unbekannt)"
+ "empty_as_free": "Zellen ohne Hindernis als frei markieren (sonst unbekannt)",
+ "loss_title": "Dieses Format kann nicht alles speichern",
+ "loss_intro": "Eine {format}-Datei kann nicht alles speichern, was diese Karte enthält. Folgendes geht verloren:",
+ "loss_save": "Trotzdem speichern",
+ "loss_free_space": "Freiraum: nur belegte Zellen werden geschrieben, der Rest wird unbekannt",
+ "loss_values": "Belegungswerte: jede Zelle wird nur als belegt oder frei geschrieben",
+ "loss_colours": "Voxelfarben",
+ "loss_fields": "Punktfelder: {detail}",
+ "loss_elements": "Andere Teile der PLY-Datei: {detail}"
 }

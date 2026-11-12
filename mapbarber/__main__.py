@@ -5,9 +5,9 @@ import sys
 
 import numpy as np
 
-from . import __version__, cloud, convert, formats, grid
+from . import __version__, cloud, convert, formats, grid, loss
 from .formats import CLOUD, GRID, VOXEL
-from .i18n import LANGUAGES
+from .i18n import LANGUAGES, Translator
 from .voxels import VoxelMap, unpack
 
 _OUTPUT_KINDS = {"bt": VOXEL, "ot": VOXEL, "yaml": GRID, "pgm": GRID, "png": GRID, "bmp": GRID,
@@ -43,7 +43,7 @@ def build_parser():
 def load(path):
     kind = formats.kind(path)
     if kind == VOXEL:
-        return kind, formats.load_voxels(path)
+        return kind, formats.read_voxels(path)
     if kind == CLOUD:
         return kind, formats.read_cloud(path)
     return kind, grid.load(path)
@@ -51,8 +51,12 @@ def load(path):
 
 def describe(kind, payload):
     if kind == VOXEL:
-        keys, resolution = payload
+        keys, resolution, leaves = payload
         lines = [("type", "voxel map"), ("voxel size", f"{resolution:g} m"), ("voxels", len(keys))]
+        if leaves is not None:
+            cells = int((np.int64(1) << (3 * leaves.levels[leaves.free])).sum())
+            lines += [("free cells", cells), ("values", "graded" if leaves.graded else "occupied / free"),
+                      ("colours", "yes" if leaves.colours is not None else "no")]
         if len(keys):
             cells = unpack(keys)
             low, high = cells.min(axis=0) * resolution, (cells.max(axis=0) + 1) * resolution
@@ -75,11 +79,11 @@ def describe(kind, payload):
 
 def clean(kind, payload, args):
     if kind == VOXEL and args.remove_islands:
-        vmap = VoxelMap(*payload)
+        vmap = VoxelMap(*payload[:2])
         islands, count = vmap.islands(args.remove_islands)
         vmap.apply(remove=islands)
         print(f"removed {len(islands)} voxels in {count} islands")
-        return vmap.occupied, vmap.resolution
+        return vmap.occupied, vmap.resolution, payload[2]
     if kind == GRID and args.clear_speckles:
         cells, groups = payload.clear_speckles(args.clear_speckles)
         print(f"cleared {cells} cells in {groups} speckles")
@@ -97,7 +101,7 @@ def clean(kind, payload, args):
 
 def to_voxels(kind, payload, args):
     if kind == VOXEL:
-        return payload
+        return payload[:2]
     if kind == GRID:
         return convert.grid_to_voxels(payload, args.wall_height)
     xyz, _ = payload
@@ -110,6 +114,8 @@ def write(path, kind, payload, args):
     target = _OUTPUT_KINDS.get(ext, kind if ext == "npz" else None)
     if target is None:
         raise SystemExit(f"mapbarber: unsupported output type: {path}")
+    for line in loss.describe(loss.of(kind, payload, formats.detect(path)) if target != GRID else [], Translator("en")):
+        print(f"mapbarber: not stored in {os.path.basename(path)}: {line}", file=sys.stderr)
     if target == kind == CLOUD:
         formats.save_cloud(path, *payload)
     elif target == kind == GRID:
@@ -118,10 +124,8 @@ def write(path, kind, payload, args):
         keys, resolution = to_voxels(kind, payload, args)
         band = sorted(args.z_band) if args.z_band else (-np.inf, np.inf)
         grid.save(path, convert.voxels_to_grid(keys, resolution, *band, grid.FREE if args.empty_free else grid.UNKNOWN))
-    elif target == CLOUD and kind == VOXEL:
-        formats.save_voxels(path, *payload)
-    elif target == CLOUD:
-        formats.save_voxels(path, *to_voxels(kind, payload, args))
+    elif kind == VOXEL:
+        formats.save_voxels(path, *payload[:2], leaves=payload[2])
     else:
         formats.save_voxels(path, *to_voxels(kind, payload, args))
     print(f"wrote {path}")

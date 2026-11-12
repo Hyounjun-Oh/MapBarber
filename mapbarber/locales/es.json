@@ -197,5 +197,13 @@
  "saving": "Guardando {name} …",
  "slice_tilt": "Inclinación sobre {axis} [°]",
  "converting": "Convirtiendo …",
- "empty_as_free": "Marcar como libres las celdas sin obstáculo (si no, desconocidas)"
+ "empty_as_free": "Marcar como libres las celdas sin obstáculo (si no, desconocidas)",
+ "loss_title": "Este formato no puede guardarlo todo",
+ "loss_intro": "Un archivo {format} no puede guardar todo lo que contiene este mapa. Se omitirá lo siguiente:",
+ "loss_save": "Guardar de todos modos",
+ "loss_free_space": "Espacio libre: solo se escriben las celdas ocupadas, el resto pasa a ser desconocido",
+ "loss_values": "Valores de ocupación: cada celda se escribe solo como ocupada o libre",
+ "loss_colours": "Colores de los vóxeles",
+ "loss_fields": "Campos de los puntos: {detail}",
+ "loss_elements": "Otras partes del archivo PLY: {detail}"
 }

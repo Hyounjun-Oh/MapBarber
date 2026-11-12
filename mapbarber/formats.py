@@ -20,6 +20,8 @@ _PLY_NAMES = {"i1": "char", "u1": "uchar", "i2": "short", "u2": "ushort", "i4": 
 _PCD_TYPES = {("F", 4): "f4", ("F", 8): "f8", ("I", 1): "i1", ("I", 2): "i2", ("I", 4): "i4", ("I", 8): "i8",
               ("U", 1): "u1", ("U", 2): "u2", ("U", 4): "u4", ("U", 8): "u8"}
 _PCD_KINDS = {"f": "F", "i": "I", "u": "U"}
+_PCD_VIEWPOINT = "0 0 0 1 0 0 0"
+_RGB = ("red", "green", "blue")
 
 
 def detect(path):
@@ -86,8 +88,10 @@ def _read_pcd(path):
     mode = header["DATA"][0].lower()
     if any(axis not in names for axis in "xyz"):
         raise ValueError("PCD file has no x, y, z fields")
+    kept = {"viewpoint": " ".join(header.get("VIEWPOINT", _PCD_VIEWPOINT.split())),
+            "width": int(header.get("WIDTH", [total])[0]), "height": int(header.get("HEIGHT", ["1"])[0])}
     dtype = np.dtype([(name, _PCD_TYPES[(kind_, size)], (count,)) if count > 1 else (name, _PCD_TYPES[(kind_, size)])
-                      for name, kind_, size, count in zip(names, header["TYPE"], sizes, counts)])
+                      for name, kind_, size, count in zip(names, header["TYPE"], sizes, counts)], metadata={"pcd": kept})
     if mode == "binary":
         return np.frombuffer(data, dtype=dtype, count=total, offset=pos).copy()
     if mode == "ascii":
@@ -108,7 +112,7 @@ def _read_ply(path):
     if not data.startswith(b"ply") or end < 0:
         raise ValueError("not a PLY file")
     body = data.find(b"\n", end) + 1
-    fmt, element, count, props, first = None, None, 0, [], True
+    fmt, element, count, props, first, others = None, None, 0, [], True, []
     for line in data[:end].decode("ascii", errors="replace").splitlines():
         words = line.split()
         if not words:
@@ -116,13 +120,13 @@ def _read_ply(path):
         if words[0] == "format":
             fmt = words[1]
         elif words[0] == "element":
-            if element == "vertex":
-                break
             element = words[1]
             if element == "vertex":
                 count = int(words[2])
             elif first:
                 raise ValueError("PLY files must list the vertex element first")
+            elif int(words[2]):
+                others.append(element)
             first = False
         elif words[0] == "property" and element == "vertex":
             if words[1] == "list":
@@ -130,15 +134,16 @@ def _read_ply(path):
             props.append((words[2], _PLY_TYPES[words[1]]))
     if any(axis not in [name for name, _ in props] for axis in "xyz"):
         raise ValueError("PLY file has no x, y, z vertex properties")
+    native = np.dtype(props, metadata={"ply": {"elements": others}})
     if fmt == "ascii":
         rows = np.loadtxt(data[body:].decode("ascii", errors="replace").splitlines()[:count], ndmin=2)
-        table = np.zeros(len(rows), np.dtype(props))
+        table = np.zeros(len(rows), native)
         for column, (name, _) in enumerate(props):
             table[name] = rows[:, column]
         return table
     order = "<" if fmt == "binary_little_endian" else ">"
     table = np.frombuffer(data, dtype=np.dtype([(name, order + code) for name, code in props]), count=count, offset=body)
-    return table.astype(np.dtype(props))
+    return table.astype(native)
 
 
 def _read_xyz(path):
@@ -173,7 +178,11 @@ def _read_xyz(path):
 
 
 def read_cloud(path):
-    """Point file -> (xyz (N, 3), per-point record array with every field, or None)."""
+    """Point file -> (xyz (N, 3), per-point record array with every field, or None).
+
+    The record array's dtype metadata carries what else the file said: the PCD viewpoint and layout,
+    and the names of PLY elements other than the vertices.
+    """
     xyz, table = _read_cloud(path)
     if not np.isfinite(xyz).all(axis=1).any():
         raise ValueError("no x, y, z coordinates were found in the file")
@@ -206,8 +215,24 @@ def _xyz_table(xyz):
     return table
 
 
+def cloud_fields(table, fmt):
+    """Field names of a record array split into (those the format can store, those it cannot)."""
+    if table is None:
+        return [], []
+    names = list(table.dtype.names)
+    if fmt == "pcd":
+        return names, []
+    if fmt == "ply":
+        fits = [name for name in names if not table.dtype[name].shape and table.dtype[name].str[1:] in _PLY_NAMES]
+    elif fmt == "xyz":
+        fits = [name for name in names if name in "xyz" or name in _RGB] if all(c in names for c in _RGB) else list("xyz")
+    else:
+        fits = list("xyz")
+    return fits, [name for name in names if name not in fits]
+
+
 def save_cloud(path, xyz, table=None, fmt=None):
-    """Write points; PCD and PLY keep every field of the record array. The file is replaced only on success."""
+    """Write points with every field the format can store. The file is replaced only on success."""
     fmt = fmt or _EXTENSIONS.get(os.path.splitext(path)[1].lower())
     with replacing(path) as part:
         _save_cloud(part, xyz, table, fmt, path)
@@ -224,23 +249,33 @@ def _save_cloud(path, xyz, table, fmt, target):
             sizes.append(str(base.itemsize))
             kinds.append(_PCD_KINDS[base.kind])
             counts.append(str(int(np.prod(shape)) if shape else 1))
+        source = (table.dtype.metadata or {}).get("pcd", {})
+        width, height = len(table), 1
+        if source.get("height", 1) > 1 and source["width"] * source["height"] == len(table):
+            width, height = source["width"], source["height"]
         header = ("# .PCD v0.7 - Point Cloud Data file format\nVERSION 0.7\n"
                   f"FIELDS {' '.join(names)}\nSIZE {' '.join(sizes)}\nTYPE {' '.join(kinds)}\nCOUNT {' '.join(counts)}\n"
-                  f"WIDTH {len(table)}\nHEIGHT 1\nVIEWPOINT 0 0 0 1 0 0 0\nPOINTS {len(table)}\nDATA binary\n")
+                  f"WIDTH {width}\nHEIGHT {height}\nVIEWPOINT {source.get('viewpoint', _PCD_VIEWPOINT)}\n"
+                  f"POINTS {len(table)}\nDATA binary\n")
         with open(path, "wb") as f:
             f.write(header.encode("ascii"))
             f.write(np.ascontiguousarray(table).tobytes())
     elif fmt == "ply":
-        if any(table.dtype[name].shape for name in table.dtype.names):
-            table = _xyz_table(xyz)
-        little = table.astype(np.dtype([(name, "<" + table.dtype[name].str[1:]) for name in table.dtype.names]))
-        props = "".join(f"property {_PLY_NAMES[table.dtype[name].str[1:]]} {name}\n" for name in table.dtype.names)
+        fits, _ = cloud_fields(table, fmt)
+        little = np.zeros(len(table), np.dtype([(name, "<" + table.dtype[name].str[1:]) for name in fits]))
+        for name in fits:
+            little[name] = table[name]
+        props = "".join(f"property {_PLY_NAMES[table.dtype[name].str[1:]]} {name}\n" for name in fits)
         header = f"ply\nformat binary_little_endian 1.0\nelement vertex {len(table)}\n{props}end_header\n"
         with open(path, "wb") as f:
             f.write(header.encode("ascii"))
             f.write(little.tobytes())
     elif fmt == "xyz":
-        np.savetxt(path, xyz, fmt="%.6f", delimiter="," if target.lower().endswith(".csv") else " ")
+        columns, layout = xyz, ["%.6f"] * 3
+        if len(cloud_fields(table, fmt)[0]) > 3:
+            columns = np.column_stack([xyz] + [table[name] for name in _RGB])
+            layout += ["%d"] * 3
+        np.savetxt(path, columns, fmt=layout, delimiter="," if target.lower().endswith(".csv") else " ")
     elif fmt == "npy":
         with open(path, "wb") as f:
             np.save(f, xyz)
@@ -271,27 +306,33 @@ def estimate_resolution(points, default=0.05):
 
 def load_voxels(path, resolution=None):
     """Octree, voxel archive or point file -> (occupied keys, resolution)."""
+    return read_voxels(path, resolution)[:2]
+
+
+def read_voxels(path, resolution=None):
+    """Like load_voxels, plus what an octree file holds besides the occupied cells (octree.Leaves, or None)."""
     fmt = detect(path)
-    if fmt == "bt":
-        return octree.read_bt(path)
-    if fmt == "ot":
-        return octree.read_ot(path)
+    if fmt in ("bt", "ot"):
+        return octree.read(path, fmt)
     if fmt == "npz":
         with np.load(path) as archive:
             if "resolution" in archive and resolution is None:
                 resolution = float(archive["resolution"])
     points, _ = read_cloud(path)
     resolution = resolution or estimate_resolution(points)
-    return voxelize(points, resolution), float(resolution)
+    return voxelize(points, resolution), float(resolution), None
 
 
-def save_voxels(path, keys, resolution, fmt=None):
-    """Write occupied cells as an octree, a voxel archive, or their centres as points."""
+def save_voxels(path, keys, resolution, fmt=None, leaves=None):
+    """Write occupied cells as an octree, a voxel archive, or their centres as points.
+
+    `leaves` (from read_voxels) lets an octree keep its free space, and a full octree its values and colours.
+    """
     fmt = fmt or _EXTENSIONS.get(os.path.splitext(path)[1].lower())
     if fmt == "bt":
-        octree.write_bt(path, keys, resolution)
+        octree.write_bt(path, keys, resolution, leaves)
     elif fmt == "ot":
-        octree.write_ot(path, keys, resolution)
+        octree.write_ot(path, keys, resolution, leaves)
     elif fmt == "npz":
         with replacing(path) as part, open(part, "wb") as f:
             np.savez_compressed(f, centers=centers(keys, resolution), resolution=np.float64(resolution))

@@ -16,6 +16,7 @@ class Editor:
         self.format = None
         self.panel_values = {}
         self.panel_alive = False
+        self.accepted_losses = set()
 
     @property
     def tr(self):
@@ -72,6 +73,10 @@ class Editor:
     def export(self, path, fmt=None):
         """Write the document to a file. Runs on a worker thread: no widgets here."""
         raise NotImplementedError
+
+    def losses(self, fmt):
+        """[(what, detail)] the document holds that a file of this format cannot; see loss.py."""
+        return []
 
     def mark_saved(self):
         """Called on the main thread after export succeeded."""

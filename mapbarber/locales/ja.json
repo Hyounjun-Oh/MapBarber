@@ -197,5 +197,13 @@
  "saving": "{name} を保存中 …",
  "slice_tilt": "{axis} 軸まわりの傾き [°]",
  "converting": "変換中 …",
- "empty_as_free": "障害物のないセルを空きにする (オフなら未知)"
+ "empty_as_free": "障害物のないセルを空きにする (オフなら未知)",
+ "loss_title": "この形式には保存できない情報があります",
+ "loss_intro": "{format} ファイルにはこのマップのすべての情報を保存できません。次の内容が失われます:",
+ "loss_save": "このまま保存",
+ "loss_free_space": "フリー空間: 占有セルのみが書き込まれ、残りは未知になります",
+ "loss_values": "占有確率の値: すべてのセルが占有またはフリーとしてのみ書き込まれます",
+ "loss_colours": "ボクセルの色",
+ "loss_fields": "点のフィールド: {detail}",
+ "loss_elements": "PLY ファイルのほかの要素: {detail}"
 }

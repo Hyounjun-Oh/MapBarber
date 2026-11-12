@@ -65,7 +65,7 @@ La detección mira primero la extensión y después la firma del archivo, así q
 - **Aclarar** conserva un punto por celda cúbica. **Caja** y **Corte** funcionan como en el editor de vóxeles, y la caja además puede borrar todo lo exterior.
 - **Colorear por** altura, RGB guardado o cualquier campo numérico como `intensity` o `ring`.
 - **Regla** mide la distancia real entre dos puntos elegidos.
-- Los puntos solo se eliminan, así que al guardar en PCD o PLY se conservan todos los campos de cada punto restante.
+- Los puntos solo se eliminan, así que al guardar en PCD se conservan todos los campos de cada punto restante, y en PLY todos los campos escalares.
 
 ## Editor de rejillas de ocupación 2D
 
@@ -136,10 +136,10 @@ La interfaz está en English, 한국어, 日本語, 简体中文, Deutsch y Espa
 
 ## Notas sobre archivos
 
-- **Al guardar como octree** solo se escriben las celdas ocupadas. La información de espacio libre del archivo original no se vuelve a escribir, lo que coincide con el uso habitual de los mapas estáticos para comprobar colisiones.
-- **Al guardar como `.ot`** todas las celdas ocupadas reciben el mismo valor log-odds (3,5, p ≈ 0,97).
-- **PCD / PLY** conservan todos los campos de cada punto. Las PCD organizadas se abren omitiendo los puntos no válidos (NaN) y se guardan sin organizar. `.xyz`, `.csv` y `.npy` solo guardan coordenadas, aunque las columnas RGB de un `.xyz` se conservan al guardar en PCD o PLY. No se admite PCD binario comprimido.
-- **Las rejillas** siguen las reglas de map_server: modos `trinary`, `scale` y `raw`, `negate` y los umbrales de ocupado y libre guardados en el YAML.
+- **Los archivos octree conservan lo que contenían.** El espacio libre leído de un `.bt` o `.ot` se vuelve a escribir, dividido solo donde añades vóxeles; un `.ot` conserva además el valor de ocupación de cada celda y, en un `ColorOcTree`, su color. Los vóxeles añadidos reciben log-odds 3.5 (p ≈ 0,97) y blanco; los borrados pasan a *desconocido*, no a libre.
+- **Si un formato no puede guardar algo, MapBarber lo dice antes de escribir.** Guardar un mapa `.ot` como `.bt` reduce los valores a ocupado/libre y descarta los colores; guardar un octree como puntos descarta el espacio libre. El diálogo enumera exactamente lo que se omitiría (la línea de comandos lo imprime en stderr) y no se escribe nada hasta que aceptas.
+- **PCD** conserva todos los campos por punto, el `VIEWPOINT` y el `WIDTH`/`HEIGHT` organizado mientras no se elimine ningún punto. **PLY** conserva todos los campos escalares; los campos vectoriales y los enteros de 64 bits no pueden guardarse y se avisa de ello, igual que de las caras u otros elementos que no sean vértices. `.xyz`/`.csv` contienen coordenadas (seis decimales) y RGB si existe, `.npy` solo coordenadas. No se admite PCD binario comprimido. *Reducir* conserva el primer punto leído de cada celda.
+- **Las cuadrículas** siguen las reglas de map_server: modos `trinary`, `scale` y `raw`, `negate` y los umbrales guardados en el YAML. El editor trabaja con tres estados, pero las celdas que no tocas se guardan con su valor de píxel original, de modo que los mapas graduados `scale`/`raw` sobreviven a una edición en otra parte.
 - **Copias de seguridad:** al sobrescribir un archivo se conserva el anterior como `name.bak_YYYYmmdd_HHMMSS`. Se puede desactivar en el menú Archivo.
 
 ## Cómo funciona

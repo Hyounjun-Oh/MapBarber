@@ -65,7 +65,7 @@ Erkannt wird zuerst an der Dateiendung, dann an der Dateisignatur, daher öffnet
 - **Ausdünnen** behält einen Punkt pro Würfelzelle. **Quader** und **Schnitt** funktionieren wie im Voxel-Editor; der Quader kann zusätzlich alles außerhalb radieren.
 - **Färben nach** Höhe, gespeicherter RGB-Farbe oder einem beliebigen Zahlenfeld wie `intensity` oder `ring`.
 - **Lineal** misst den tatsächlichen Abstand zwischen zwei gewählten Punkten.
-- Punkte werden nur entfernt, daher bleiben beim Speichern als PCD oder PLY alle Felder jedes übrigen Punkts erhalten.
+- Punkte werden nur entfernt, daher bleiben beim Speichern als PCD alle Felder jedes übrigen Punkts erhalten, als PLY alle skalaren Felder.
 
 ## Raster-Editor
 
@@ -136,10 +136,10 @@ Die Oberfläche spricht English, 한국어, 日本語, 简体中文, Deutsch und
 
 ## Hinweise zu Dateien
 
-- **Als Octree gespeichert** werden nur belegte Zellen. Freiraum-Information aus der Quelldatei wird nicht zurückgeschrieben; das entspricht der üblichen Nutzung statischer Karten für die Kollisionsprüfung.
-- **Als `.ot` gespeichert** erhält jede belegte Zelle denselben Log-Odds-Wert (3,5, p ≈ 0,97).
-- **PCD / PLY** behalten alle Felder pro Punkt. Organisierte PCDs werden ohne ungültige (NaN-)Punkte geöffnet und unorganisiert gespeichert. `.xyz`, `.csv` und `.npy` enthalten nur Koordinaten; RGB-Spalten aus `.xyz` bleiben jedoch beim Speichern als PCD oder PLY erhalten. Komprimiertes binäres PCD wird nicht unterstützt.
-- **Raster** folgen den map_server-Regeln: Modi `trinary`, `scale` und `raw`, `negate` und die in der YAML hinterlegten Schwellwerte für belegt und frei.
+- **Octree-Dateien behalten, was sie enthielten.** Freiraum aus einer `.bt`- oder `.ot`-Datei wird wieder geschrieben und nur dort aufgeteilt, wo Sie Voxel hinzufügen; eine `.ot`-Datei behält außerdem den Belegungswert jeder Zelle und bei einem `ColorOcTree` die Farbe. Hinzugefügte Voxel erhalten Log-Odds 3.5 (p ≈ 0,97) und Weiß; gelöschte Voxel werden *unbekannt*, nicht frei.
+- **Was ein Format nicht speichern kann, sagt MapBarber vor dem Schreiben.** Eine `.ot`-Karte als `.bt` zu speichern reduziert die Werte auf belegt/frei und verwirft Farben; ein Octree als Punkte verliert den Freiraum. Der Dialog nennt genau, was wegfiele (die Kommandozeile schreibt es nach stderr), und nichts wird geschrieben, bevor Sie zustimmen.
+- **PCD** behält alle Punktfelder, den `VIEWPOINT` und das organisierte `WIDTH`/`HEIGHT`, solange kein Punkt entfernt wurde. **PLY** behält alle skalaren Felder; Vektorfelder und 64-Bit-Ganzzahlen lassen sich nicht speichern und werden gemeldet, ebenso Flächen oder andere Nicht-Vertex-Elemente der Quelldatei. `.xyz`/`.csv` enthalten Koordinaten (sechs Nachkommastellen) und RGB, falls vorhanden, `.npy` nur Koordinaten. Komprimiertes binäres PCD wird nicht unterstützt. *Ausdünnen* behält pro Zelle den zuerst gelesenen Punkt.
+- **Raster** folgen den map_server-Regeln: die Modi `trinary`, `scale` und `raw`, `negate` sowie die Schwellwerte aus der YAML-Datei. Der Editor arbeitet mit drei Zuständen, aber unberührte Zellen werden mit ihrem ursprünglichen Pixelwert gespeichert, sodass abgestufte `scale`/`raw`-Karten eine Bearbeitung an anderer Stelle überstehen.
 - **Sicherungen:** Beim Überschreiben bleibt die vorherige Datei als `name.bak_YYYYmmdd_HHMMSS` erhalten. Das lässt sich im Menü Datei abschalten.
 
 ## Funktionsweise

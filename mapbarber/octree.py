@@ -12,6 +12,8 @@ from .safeio import replacing
 from .voxels import DEPTH, EMPTY, OFFSET, pack, unpack
 
 OCCUPIED_LOG_ODDS = 3.5
+FREE_LOG_ODDS = -2.0
+WHITE = 255
 MAX_EXPANDED_CELLS = 150_000_000
 
 # Extra bytes stored per node after the log-odds value, by tree id.
@@ -122,18 +124,72 @@ def _parse_header(data):
 DAMAGED = "the octree data ends early or is malformed; the file is truncated or damaged"
 
 
+class Leaves:
+    """Leaf nodes of an octree file as stored: first Morton code, level, log-odds and optionally a colour each.
+
+    Kept next to the occupied cells so that saving can put back what the editor does not show:
+    free space, the individual occupancy values and the colours.
+    """
+
+    def __init__(self, bases, levels, values, colours=None, tree_id="OcTree"):
+        order = np.argsort(bases, kind="stable")
+        self.bases, self.levels = bases[order], levels[order].astype(np.int64)
+        self.values = values[order].astype(np.float32)
+        self.colours = None if colours is None else colours[order]
+        self.tree_id = tree_id
+
+    def __len__(self):
+        return len(self.bases)
+
+    @property
+    def free(self):
+        return self.values <= 0.0
+
+    @property
+    def graded(self):
+        """True when the values say more than just occupied or free."""
+        return bool(len(self) and (np.where(self.free, FREE_LOG_ODDS, OCCUPIED_LOG_ODDS) != self.values).any())
+
+    def find(self, codes):
+        """Index of the occupied leaf holding each cell code, or -1."""
+        if not len(self):
+            return np.full(len(codes), -1, np.int64)
+        index = np.searchsorted(self.bases, codes, side="right") - 1
+        inside = (index >= 0) & (codes < self.bases[index] + (np.int64(1) << (3 * self.levels[index])))
+        return np.where(inside & ~self.free[index], index, -1)
+
+    def free_around(self, codes):
+        """Free leaves as (bases, levels, rows), split so that none of them covers one of the sorted cell codes."""
+        rows = np.flatnonzero(self.free)
+        bases, levels = self.bases[rows], self.levels[rows]
+        kept = []
+        while len(bases):
+            spans = np.int64(1) << (3 * levels)
+            hit = np.searchsorted(codes, bases + spans) > np.searchsorted(codes, bases)
+            kept.append((bases[~hit], levels[~hit], rows[~hit]))
+            split = hit & (levels > 0)
+            step = (spans[split] >> 3)[:, None] * np.arange(8)
+            bases = (bases[split][:, None] + step).ravel()
+            levels, rows = np.repeat(levels[split] - 1, 8), np.repeat(rows[split], 8)
+        if not kept:
+            return EMPTY, EMPTY, EMPTY
+        return tuple(np.concatenate(part) for part in zip(*kept))
+
+
 def read_bt(path):
     """Binary octree -> (occupied keys, resolution)."""
-    try:
-        return _read_bt(path)
-    except (IndexError, KeyError, struct.error) as error:
-        raise ValueError(DAMAGED) from error
+    return read(path, "bt")[:2]
 
 
 def read_ot(path):
     """Full octree (OcTree, OcTreeStamped or ColorOcTree) -> (occupied keys, resolution)."""
+    return read(path, "ot")[:2]
+
+
+def read(path, fmt):
+    """Octree file -> (occupied keys, resolution, Leaves)."""
     try:
-        return _read_ot(path)
+        return (_read_bt if fmt == "bt" else _read_ot)(path)
     except (IndexError, KeyError, struct.error) as error:
         raise ValueError(DAMAGED) from error
 
@@ -145,16 +201,19 @@ def _read_bt(path):
     resolution = float(fields["res"])
     nodes = np.frombuffer(data, "<u2", count=(len(data) - pos) // 2, offset=pos).astype(np.int64)
     if not len(nodes):
-        return EMPTY, resolution
+        return EMPTY, resolution, None
     pairs = (nodes[:, None] >> (2 * np.arange(8))) & 3
-    block_bases, block_levels = [], []
+    found = {1: ([], []), 2: ([], [])}
     for positions, bases, level in _walk(lambda p, octant: pairs[p, octant], (pairs == 3).sum(axis=1), len(nodes)):
         span = np.int64(1) << (3 * (level - 1))
         for octant in range(8):
-            occupied = pairs[positions, octant] == 2
-            block_bases.append(bases[occupied] + octant * span)
-            block_levels.append(np.full(int(occupied.sum()), level - 1, np.int64))
-    return _keys_from_blocks(np.concatenate(block_bases), np.concatenate(block_levels)), resolution
+            for state, (block_bases, block_levels) in found.items():
+                match = pairs[positions, octant] == state
+                block_bases.append(bases[match] + octant * span)
+                block_levels.append(np.full(int(match.sum()), level - 1, np.int64))
+    (free_bases, free_levels), (bases, levels) = [(np.concatenate(b), np.concatenate(l)) for b, l in found.values()]
+    leaves = Leaves(free_bases, free_levels, np.full(len(free_bases), FREE_LOG_ODDS)) if len(free_bases) else None
+    return _keys_from_blocks(bases, levels), resolution, leaves
 
 
 def _read_ot(path):
@@ -168,15 +227,20 @@ def _read_ot(path):
     record = np.dtype([("value", "<f4"), ("payload", "u1", (_NODE_PAYLOAD[tree_id],)), ("mask", "u1")])
     nodes = np.frombuffer(data, record, count=(len(data) - pos) // record.itemsize, offset=pos)
     if not len(nodes):
-        return EMPTY, resolution
+        return EMPTY, resolution, None
     mask = nodes["mask"].astype(np.int64)
     present = (mask[:, None] >> np.arange(8)) & 1
-    block_bases, block_levels = [], []
+    rows, block_bases, block_levels = [], [], []
     for positions, bases, level in _walk(lambda p, octant: present[p, octant] * 3, present.sum(axis=1), len(nodes)):
-        leaf = (mask[positions] == 0) & (nodes["value"][positions] > 0.0)
+        leaf = mask[positions] == 0
+        rows.append(positions[leaf])
         block_bases.append(bases[leaf])
         block_levels.append(np.full(int(leaf.sum()), level, np.int64))
-    return _keys_from_blocks(np.concatenate(block_bases), np.concatenate(block_levels)), resolution
+    rows, bases, levels = np.concatenate(rows), np.concatenate(block_bases), np.concatenate(block_levels)
+    values = nodes["value"][rows]
+    leaves = Leaves(bases, levels, values, nodes["payload"][rows] if _NODE_PAYLOAD[tree_id] else None, tree_id)
+    occupied = values > 0.0
+    return _keys_from_blocks(bases[occupied], levels[occupied]), resolution, leaves
 
 
 def _octants(codes, low, high, level):
@@ -193,80 +257,117 @@ def _octants(codes, low, high, level):
             yield octant, a, b, b - a == span
 
 
-def _write(path, magic, body, count, resolution):
+def _write(path, magic, tree_id, body, count, resolution):
     with replacing(path) as part, open(part, "wb") as f:
         f.write(magic + b"\n# (written by MapBarber)\n")
-        f.write(f"id OcTree\nsize {count}\nres {float(resolution)!r}\ndata\n".encode())
+        f.write(f"id {tree_id}\nsize {count}\nres {float(resolution)!r}\ndata\n".encode())
         f.write(body)
 
 
-def _levels(codes):
-    """Per tree level, bottom up: (node prefixes, cell count under each node, which nodes are completely occupied)."""
-    prefixes, counts = codes, np.ones(len(codes), np.int64)
-    levels = [(prefixes, counts, np.ones(len(codes), bool))]
-    for level in range(1, DEPTH + 1):
-        parents = prefixes >> 3
-        starts = np.concatenate([[0], np.flatnonzero(np.diff(parents)) + 1])
-        prefixes, counts = parents[starts], np.add.reduceat(counts, starts)
-        levels.append((prefixes, counts, counts == (1 << (3 * level))))
-    return levels
+def _leaf_table(codes, leaves, graded):
+    """Leaves to store, per level: {level: (prefixes, values, colours)}, each sorted by prefix.
 
-
-def _child_states(levels, level):
-    """For the nodes of `level`: per-octant state of each child (0 none, 2 solid, 3 has children) as an (N, 8) array."""
-    prefixes = levels[level][0]
-    children, _, solid = levels[level - 1]
-    states = np.zeros((len(prefixes), 8), np.int64)
-    states[np.searchsorted(prefixes, children >> 3), children & 7] = np.where(solid, 2, 3)
-    return states
-
-
-def _preorder(parts):
-    """Concatenate per-level (aligned code, level, payload) parts into pre-order: by position, parents first."""
-    codes = np.concatenate([part[0] for part in parts])
-    levels = np.concatenate([part[1] for part in parts])
-    payload = np.concatenate([part[2] for part in parts])
-    return payload[np.lexsort((-levels, codes))]
-
-
-def write_bt(path, keys, resolution):
-    """Write occupied cells as a binary octree; everything else is left unknown."""
-    codes = _codes_from_keys(keys)
-    body, count = b"", 0
+    Occupied cells take the value and colour they had in the file (new cells get the defaults); free
+    leaves of the file are kept wherever no occupied cell sits. With graded=False values are reduced
+    to occupied or free, which is all a binary octree can hold.
+    """
+    coloured = graded and leaves is not None and leaves.colours is not None
+    values = np.full(len(codes), OCCUPIED_LOG_ODDS, np.float32)
+    colours = np.full((len(codes), 3), WHITE, np.uint8) if coloured else None
+    table = {}
+    if leaves is not None:
+        if graded:
+            row = leaves.find(codes)
+            values[row >= 0] = leaves.values[row[row >= 0]]
+            if coloured:
+                colours[row >= 0] = leaves.colours[row[row >= 0]]
+        bases, levels, rows = leaves.free_around(codes)
+        free_values = leaves.values[rows] if graded else np.full(len(rows), FREE_LOG_ODDS, np.float32)
+        for level in np.unique(levels):
+            pick = np.flatnonzero(levels == level)
+            pick = pick[np.argsort(bases[pick], kind="stable")]
+            table[int(level)] = (bases[pick] >> (3 * level), free_values[pick],
+                                 leaves.colours[rows[pick]] if coloured else None)
     if len(codes):
-        levels = _levels(codes)
-        parts = []
-        for level in range(1, DEPTH + 1):
-            prefixes, _, solid = levels[level]
-            states = _child_states(levels, level)[~solid]
-            bits = (states << (2 * np.arange(8))).sum(axis=1)
-            parts.append((prefixes[~solid] << (3 * level), np.full(len(bits), level), bits))
-            count += len(bits) + int((states == 2).sum())
-        body = _preorder(parts).astype("<u2").tobytes()
-    _write(path, b"# Octomap OcTree binary file", body, count, resolution)
+        table[0] = _merge([(codes, values, colours)] + ([table[0]] if 0 in table else []))
+    return table
 
 
-def write_ot(path, keys, resolution, log_odds=OCCUPIED_LOG_ODDS):
-    """Write occupied cells as a full OcTree with a uniform log-odds value."""
-    codes = _codes_from_keys(keys)
-    body, count = b"", 0
-    if len(codes):
-        levels = _levels(codes)
-        parts = []
-        for level in range(DEPTH + 1):
-            prefixes, _, solid = levels[level]
-            if level == DEPTH:
-                emitted = np.ones(len(prefixes), bool)
+def _merge(parts):
+    if len(parts) == 1:
+        return parts[0]
+    prefixes = np.concatenate([part[0] for part in parts])
+    order = np.argsort(prefixes, kind="stable")
+    colours = None if parts[0][2] is None else np.concatenate([part[2] for part in parts])[order]
+    return prefixes[order], np.concatenate([part[1] for part in parts])[order], colours
+
+
+def _build(table, binary):
+    """Grow the tree bottom up from its leaves, merging eight equal sibling leaves into their parent.
+
+    Returns the nodes in pre-order as (bits, values, colours, is leaf). `bits` is what the file stores
+    per node about its children: the two-bit child states of a binary octree, or the child mask.
+    """
+    out, nodes = [], None
+    for level in range(DEPTH + 1):
+        parts = [table[level]] if level in table else []
+        if parts:
+            parts[0] = parts[0] + (np.ones(len(parts[0][0]), bool), np.zeros(len(parts[0][0]), np.int64))
+        if nodes is not None:
+            prefixes, values, colours, leaf, bits = nodes
+            parents = prefixes >> 3
+            starts = np.concatenate([[0], np.flatnonzero(np.diff(parents)) + 1])
+            sizes = np.diff(np.concatenate([starts, [len(parents)]]))
+            top = np.maximum.reduceat(values, starts)
+            same = (sizes == 8) & np.logical_and.reduceat(leaf, starts) & (np.minimum.reduceat(values, starts) == top)
+            if colours is not None:
+                same &= (np.minimum.reduceat(colours, starts) == np.maximum.reduceat(colours, starts)).all(axis=1)
+                shade = (np.add.reduceat(colours.astype(np.int64), starts) // sizes[:, None]).astype(np.uint8)
+            if binary:
+                child = np.where(leaf, np.where(values > 0.0, 2, 1), 3) << (2 * (prefixes & 7))
             else:
-                parent_prefixes, _, parent_solid = levels[level + 1]
-                emitted = ~parent_solid[np.searchsorted(parent_prefixes, prefixes >> 3)]
-            masks = np.zeros(len(prefixes), np.int64)
-            if level:
-                masks[~solid] = ((_child_states(levels, level)[~solid] > 0) << np.arange(8)).sum(axis=1)
-            parts.append((prefixes[emitted] << (3 * level), np.full(int(emitted.sum()), level), masks[emitted]))
-        masks = _preorder(parts)
-        count = len(masks)
-        record = np.zeros(count, np.dtype([("value", "<f4"), ("mask", "u1")]))
-        record["value"], record["mask"] = log_odds, masks
+                child = np.int64(1) << (prefixes & 7)
+            below = np.where(same, 0, np.add.reduceat(child, starts))
+            stay = ~np.repeat(same, sizes)
+            out.append((prefixes[stay] << (3 * (level - 1)), np.full(int(stay.sum()), level - 1), bits[stay], values[stay],
+                        None if colours is None else colours[stay], leaf[stay]))
+            parts.append((parents[starts], top, None if colours is None else shade, same, below))
+        if not parts:
+            continue
+        if len(parts) == 2:
+            order = np.argsort(np.concatenate([part[0] for part in parts]), kind="stable")
+            nodes = tuple(None if parts[0][i] is None else np.concatenate([part[i] for part in parts])[order]
+                          for i in range(5))
+        else:
+            nodes = parts[0]
+    prefixes, values, colours, leaf, bits = nodes
+    out.append((prefixes << (3 * DEPTH), np.full(len(prefixes), DEPTH), bits, values, colours, leaf))
+    order = np.lexsort((-np.concatenate([part[1] for part in out]), np.concatenate([part[0] for part in out])))
+    return tuple(None if out[0][i] is None else np.concatenate([part[i] for part in out])[order] for i in range(2, 6))
+
+
+def write_bt(path, keys, resolution, leaves=None):
+    """Write a binary octree: occupied cells, the free space of `leaves`, and unknown everywhere else."""
+    table = _leaf_table(_codes_from_keys(keys), leaves, graded=False)
+    body, count = b"", 0
+    if table:
+        bits, _, _, leaf = _build(table, binary=True)
+        body, count = bits[~leaf].astype("<u2").tobytes(), len(bits)
+    _write(path, b"# Octomap OcTree binary file", "OcTree", body, count, resolution)
+
+
+def write_ot(path, keys, resolution, leaves=None):
+    """Write a full octree; with `leaves` the free space, occupancy values and colours of the source file are kept."""
+    table = _leaf_table(_codes_from_keys(keys), leaves, graded=True)
+    coloured = leaves is not None and leaves.colours is not None
+    tree_id = leaves.tree_id if leaves is not None else "OcTree"
+    body, count = b"", 0
+    if table:
+        bits, values, colours, _ = _build(table, binary=False)
+        count = len(bits)
+        record = np.zeros(count, np.dtype([("value", "<f4"), ("payload", "u1", (3 if coloured else 0,)), ("mask", "u1")]))
+        record["value"], record["mask"] = values, bits
+        if coloured:
+            record["payload"] = colours
         body = record.tobytes()
-    _write(path, b"# Octomap OcTree file", body, count, resolution)
+    _write(path, b"# Octomap OcTree file", tree_id, body, count, resolution)

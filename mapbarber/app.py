@@ -4,7 +4,7 @@ import shutil
 import threading
 import time
 
-from . import __version__, formats
+from . import __version__, formats, loss
 from .cloud_editor import CloudEditor
 from .formats import CLOUD, GRID, VOXEL
 from .grid import UNKNOWN, GridMap
@@ -477,10 +477,31 @@ class Workbench(QtWidgets.QMainWindow):
             path += "." + chosen.rsplit("*.", 1)[-1].rstrip(")")
         return self.write(path, None)
 
+    def ask_losses(self, fmt, lines):
+        """Warn that the chosen format cannot store everything; returns True to save anyway."""
+        t = self.tr_
+        box = QtWidgets.QMessageBox(QtWidgets.QMessageBox.Warning, t("loss_title"), t("loss_intro", format=fmt.upper()),
+                                    parent=self)
+        box.setInformativeText("\n".join(f"•  {line}" for line in lines))
+        keep = box.addButton(t("loss_save"), QtWidgets.QMessageBox.AcceptRole)
+        box.addButton(QtWidgets.QMessageBox.Cancel)
+        box.exec() if hasattr(box, "exec") else box.exec_()
+        return box.clickedButton() is keep
+
+    def _accept_losses(self, editor, fmt):
+        """Each thing a format leaves out is confirmed once per document."""
+        losses = [item for item in editor.losses(fmt) if (fmt, item) not in editor.accepted_losses]
+        if losses and not self.ask_losses(fmt, loss.describe(losses, self.tr_)):
+            return False
+        editor.accepted_losses.update((fmt, item) for item in losses)
+        return True
+
     def write(self, path, fmt):
         t = self.tr_
         editor = self.editor
         notes = []
+        if not self._accept_losses(editor, fmt or formats.detect(path)):
+            return False
         try:
             if os.path.exists(path) and self.backup_action.isChecked():
                 backup = f"{path}.bak_{time.strftime('%Y%m%d_%H%M%S')}"

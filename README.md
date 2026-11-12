@@ -68,7 +68,7 @@ Detection looks at the extension first and the file signature second, so a backu
 - **Thin out** keeps one point per cubic cell. **Box** and **Slice** work as in the voxel editor, and the box can also erase everything outside.
 - **Colour by** height, stored RGB or any numeric field such as `intensity` or `ring`.
 - **Ruler** measures the real distance between two picked points.
-- Points are only ever removed, so saving to PCD or PLY keeps every field of every surviving point.
+- Points are only ever removed, so saving to PCD keeps every field of every surviving point, and PLY every scalar field.
 - **Large clouds:** the cloud is split into spatial chunks; distant chunks are thinned on screen and edits redraw only the chunks they touch, so 30 million points stay interactive.
 
 ## 2D occupancy grid editor
@@ -140,10 +140,10 @@ The interface speaks English, 한국어, 日本語, 简体中文, Deutsch and Es
 
 ## File notes
 
-- **Octree output** stores occupied cells only. Free-space information present in a source file is not written back, which matches how static maps are normally used for collision checking.
-- **`.ot` output** uses one log-odds value (3.5, p ≈ 0.97) for every occupied cell.
-- **PCD / PLY** keep all per-point fields. Organized PCDs open with invalid (NaN) points skipped and are saved unorganized. `.xyz`, `.csv` and `.npy` hold coordinates only, except that `.xyz` keeps RGB columns when you save to PCD or PLY. Compressed binary PCD is not supported.
-- **Grids** follow the map_server rules: `trinary`, `scale` and `raw` modes, `negate`, and the occupied/free thresholds stored in the YAML.
+- **Octree files keep what they held.** Free space read from a `.bt` or `.ot` file is written back, split around any voxel you add; a `.ot` file also keeps each cell's occupancy value and, for a `ColorOcTree`, its colour. Voxels you add get log-odds 3.5 (p ≈ 0.97) and white; voxels you erase become *unknown*, not free.
+- **When a format cannot hold something, MapBarber says so before writing.** Saving a `.ot` map as `.bt` reduces the values to occupied/free and drops colours; saving an octree as points drops free space. The dialog lists exactly what would be left out (the command line prints the same on stderr) and nothing is written until you agree.
+- **PCD** keeps every per-point field, the `VIEWPOINT`, and the organized `WIDTH`/`HEIGHT` as long as no point was removed. **PLY** keeps every scalar field; vector fields and 64-bit integers cannot be stored and are reported, as are faces or other non-vertex elements of the source file. `.xyz`/`.csv` hold coordinates (six decimals) plus RGB when present, `.npy` coordinates only. Compressed binary PCD is not supported. *Thin out* keeps the first point read in each cell.
+- **Grids** follow the map_server rules: `trinary`, `scale` and `raw` modes, `negate`, and the occupied/free thresholds stored in the YAML. The editor works with three states, but cells you do not touch are saved with the exact pixel value they had, so graded `scale`/`raw` maps survive an edit elsewhere.
 - **Backups:** overwriting a file keeps the previous one as `name.bak_YYYYmmdd_HHMMSS`. Turn this off in the File menu.
 - **Safe saving:** every file is written to a temporary name and put in place only when complete, so a failed save never damages the existing file (a map image and its YAML are replaced together). Origins and resolutions are written with full precision.
 - **3D to 2D:** a voxel map or cloud records obstacles only, so cells without one become *unknown* in the grid. Tick the option in the conversion dialog (or pass `--empty-free`) to mark them free when the whole area was observed.

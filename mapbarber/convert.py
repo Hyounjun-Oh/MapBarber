@@ -53,13 +53,26 @@ def voxels_to_grid(keys, resolution, z_low=-np.inf, z_high=np.inf, empty=UNKNOWN
     return GridMap(grid, resolution, (low[0] * resolution, low[1] * resolution, 0.0))
 
 
+_SAMPLES = 4
+
+
 def grid_to_voxels(grid, height):
-    """Extrude occupied cells into walls of the given height -> (keys, resolution)."""
+    """Extrude occupied cells into walls of the given height -> (keys, resolution).
+
+    A grid whose origin is rotated does not line up with the voxel grid, so each of its cells is
+    sampled at several points across its area: every voxel a cell reaches into is filled, which keeps
+    thin walls closed at any angle.
+    """
     if not height > 0:
         raise ValueError("the wall height must be greater than zero")
     rows, columns = np.nonzero(grid.cells == OCCUPIED)
+    if grid.origin[2] % (np.pi / 2):
+        offsets = (np.arange(_SAMPLES) + 0.5) / _SAMPLES - 0.5
+        rows = (rows[:, None, None] + offsets[:, None]).repeat(_SAMPLES, axis=2).ravel()
+        columns = (columns[:, None, None] + offsets[None, :]).repeat(_SAMPLES, axis=1).ravel()
     x, y = grid.world(rows, columns)
     layers = max(int(round(height / grid.resolution)), 1)
     base = np.stack([np.floor(x / grid.resolution + 1e-9), np.floor(y / grid.resolution + 1e-9)], axis=1).astype(np.int64)
+    base = np.unique(base, axis=0)
     cells = np.concatenate([np.column_stack([base, np.full(len(base), layer)]) for layer in range(layers)])
     return np.unique(pack(cells)), grid.resolution

@@ -897,3 +897,32 @@ def test_grid_zoom_keeps_the_point_under_the_cursor(workbench):
     assert abs(after.x() - before.x()) < 1.0 and abs(after.y() - before.y()) < 1.0
     window.close_all(ask=False)
     assert not dialogs
+
+
+def test_saving_warns_once_about_what_the_format_cannot_hold(workbench, monkeypatch):
+    from mapbarber import octree
+    from mapbarber.voxels import OFFSET, pack
+    window, folder, pump, dialogs = workbench
+    source, flat = str(folder / "graded.ot"), str(folder / "graded_flat.bt")
+    cells = np.array([[0, 0, 0], [1, 0, 0], [6, 6, 6]])
+    leaves = octree.Leaves(octree.morton_encode(cells + OFFSET), np.zeros(3, np.int64), np.array([0.4, 2.0, -1.0]),
+                           np.array([[9, 8, 7], [1, 2, 3], [0, 0, 0]], np.uint8), "ColorOcTree")
+    octree.write_ot(source, pack(cells[:2]), 0.1, leaves)
+    asked, answer = [], [False]
+    monkeypatch.setattr(window, "ask_losses", lambda fmt, lines: asked.append((fmt, lines)) or answer[0])
+    assert window.open(source)
+    pump()
+    editor = window.editor
+    editor.map.apply(add=pack(np.array([[3, 3, 3]])))
+    assert window.save() and not asked
+    kept = octree.read(source, "ot")[2]
+    assert kept.tree_id == "ColorOcTree" and int(kept.free.sum()) == 1 and [9, 8, 7] in kept.colours.tolist()
+
+    assert not window.write(flat, None) and not os.path.exists(flat)
+    assert asked[0][0] == "bt" and len(asked[0][1]) == 2
+    answer[0] = True
+    assert window.write(flat, None) and window.write(flat, None)
+    assert len(asked) == 2
+    keys, _, written = octree.read(flat, "bt")
+    assert len(keys) == 3 and int(written.free.sum()) == 1
+    window.close_document(editor, ask=False)

@@ -3,7 +3,7 @@ import time
 
 import numpy as np
 
-from . import convert, formats
+from . import convert, formats, loss
 from .editor import Editor
 from .formats import CLOUD, GRID, VOXEL
 from .grid import FREE, UNKNOWN
@@ -96,7 +96,10 @@ class VoxelEditor(Editor):
         return self.map.changes()
 
     def read(self, path):
-        return VoxelMap(*formats.load_voxels(path))
+        keys, resolution, leaves = formats.read_voxels(path)
+        document = VoxelMap(keys, resolution)
+        document.leaves = leaves
+        return document
 
     def set_document(self, payload, path=None, fmt=None, progress=None):
         """payload: a VoxelMap, or (keys, resolution[, source]) where source is the cloud the voxels came from."""
@@ -134,7 +137,10 @@ class VoxelEditor(Editor):
     def export(self, path, fmt=None):
         if not len(self.map):
             raise ValueError(self.tr("empty_map"))
-        formats.save_voxels(path, self.map.occupied, self.map.resolution, fmt)
+        formats.save_voxels(path, self.map.occupied, self.map.resolution, fmt, self.map.leaves)
+
+    def losses(self, fmt):
+        return loss.voxel_losses(self.map.leaves, fmt)
 
     def mark_saved(self):
         marked = set(KeySet.split(self.map.added)[0].tolist())

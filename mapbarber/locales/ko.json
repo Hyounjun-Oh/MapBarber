@@ -197,5 +197,13 @@
  "saving": "{name} 저장 중 …",
  "slice_tilt": "{axis} 축 기준 기울기 [°]",
  "converting": "변환 중 …",
- "empty_as_free": "장애물이 없는 칸을 빈 공간으로 표시 (끄면 미지)"
+ "empty_as_free": "장애물이 없는 칸을 빈 공간으로 표시 (끄면 미지)",
+ "loss_title": "이 형식에 담을 수 없는 정보가 있습니다",
+ "loss_intro": "{format} 파일은 이 맵의 모든 정보를 담지 못합니다. 다음 내용이 빠집니다:",
+ "loss_save": "그래도 저장",
+ "loss_free_space": "빈 공간(free): 점유 셀만 기록되고 나머지는 미지 영역이 됩니다",
+ "loss_values": "점유 확률 값: 모든 셀이 점유 또는 빈 공간으로만 기록됩니다",
+ "loss_colours": "복셀 색상",
+ "loss_fields": "포인트 필드: {detail}",
+ "loss_elements": "PLY 파일의 다른 요소: {detail}"
 }
