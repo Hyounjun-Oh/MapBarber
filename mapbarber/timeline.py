@@ -13,7 +13,8 @@ class FrameRange(QtWidgets.QWidget):
     """A track with one tick per frame and two handles for the first and last frame shown.
 
     Drag a handle to move one end, or drag the band between them to slide the whole range; `on_range(first,
-    last)` is called when the mouse is released. A click anywhere else on it changes nothing and only gives
+    last)` is called when the mouse is released. Where the two handles lie on top of each other, the direction
+    of the drag picks one: to the right the last frame moves, to the left the first. A click anywhere else on it changes nothing and only gives
     it the keyboard: the left and right arrow keys then slide the range by its own width (with Shift by a
     single frame) through `on_keys(direction, whole)`.
     """
@@ -24,7 +25,7 @@ class FrameRange(QtWidgets.QWidget):
         self.setFocusPolicy(Qt.ClickFocus)
         self.count, self.first, self.last = 1, 0, 0
         self.labelled, self.changed = set(), set()
-        self._drag, self._grip = None, 0
+        self._drag, self._grip, self._pressed = None, 0, 0.0
         self.setMinimumHeight(34)
         self.setMouseTracking(True)
         self.setCursor(Qt.PointingHandCursor)
@@ -95,9 +96,12 @@ class FrameRange(QtWidgets.QWidget):
         x = event.position().x() if hasattr(event, "position") else event.x()
         left, right = self._x(self.first), self._x(self.last)
         frame = self._frame(x)
-        if abs(x - left) <= HANDLE and abs(x - left) <= abs(x - right):
+        on_left, on_right = abs(x - left) <= HANDLE, abs(x - right) <= HANDLE
+        if on_left and on_right:
+            self._drag, self._pressed = "either", x
+        elif on_left:
             self._drag = "first"
-        elif abs(x - right) <= HANDLE:
+        elif on_right:
             self._drag = "last"
         elif left < x < right:
             self._drag, self._grip = "band", frame - self.first
@@ -117,12 +121,17 @@ class FrameRange(QtWidgets.QWidget):
         self.setToolTip(f"{self.first} – {self.last}")
 
     def mouseMoveEvent(self, event):
+        x = event.position().x() if hasattr(event, "position") else event.x()
+        if self._drag == "either":
+            if abs(x - self._pressed) < 2:
+                return
+            self._drag = "last" if x > self._pressed else "first"
         if self._drag:
-            self._move(self._frame(event.position().x() if hasattr(event, "position") else event.x()))
+            self._move(self._frame(x))
 
     def mouseReleaseEvent(self, _event):
-        if self._drag:
-            self._drag = None
+        dragged, self._drag = self._drag, None
+        if dragged and dragged != "either":
             self.on_range(self.first, self.last)
 
 

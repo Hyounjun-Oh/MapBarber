@@ -715,6 +715,32 @@ def test_arrow_keys_slide_the_frame_range_by_its_width(session):
     press(QtCore.Qt.Key_Left)
     assert (editor.labels.cls[:50] == 40).all()
 
+    def drag(dx):
+        at = QtCore.QPoint(int(slider._x(slider.first)), slider.height() // 2)
+        QtTest.QTest.mousePress(slider, QtCore.Qt.LeftButton, QtCore.Qt.NoModifier, at)
+        for step in range(1, 7):
+            QtWidgets.QApplication.sendEvent(slider, QtGui.QMouseEvent(
+                QtCore.QEvent.MouseMove, QtCore.QPointF(at.x() + dx * step / 6, at.y()), QtCore.QPointF(at.x() + dx * step / 6, at.y()),
+                QtCore.Qt.NoButton, QtCore.Qt.LeftButton, QtCore.Qt.NoModifier))
+        QtTest.QTest.mouseRelease(slider, QtCore.Qt.LeftButton, QtCore.Qt.NoModifier,
+                                  QtCore.QPoint(int(at.x() + dx), at.y()))
+        session.pump()
+        session.check("after dragging a handle")
+
+    slider.on_range(5, 5)
+    assert editor.frame_ids == [5]
+    one = slider._x(1) - slider._x(0)
+    drag(2.2 * one)
+    assert editor.frame_ids == [5, 6, 7], "where the handles meet, dragging to the right moves the last frame"
+    slider.on_range(5, 5)
+    drag(-2.2 * one)
+    assert editor.frame_ids == [3, 4, 5], "and dragging to the left moves the first"
+    slider.on_range(5, 5)
+    QtTest.QTest.mouseClick(slider, QtCore.Qt.LeftButton, QtCore.Qt.NoModifier,
+                            QtCore.QPoint(int(slider._x(5)), slider.height() // 2))
+    session.pump()
+    assert editor.frame_ids == [5], "a click on the handles without moving changes nothing"
+
 
 def test_tracking_keeps_up_with_a_changing_view(session):
     """A car drives past: first only its front is seen, then its side, then its back. The box must end up the
