@@ -346,7 +346,7 @@
  "label_legend": "Colores de etiqueta: pálido = sugerencia aún sin confirmar",
  "label_apply": "Mapeo de etiquetas → {name}   (Enter)",
  "class_removed": "Clase «{name}» quitada — Ctrl+Z la recupera",
- "timeline_tip": "Arrastra un tirador para fijar el primer o el último fotograma, arrastra la banda azul para desplazar el rango y haz clic en la pista para llevar allí el extremo más cercano. Marcas verdes: fotogramas con etiquetas; ámbar: cambiados sin guardar.",
+ "timeline_tip": "Arrastra un tirador para fijar el primer o el último fotograma, arrastra la banda azul para desplazar el rango y haz clic en la pista para llevar allí el extremo más cercano. Marcas verdes: fotogramas con etiquetas; ámbar: cambiados sin guardar. Tras hacer clic en el control, ← / → desplazan el rango su propio ancho (Mayús + flecha: un fotograma).",
  "timeline_caption": "{first} … {last}  ·  {n} de {total} fotogramas",
  "ground": "Filtro de suelo",
  "ground_cell": "Tamaño de celda [m]",

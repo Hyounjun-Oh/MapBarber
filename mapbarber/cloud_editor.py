@@ -114,7 +114,7 @@ class CloudEditor(Labelling, Editor):
         self.label_bar = LabelBar(self.viewport.widget, lambda: self.tr, self._protect_from_bar)
         self.overlay.below = self.label_bar
         self.timeline = TimelineBar(lambda first, last: self.show_frames(range(first, last + 1)), self.step_frame,
-                                    lambda: self.tr)
+                                    lambda: self.tr, lambda direction, whole: self.step_frame(direction, whole))
         self.timeline.hide()
         self.widget = QtWidgets.QWidget()
         column = QtWidgets.QVBoxLayout(self.widget)

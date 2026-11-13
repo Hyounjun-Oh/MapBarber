@@ -346,7 +346,7 @@
  "label_legend": "Beschriftungsfarben: blass = Vorschlag, noch nicht bestätigt",
  "label_apply": "Label-Mapping → {name}   (Enter)",
  "class_removed": "Klasse „{name}“ entfernt — Strg+Z holt sie zurück",
- "timeline_tip": "Griff ziehen setzt den ersten oder letzten Frame, das blaue Band zieht den ganzen Bereich, ein Klick auf die Spur holt das nähere Ende dorthin. Grüne Striche: Frames mit Beschriftung, orange: geändert, nicht gespeichert.",
+ "timeline_tip": "Griff ziehen setzt den ersten oder letzten Frame, das blaue Band zieht den ganzen Bereich, ein Klick auf die Spur holt das nähere Ende dorthin. Grüne Striche: Frames mit Beschriftung, orange: geändert, nicht gespeichert. Nach einem Klick auf den Regler verschieben ← / → den Bereich um seine eigene Breite (Umschalt + Pfeil: um einen Frame).",
  "timeline_caption": "{first} … {last}  ·  {n} von {total} Frames",
  "ground": "Bodenfilter",
  "ground_cell": "Zellgröße [m]",

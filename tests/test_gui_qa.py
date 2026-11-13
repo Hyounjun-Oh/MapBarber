@@ -656,3 +656,48 @@ def test_axes_and_markers_keep_their_size_on_screen(session):
     session.click(tuple(near[0]))
     assert 4 <= on_screen(editor.hover_source.GetRadius()) <= 16, "the measure marker must stay a few pixels wide"
     assert 2 <= on_screen(editor.ruler.marker_size) <= 6
+
+
+def test_arrow_keys_slide_the_frame_range_by_its_width(session):
+    from mapbarber.qt import QtCore, QtGui, QtWidgets
+    folder = session.folder / "strip"
+    (folder / "velodyne").mkdir(parents=True)
+    for index in range(11):
+        np.column_stack([np.random.default_rng(index).uniform(-5, 5, (50, 3)), np.zeros(50)]).astype("<f4").tofile(
+            str(folder / "velodyne" / f"{index:06d}.bin"))
+    assert session.window.open(str(folder))
+    session.pump(0.3)
+    editor = session.editor
+    slider = editor.timeline.slider
+    assert slider.focusPolicy() == QtCore.Qt.ClickFocus
+
+    def press(key, shift=False):
+        modifiers = QtCore.Qt.ShiftModifier if shift else QtCore.Qt.NoModifier
+        QtWidgets.QApplication.sendEvent(slider, QtGui.QKeyEvent(QtCore.QEvent.KeyPress, key, modifiers))
+        session.pump()
+        session.check("after an arrow key")
+
+    slider.on_range(0, 2)
+    assert editor.frame_ids == [0, 1, 2]
+    press(QtCore.Qt.Key_Right)
+    assert editor.frame_ids == [3, 4, 5]
+    press(QtCore.Qt.Key_Right)
+    assert editor.frame_ids == [6, 7, 8]
+    press(QtCore.Qt.Key_Right)
+    assert editor.frame_ids == [8, 9, 10], "the last range stops at the last frame and keeps its width"
+    press(QtCore.Qt.Key_Right)
+    assert editor.frame_ids == [8, 9, 10]
+    press(QtCore.Qt.Key_Left, shift=True)
+    assert editor.frame_ids == [7, 8, 9]
+    press(QtCore.Qt.Key_Left)
+    assert editor.frame_ids == [4, 5, 6]
+    press(QtCore.Qt.Key_Left)
+    press(QtCore.Qt.Key_Left)
+    assert editor.frame_ids == [0, 1, 2]
+    editor.select(np.arange(50), "replace")
+    editor.set_active(40)
+    editor.assign_selection()
+    press(QtCore.Qt.Key_Right)
+    assert editor.frame_store[0][0].tolist() == [40] * 50, "labels stay with their frame when the range moves on"
+    press(QtCore.Qt.Key_Left)
+    assert (editor.labels.cls[:50] == 40).all()

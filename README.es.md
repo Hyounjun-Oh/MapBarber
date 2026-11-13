@@ -152,7 +152,7 @@ Los atajos siguen las convenciones habituales de escritorio: Photoshop, Figma y 
 | `Enter` / `Ctrl+1`…`Ctrl+9` / `Ctrl+0` o `Supr` | etiquetar la selección con la clase activa / la clase n / quitar la etiqueta |
 | `P` / `N` / `Alt`+clic | proteger puntos etiquetados / siguiente zona sin etiqueta / tomar la clase bajo el cursor |
 | `Ctrl`+arrastrar con el botón derecho | deshacer con el pincel (deseleccionar o quitar etiquetas) con la vista fija |
-| `,` / `.` | fotograma anterior / siguiente de una secuencia |
+| `,` / `.`  ·  clic en la línea de tiempo y `←` / `→` | fotograma anterior / siguiente  ·  desplazar el rango su propio ancho (`Mayús`: un fotograma) |
 
 ## Idiomas
 

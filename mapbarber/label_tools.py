@@ -1600,11 +1600,16 @@ class Labelling(ClassHistory):
     def show_selected_frames(self):
         self.show_frames([self.frame_list.row(item) for item in self.frame_list.selectedItems()])
 
-    def step_frame(self, step):
-        """Move to the next or previous frame, keeping as many frames on screen as now."""
+    def step_frame(self, step, whole=False):
+        """Slide the frames on screen forward or back, keeping as many as now.
+
+        By one frame, or with `whole` by the width of the range itself, so the next press shows the frames
+        that follow the ones just seen (the last range stops at the last frame).
+        """
         if self.sequence is None or not self.frame_ids:
             return
         span = self.frame_ids[-1] - self.frame_ids[0]
+        step = step * (span + 1) if whole else step
         first = int(np.clip(self.frame_ids[0] + step, 0, len(self.sequence) - 1 - span))
         if first != self.frame_ids[0]:
             self.show_frames([first + (index - self.frame_ids[0]) for index in self.frame_ids])

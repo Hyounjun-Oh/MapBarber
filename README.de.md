@@ -152,7 +152,7 @@ Die Kürzel folgen verbreiteten Desktop-Konventionen: Photoshop, Figma und Power
 | `Enter` / `Strg+1`…`Strg+9` / `Strg+0` oder `Entf` | Auswahl mit der aktiven Klasse / der n-ten Klasse beschriften / Beschriftung entfernen |
 | `P` / `N` / `Alt`+Klick | beschriftete Punkte schützen / nächster unbeschrifteter Bereich / Klasse unter dem Mauszeiger übernehmen |
 | `Strg`+Rechtsziehen | mit dem Pinsel zurücknehmen (abwählen oder Beschriftung entfernen), die Ansicht bleibt stehen |
-| `,` / `.` | vorheriger / nächster Frame einer Sequenz |
+| `,` / `.`  ·  Zeitleiste anklicken, dann `←` / `→` | vorheriger / nächster Frame  ·  den Frame-Bereich um seine eigene Breite verschieben (`Umschalt`: um einen Frame) |
 
 ## Sprachen
 

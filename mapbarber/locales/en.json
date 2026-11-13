@@ -346,7 +346,7 @@
  "label_legend": "Label colours: pale = suggested, not yet confirmed",
  "label_apply": "Label mapping → {name}   (Enter)",
  "class_removed": "Class “{name}” removed — Ctrl+Z brings it back",
- "timeline_tip": "Drag a handle to set the first or last frame, drag the blue band to slide the range, click the track to bring the nearer end there. Green ticks: frames with labels, amber: changed and not saved.",
+ "timeline_tip": "Drag a handle to set the first or last frame, drag the blue band to slide the range, click the track to bring the nearer end there. Green ticks: frames with labels, amber: changed and not saved. Click the slider, then ← / → slide the range by its own width (Shift + arrow: by one frame).",
  "timeline_caption": "{first} … {last}  ·  {n} of {total} frames",
  "ground": "Ground filter",
  "ground_cell": "Cell size [m]",

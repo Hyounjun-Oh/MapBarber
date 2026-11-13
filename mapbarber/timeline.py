@@ -14,11 +14,14 @@ class FrameRange(QtWidgets.QWidget):
 
     Drag a handle to move one end, drag the band between them to slide the whole range, or click the
     track to bring the nearer end there. `on_range(first, last)` is called when the mouse is released.
+    Once clicked it has the keyboard: the left and right arrow keys slide the range by its own width
+    (with Shift by a single frame) through `on_keys(direction, whole)`.
     """
 
-    def __init__(self, on_range):
+    def __init__(self, on_range, on_keys=None):
         super().__init__()
-        self.on_range = on_range
+        self.on_range, self.on_keys = on_range, on_keys
+        self.setFocusPolicy(Qt.ClickFocus)
         self.count, self.first, self.last = 1, 0, 0
         self.labelled, self.changed = set(), set()
         self._drag, self._grip = None, 0
@@ -68,6 +71,25 @@ class FrameRange(QtWidgets.QWidget):
             painter.setPen(QtGui.QPen(text, 1.5))
             painter.setBrush(ACCENT)
             painter.drawRoundedRect(QtCore.QRectF(x - HANDLE / 2, middle - 10, HANDLE, 20), 3, 3)
+        if self.hasFocus():
+            painter.setPen(QtGui.QPen(ACCENT, 1, Qt.DashLine))
+            painter.setBrush(Qt.NoBrush)
+            painter.drawRoundedRect(QtCore.QRectF(1, 1, self.width() - 2, self.height() - 2), 4, 4)
+
+    def focusInEvent(self, event):
+        super().focusInEvent(event)
+        self.update()
+
+    def focusOutEvent(self, event):
+        super().focusOutEvent(event)
+        self.update()
+
+    def keyPressEvent(self, event):
+        direction = {Qt.Key_Left: -1, Qt.Key_Right: 1}.get(event.key())
+        if direction is None or self.on_keys is None:
+            return super().keyPressEvent(event)
+        self.on_keys(direction, not (event.modifiers() & Qt.ShiftModifier))
+        event.accept()
 
     def mousePressEvent(self, event):
         x = event.position().x() if hasattr(event, "position") else event.x()
@@ -108,7 +130,7 @@ class FrameRange(QtWidgets.QWidget):
 class TimelineBar(QtWidgets.QFrame):
     """Bottom strip of a sequence: previous / next, the range slider and what it currently shows."""
 
-    def __init__(self, on_range, on_step, translate):
+    def __init__(self, on_range, on_step, translate, on_keys=None):
         super().__init__()
         self.translate = translate
         self.setObjectName("timeline")
@@ -121,7 +143,7 @@ class TimelineBar(QtWidgets.QFrame):
         self.forward = QtWidgets.QToolButton()
         self.forward.setText("▶")
         self.forward.clicked.connect(lambda: on_step(1))
-        self.slider = FrameRange(on_range)
+        self.slider = FrameRange(on_range, on_keys)
         self.caption = QtWidgets.QLabel()
         self.caption.setMinimumWidth(260)
         row.addWidget(self.back)

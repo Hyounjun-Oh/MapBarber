@@ -156,7 +156,7 @@ Shortcuts follow common desktop conventions (Photoshop, Figma and PowerPoint for
 | `Enter` / `Ctrl+1`…`Ctrl+9` / `Ctrl+0` or `Delete` | label the selection with the active class / the n-th class / clear the label |
 | `P` / `N` / `Alt`+click | protect labelled points / next unlabelled patch / take the class under the cursor |
 | `Ctrl`+right drag | take back with the brush (deselect or clear labels) while the view stays still |
-| `,` / `.` | previous / next frame of a sequence |
+| `,` / `.`  ·  click the timeline, then `←` / `→` | previous / next frame  ·  slide the frame range by its own width (`Shift`: by one frame) |
 
 ## Languages
 
