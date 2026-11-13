@@ -1,6 +1,6 @@
-"""Make the 2 x 3 feature animation of the README and the wiki home from the full animations in docs/.
+"""Make the 2 x 3 feature animation of the README and the wiki home from the full animations in docs/media/.
 
-    python tools/make_mosaic.py docs/        (needs ffmpeg; writes docs/home.webp and docs/home_ko.webp)
+    python tools/make_mosaic.py docs/media/        (needs ffmpeg; writes home.webp and home_ko.webp there)
 
 Each cell keeps the map view of one animation (no menus, side panel or captions), cut to 4:3, with rounded
 corners and the name of the feature on a shaded band at its foot. Every animation is played faster or slower so
@@ -14,13 +14,13 @@ import tempfile
 
 from PIL import Image, ImageDraw, ImageFont
 
-EDITING, LABELLING = (79, 156, 247), (76, 194, 106)
+EDITING, LABELING = (79, 156, 247), (76, 194, 106)
 CELLS = (("voxel.gif", "Voxel editor", "복셀 편집기", EDITING),
          ("cloud.gif", "Point cloud editor", "포인트 클라우드 편집기", EDITING),
          ("grid.gif", "2D grid editor", "2D 격자 편집기", EDITING),
-         ("labelling.gif", "Point cloud labelling", "포인트 클라우드 라벨링", LABELLING),
-         ("boxes.gif", "3D object labelling", "3D 물체 라벨링", LABELLING),
-         ("auto_labelling.webp", "Auto 3D box labelling", "자동 3D 박스 라벨링", LABELLING))
+         ("labeling.gif", "Point cloud labeling", "포인트 클라우드 라벨링", LABELING),
+         ("boxes.gif", "3D object labeling", "3D 물체 라벨링", LABELING),
+         ("auto_labeling.webp", "Auto 3D box labeling", "자동 3D 박스 라벨링", LABELING))
 COLUMNS = 3
 CELL = (360, 270)
 GAP = 8

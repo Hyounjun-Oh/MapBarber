@@ -115,7 +115,7 @@ def test_the_box_holds_what_this_frame_and_the_two_before_show():
         assert np.allclose(box["size"], high - low, atol=0.25), (index, box["size"], high - low)
         assert abs(np.sin(box["yaw"])) < 0.05 and np.cos(box["yaw"]) > 0, "the box points the way the car drives"
         assert np.allclose(box["center"], centre + (low + high) / 2.0, atol=0.25), (index, box["center"])
-        assert len(track.results[index]["ids"]) >= 0.98 * len(frames[index]), f"frame {index}: points left unlabelled"
+        assert len(track.results[index]["ids"]) >= 0.98 * len(frames[index]), f"frame {index}: points left unlabeled"
         assert track.results[index]["score"] > 0.5
     assert max(track.box_in(10)["size"][:2]) > 3.6, "the side seen in the last frames gives the length"
 

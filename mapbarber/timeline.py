@@ -1,11 +1,11 @@
-"""Widgets that sit on the 3D view: the frame range slider for sequences and the labelling status bar."""
+"""Widgets that sit on the 3D view: the frame range slider for sequences and the labeling status bar."""
 from .qt import QtCore, QtGui, QtWidgets
 
 Qt = QtCore.Qt
 HANDLE = 9
 TRACK_MARGIN = 16
 ACCENT = QtGui.QColor(79, 156, 247)
-LABELLED = QtGui.QColor(76, 194, 106)
+LABELED = QtGui.QColor(76, 194, 106)
 CHANGED = QtGui.QColor(242, 182, 50)
 
 
@@ -24,7 +24,7 @@ class FrameRange(QtWidgets.QWidget):
         self.on_range, self.on_keys, self.on_focus = on_range, on_keys, None
         self.setFocusPolicy(Qt.ClickFocus)
         self.count, self.first, self.last = 1, 0, 0
-        self.labelled, self.changed = set(), set()
+        self.labeled, self.changed = set(), set()
         self._drag, self._grip, self._pressed = None, 0, 0.0
         self.setMinimumHeight(34)
         self.setMouseTracking(True)
@@ -38,8 +38,8 @@ class FrameRange(QtWidgets.QWidget):
         self.first, self.last = sorted((int(first), int(last)))
         self.update()
 
-    def set_marks(self, labelled, changed):
-        self.labelled, self.changed = set(labelled), set(changed)
+    def set_marks(self, labeled, changed):
+        self.labeled, self.changed = set(labeled), set(changed)
         self.update()
 
     def _x(self, frame):
@@ -61,7 +61,7 @@ class FrameRange(QtWidgets.QWidget):
         step = max(1, int(self.count / max((self.width() - 2 * TRACK_MARGIN) / 6, 1)))
         for frame in range(0, self.count, step):
             x = self._x(frame)
-            colour = CHANGED if frame in self.changed else LABELLED if frame in self.labelled else None
+            colour = CHANGED if frame in self.changed else LABELED if frame in self.labeled else None
             painter.setPen(QtGui.QPen(colour or QtGui.QColor(150, 150, 150, 120), 2 if colour else 1))
             painter.drawLine(QtCore.QPointF(x, middle + 6), QtCore.QPointF(x, middle + (11 if colour else 8)))
         left, right = self._x(self.first), self._x(self.last)
@@ -199,7 +199,7 @@ class TimelineBar(QtWidgets.QFrame):
 
 
 class LabelBar(QtWidgets.QFrame):
-    """Always-visible strip in the top right corner while labelling: the active class and the protection switch."""
+    """Always-visible strip in the top right corner while labeling: the active class and the protection switch."""
 
     def __init__(self, host, translate, on_protect):
         super().__init__(host)

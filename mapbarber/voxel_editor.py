@@ -5,7 +5,7 @@ import numpy as np
 
 from . import convert, formats, labels, loss
 from .editor import Editor
-from .label_tools import VoxelLabelling
+from .label_tools import VoxelLabeling
 from .timeline import LabelBar
 from .formats import CLOUD, GRID, VOXEL
 from .grid import FREE, UNKNOWN
@@ -38,7 +38,7 @@ DEFAULTS = {"brush": 1, "plane": 0.0, "front_only": True, "tolerance": 0.10, "is
 POINT_FORMATS = ("pcd", "ply", "xyz", "las")
 
 
-class VoxelEditor(VoxelLabelling, Editor):
+class VoxelEditor(VoxelLabeling, Editor):
     kind = VOXEL
     export_filters = (("OctoMap binary", "bt"), ("OctoMap full", "ot"), ("Voxel archive", "npz"),
                       ("PCD point cloud", "pcd"), ("PLY point cloud", "ply"), ("LAS point cloud", "las"),
@@ -112,7 +112,7 @@ class VoxelEditor(VoxelLabelling, Editor):
     def set_document(self, payload, path=None, fmt=None, progress=None):
         """payload: a VoxelMap, or (keys, resolution[, source]) where source is the cloud the voxels came from.
 
-        source holds the points (xyz, table) and, for a labelled cloud, their labels and the voxel classes they voted.
+        source holds the points (xyz, table) and, for a labeled cloud, their labels and the voxel classes they voted.
         """
         self.source = None
         if not isinstance(payload, VoxelMap):
@@ -641,7 +641,7 @@ class VoxelEditor(VoxelLabelling, Editor):
         """Change the selection: 'add', 'remove' or 'replace'. Keys are checked to be occupied and visible
         unless the caller already took them from the visible cells (trusted).
 
-        In labelling mode with protection on, labelled voxels stay out of the selection unless a review tool asks.
+        In labeling mode with protection on, labeled voxels stay out of the selection unless a review tool asks.
         """
         keys = np.asarray(keys, np.int64)
         if len(keys) and not trusted:
@@ -679,7 +679,7 @@ class VoxelEditor(VoxelLabelling, Editor):
         self.status(self.tr("selection_back") + f": {len(self.selected)}")
 
     def delete_selection(self):
-        """Delete removes the selected voxels; in labelling mode it only clears their labels."""
+        """Delete removes the selected voxels; in labeling mode it only clears their labels."""
         if self.label_mode:
             return self.assign_selection(labels.UNLABELED)
         if len(self.selected):
@@ -832,7 +832,7 @@ class VoxelEditor(VoxelLabelling, Editor):
     def to_cloud(self):
         """Voxels -> points. A map that came from a cloud gives back that cloud's own points, not voxel centres.
 
-        Each returning point keeps its own class; only voxels relabelled here pass their class on to their points.
+        Each returning point keeps its own class; only voxels relabeled here pass their class on to their points.
         """
         if not self.ask_relabel_back():
             return None

@@ -223,7 +223,7 @@ class Track:
     only and gets a box from its own frame.
 
     The frame the track starts from is the reference: points that stood beside the object there without
-    belonging to it (`aside`, world coordinates: labelled as something else, or left out) are not taken later.
+    belonging to it (`aside`, world coordinates: labeled as something else, or left out) are not taken later.
     `margin`: points of the start frame further than this outside the box are strays and are not used.
     `fixed`: the box already has the right size (corrected by hand) and keeps it in every frame.
     For every frame the track keeps where the object was (`poses`), what was found there (`results`) and the
@@ -348,7 +348,7 @@ class Track:
         The score decides how far the frame is believed. Below `trust` the object takes only the points the
         alignment explains, and the frame does not become one of those the next frame is judged by: a doubtful
         frame cannot pass its mistakes on. Only a believed frame may take new points beyond the surface, and a
-        body that changes shape never beyond its labelled size.
+        body that changes shape never beyond its labeled size.
 
         Returns None when nothing overlaps, else a dict: pose, members (indices into scene), iou (of the box
         where it was expected with the box where alignment put it), fitness (share of the candidate's points
@@ -442,7 +442,7 @@ class Track:
         if self.beside is not None and taken.any():
             taken[taken] = ~np.isfinite(self.beside.query(local[taken], distance_upper_bound=snug)[0])
         if not self.rigid:
-            # A body changes its pose but hardly its size: it never takes points further out than its labelled
+            # A body changes its pose but hardly its size: it never takes points further out than its labeled
             # size in the start frame (plus 15 cm on every side), around where it was in the frame before.
             centre = (self.low + self.high) / 2.0
             taken &= np.all(np.abs(local - centre) <= self.reach_of_body, axis=1)

@@ -91,5 +91,5 @@ def logo(text_rgb, tagline_rgb):
 
 if __name__ == "__main__":
     write(os.path.join(ROOT, "mapbarber", "assets", "icon.svg"), 256, 256, icon_body())
-    write(os.path.join(ROOT, "docs", "logo-light.svg"), 640, 200, logo("#1d2129", "#5a6170"))
-    write(os.path.join(ROOT, "docs", "logo-dark.svg"), 640, 200, logo("#f2f4f8", "#a3aab8"))
+    write(os.path.join(ROOT, "docs", "media", "logo-light.svg"), 640, 200, logo("#1d2129", "#5a6170"))
+    write(os.path.join(ROOT, "docs", "media", "logo-dark.svg"), 640, 200, logo("#f2f4f8", "#a3aab8"))

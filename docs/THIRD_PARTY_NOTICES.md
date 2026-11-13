@@ -39,8 +39,9 @@ their licenses apply to that bundle:
 
 ## Data shown in the documentation
 
-`docs/labelling.gif`, `docs/smart_pick.gif`, `docs/boxes.gif`, `docs/auto_labelling.webp` and `docs/frames.gif`, and the
-mosaics `docs/home.webp` and `docs/home_ko.webp` that include them, show LiDAR scans from the
+`docs/media/labeling.gif`, `docs/media/smart_pick.gif`, `docs/media/boxes.gif`, `docs/media/auto_labeling.webp` and
+`docs/media/frames.gif`, and the mosaics `docs/media/home.webp` and `docs/media/home_ko.webp` that include them, show
+LiDAR scans from the
 [KITTI raw dataset](https://www.cvlibs.net/datasets/kitti/raw_data.php) (A. Geiger, P. Lenz, C. Stiller and
 R. Urtasun, "Vision meets Robotics: The KITTI Dataset", IJRR 2013), drive 2011_09_26_0005, licensed under
 [CC BY-NC-SA 3.0](https://creativecommons.org/licenses/by-nc-sa/3.0/). These animations are shared under

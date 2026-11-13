@@ -1,4 +1,4 @@
-"""Labelling for the point cloud editor: classes, assignment rules, assisted picking, review, instances and frames."""
+"""Labeling for the point cloud editor: classes, assignment rules, assisted picking, review, instances and frames."""
 import copy
 import hashlib
 import json
@@ -10,6 +10,7 @@ from . import boxes as box_labels
 from . import export, formats, labels, tracking
 from .labels import ClassList, LabelLayer, UNLABELED
 from .qt import QtCore, QtGui, QtWidgets, run
+from .safeio import replacing
 from .voxels import pack
 from .widgets import (add_button, ask_numbers, button, danger_button, int_spin, RANGE_LIMIT, Section, select_button, spin,
                       tint)
@@ -103,12 +104,12 @@ class ClassHistory:
         return True
 
 
-class Labelling(ClassHistory):
+class Labeling(ClassHistory):
     """Mixed into the point cloud editor. Assisted tools only ever select; a class key then labels the selection."""
 
     @property
     def label_panel(self):
-        """True while the labelling sections of the panel exist (labelling mode with the panel shown)."""
+        """True while the labeling sections of the panel exist (labeling mode with the panel shown)."""
         return self.panel_alive and self.label_mode
 
     def _init_labels(self):
@@ -215,7 +216,7 @@ class Labelling(ClassHistory):
         stored = sum(int(item[2].sum()) for index, item in self.frame_store.items() if index not in on_screen)
         return stored + int(self.labels.pending.sum())
 
-    def _write_labelled(self, path, fmt):
+    def _write_labeled(self, path, fmt):
         """Save the cloud with its labels: inside the file when the format can hold them, else beside it."""
         xyz, table = self.cloud.surviving()
         if not len(xyz):
@@ -284,15 +285,28 @@ class Labelling(ClassHistory):
         self._commit(self.labels.assign(ids[keep], cls[keep], inst[keep], pending=True), "labels_load")
 
     def export_standard(self, folder=None, wanted=None):
-        """Write the labels in standard layouts: a SemanticKITTI sequence, KITTI object boxes, OpenPCDet boxes."""
+        """Write the labels in benchmark layouts.
+
+        wanted: [SemanticKITTI, KITTI object, OpenPCDet, KITTI tracking, include suggestions]:
+        - SemanticKITTI: velodyne/*.bin, labels/*.label (class and object number), poses.txt, calib.txt and
+          semantic-kitti.yaml;
+        - KITTI object: velodyne/*.bin, label_2/*.txt (a file for every frame) and calib/*.txt, ImageSets/train.txt;
+        - OpenPCDet custom dataset: openpcdet/points/*.npy, openpcdet/labels/*.txt, openpcdet/ImageSets/train.txt;
+        - KITTI tracking: tracking/label_02/0000.txt (object numbers as track ids) and tracking/calib/0000.txt.
+        Suggestions not yet accepted (pale points, boxes marked '?') are left out unless the last option is on.
+        """
         t = self.tr
         if wanted is None:
             answer = ask_numbers(self.window, t("label_export"), [(t("export_semantic_kitti"), True),
                                                                   (t("export_kitti_boxes"), True),
-                                                                  (t("export_pcdet_boxes"), True)])
+                                                                  (t("export_pcdet_boxes"), True),
+                                                                  (t("export_kitti_tracking"), self.sequence is not None),
+                                                                  (t("export_include_pending"), False)])
             if answer is None:
                 return
             wanted = answer
+        semantic, objects, pcdet, tracks, pending_too = (list(wanted) + [False] * 5)[:5]
+        tracks = tracks and self.sequence is not None
         folder = folder or QtWidgets.QFileDialog.getExistingDirectory(self.window, t("label_export"),
                                                                       os.path.dirname(self.path or "") or os.getcwd())
         if not folder:
@@ -301,52 +315,94 @@ class Labelling(ClassHistory):
             self._store_frames()
             for key in range(len(self.sequence)):
                 self._boxes_of(key)
+        accept = self.track_accept.value() if self.label_panel else self.panel_values["track_accept"]
+
+        def sure(box):
+            return pending_too or box.get("key") or box.get("accepted") or box.get("score", 1.0) >= accept
 
         def write_all():
+            from .frames import kitti_calibration
             if self.sequence is not None:
                 keys, names = list(range(len(self.sequence))), self.sequence.names
-                poses, link = self.sequence.poses, self.sequence.to_camera()
+                poses, calib = self.sequence.poses, self.sequence.kitti_calibration()
             else:
-                keys, names, poses, link = [None], ["000000"], None, None
+                keys, names, poses, calib = [None], ["000000"], None, kitti_calibration()
+            link = export.rectified(calib)
+            left_out = [0, 0]
 
             def frames():
                 for key, name in zip(keys, names):
                     if key is None:
                         alive = self.cloud.alive
                         xyz, table = self.cloud.surviving()
-                        cls, inst = self.labels.cls[alive], self.labels.inst[alive]
+                        cls, inst, waiting = self.labels.cls[alive], self.labels.inst[alive], self.labels.pending[alive]
                     else:
                         xyz, table = self.sequence.load(key)
                         stored = self.frame_store.get(key)
                         cls, inst = stored[:2] if stored is not None else self.sequence.labels(key)
-                    has = table is not None and "intensity" in table.dtype.names
-                    yield name, xyz, table["intensity"] if has else None, cls, inst
+                        waiting = stored[2] if stored is not None else np.zeros(len(cls), bool)
+                    if not pending_too and waiting.any():
+                        cls, inst = cls.copy(), inst.copy()
+                        cls[waiting], inst[waiting] = UNLABELED, 0
+                        left_out[0] += int(waiting.sum())
+                    intensity = table["intensity"] if table is not None and "intensity" in table.dtype.names else None
+                    if pcdet:
+                        os.makedirs(os.path.join(folder, "openpcdet", "points"), exist_ok=True)
+                        export.pcdet_points(os.path.join(folder, "openpcdet", "points", name + ".npy"), xyz, intensity)
+                    yield name, xyz, intensity, cls, inst
 
-            written = export.semantic_kitti(folder, frames(), self.classes, poses) if wanted[0] else 0
-            boxes = 0
-            for key, name in zip(keys, names):
-                found = self._boxes_of(key)
-                if not found:
-                    continue
+            if semantic:
+                written = export.semantic_kitti(folder, frames(), self.classes, poses)
+            else:
+                written = 0
+                for name, xyz, intensity, _, _ in frames():
+                    if objects:
+                        os.makedirs(os.path.join(folder, "velodyne"), exist_ok=True)
+                        cloud = np.column_stack([xyz, np.zeros(len(xyz)) if intensity is None else intensity])
+                        with replacing(os.path.join(folder, "velodyne", name + ".bin")) as part:
+                            cloud.astype("<f4").tofile(part)
+                    written += 1
+            boxes, rows = 0, []
+            for number, (key, name) in enumerate(zip(keys, names)):
+                every = self._boxes_of(key)
+                found = [box for box in every if sure(box)]
+                left_out[1] += len(every) - len(found)
                 boxes += len(found)
-                for on, sub, write in ((wanted[1], "label_2", lambda p: export.kitti_objects(p, found, self.classes, link)),
-                                       (wanted[2], "boxes_pcdet", lambda p: export.pcdet_boxes(p, found, self.classes))):
-                    if on:
+                rows += [(number, box) for box in found]
+                if objects:
+                    for sub in ("label_2", "calib"):
                         os.makedirs(os.path.join(folder, sub), exist_ok=True)
-                        write(os.path.join(folder, sub, name + ".txt"))
-            return written, boxes
+                    export.kitti_objects(os.path.join(folder, "label_2", name + ".txt"), found, self.classes, link)
+                    export.kitti_calib(os.path.join(folder, "calib", name + ".txt"), calib)
+                if pcdet:
+                    os.makedirs(os.path.join(folder, "openpcdet", "labels"), exist_ok=True)
+                    export.pcdet_boxes(os.path.join(folder, "openpcdet", "labels", name + ".txt"), found, self.classes)
+            for on, base in ((objects, folder), (pcdet, os.path.join(folder, "openpcdet"))):
+                if on:
+                    os.makedirs(os.path.join(base, "ImageSets"), exist_ok=True)
+                    with replacing(os.path.join(base, "ImageSets", "train.txt")) as part, open(part, "w") as f:
+                        f.write("".join(name + "\n" for name in names))
+            if tracks:
+                for sub in ("label_02", "calib"):
+                    os.makedirs(os.path.join(folder, "tracking", sub), exist_ok=True)
+                export.kitti_tracking(os.path.join(folder, "tracking", "label_02", "0000.txt"), rows, self.classes, link)
+                export.kitti_calib(os.path.join(folder, "tracking", "calib", "0000.txt"), calib)
+            return written, boxes, left_out
 
         try:
-            written, boxes = self.compute(t("label_export") + " …", write_all)
+            written, boxes, left_out = self.compute(t("label_export") + " …", write_all)
         except (OSError, ValueError) as error:
             QtWidgets.QMessageBox.critical(self.window, t("label_export"), str(error))
             return
-        self.status(t("status_exported", f=written, b=boxes, folder=folder), 12000)
+        text = t("status_exported", f=written, b=boxes, folder=folder)
+        if any(left_out):
+            text += "  ·  " + t("export_skipped", n=left_out[0], b=left_out[1])
+        self.status(text, 15000)
 
     def load_frame_labels(self, folder=None):
         """Suggestions for every frame from a folder holding one label file per frame (same name as the frame).
 
-        They only fill points that have no label yet, so nothing already labelled is overwritten.
+        They only fill points that have no label yet, so nothing already labeled is overwritten.
         """
         folder = folder or QtWidgets.QFileDialog.getExistingDirectory(self.window, self.tr("labels_load"), self.path)
         if not folder:
@@ -454,7 +510,7 @@ class Labelling(ClassHistory):
                 self.refresh()
 
     def _class_filter(self, ids):
-        """Drop points of hidden classes (labelling mode): what is hidden cannot be selected or labelled."""
+        """Drop points of hidden classes (labeling mode): what is hidden cannot be selected or labeled."""
         if not self.label_mode or not self.hidden_classes or not len(ids):
             return ids
         return ids[~np.isin(self.labels.cls[ids], np.fromiter(self.hidden_classes, np.int64))]
@@ -520,7 +576,7 @@ class Labelling(ClassHistory):
         self._after_labels()
         kept = getattr(self, "_protected", 0)
         self._protected = 0
-        self.status(self.tr("status_labelled", what=self.tr(what), n=changed)
+        self.status(self.tr("status_labeled", what=self.tr(what), n=changed)
                     + (f"  ·  {self.tr('status_protected', n=kept)}" if kept else ""))
 
     def _after_labels(self):
@@ -534,7 +590,7 @@ class Labelling(ClassHistory):
             self._fill_instances()
 
     def assign(self, ids, number, what="label_assign"):
-        """Label points. Protection keeps labelled points from being relabelled, but never from being cleared."""
+        """Label points. Protection keeps labeled points from being relabeled, but never from being cleared."""
         asked = len(ids)
         if number == UNLABELED:
             ids = self.labels.allowed(np.asarray(ids, np.int64), "all", locked=self.locked_classes)
@@ -595,7 +651,7 @@ class Labelling(ClassHistory):
         return self.label_mode and self._rule() != "all"
 
     def toggle_protect(self):
-        """P: switch between protecting labelled points and overwriting them."""
+        """P: switch between protecting labeled points and overwriting them."""
         self._protect_from_bar(self._rule() == "all")
 
     def _protect_from_bar(self, on):
@@ -615,10 +671,10 @@ class Labelling(ClassHistory):
                                         self.protecting())
         self.overlay.place()
 
-    # ---- labelling mode
+    # ---- labeling mode
 
     def switch_label_mode(self, on):
-        """Enter or leave labelling mode: its own tools, panel and colours; leaving restores the editing state."""
+        """Enter or leave labeling mode: its own tools, panel and colours; leaving restores the editing state."""
         if on == self.label_mode:
             return
         self.label_mode = on
@@ -650,8 +706,8 @@ class Labelling(ClassHistory):
     def smart_ids(self, point, mode=None):
         """Points the assisted pick finds from a clicked position, searched within `reach` of it.
 
-        Points that labelling may not change (protected, locked) are never picked and never join anything,
-        but they still count as scenery: the ground under an object is found even when it is already labelled.
+        Points that labeling may not change (protected, locked) are never picked and never join anything,
+        but they still count as scenery: the ground under an object is found even when it is already labeled.
         """
         mode = mode or self.smart_box.currentData()
         ids = self._near(point, self.reach.value())
@@ -795,7 +851,7 @@ class Labelling(ClassHistory):
         self._select_filtered(found)
 
     def select_disagreeing(self):
-        """Select labelled points that most of their neighbours contradict: slips of the brush and ragged borders."""
+        """Select labeled points that most of their neighbours contradict: slips of the brush and ragged borders."""
         self._busy_select("review_disagree", lambda xyz, cls, ids: labels.disagreeing(xyz, cls))
 
     def select_label_islands(self):
@@ -812,7 +868,7 @@ class Labelling(ClassHistory):
         self._busy_select("review_islands", find)
 
     def fill_gaps(self):
-        """Suggest a class for unlabelled points from the labelled points around them; suggestions wait for review."""
+        """Suggest a class for unlabeled points from the labeled points around them; suggestions wait for review."""
         ids = self._sample(self.visible_ids)
         xyz, cls, radius = self.cloud.xyz[ids], self.labels.cls[ids].copy(), self.fill_radius.value()
         local, guess = self.compute(self.tr("review_fill") + " …", lambda: labels.suggest(xyz, cls, radius))
@@ -821,7 +877,20 @@ class Labelling(ClassHistory):
         self._commit(self.labels.assign(ids[keep], guess[keep], pending=True), "review_fill")
 
     def confirm_pending(self):
-        self._commit(self.labels.confirm(), "review_confirm")
+        """Accept every suggestion on screen: pale points, and boxes marked '?' by auto 3D box labeling."""
+        depth = len(self._order)
+        accept = self.track_accept.value()
+        unsure = [box for key in self._box_keys() for box in self._boxes_of(key)
+                  if box.get("score", 1.0) < accept and not box.get("accepted") and not box.get("key")]
+        changed = self.labels.confirm()
+        if changed or not unsure:
+            self._commit(changed, "review_confirm")
+        if unsure:
+            self._remember_boxes()
+            for box in unsure:
+                box["accepted"] = True
+            self._boxes_changed()
+            self._group_since(depth)
 
     def reject_pending(self):
         ids = np.flatnonzero(self.labels.pending)
@@ -906,7 +975,7 @@ class Labelling(ClassHistory):
         self._dissolve(ids[self.labels.inst[ids] == number])
 
     def label_delete(self):
-        """Delete in labelling mode never removes points.
+        """Delete in labeling mode never removes points.
 
         It acts on what was clicked last: a box in the box list is deleted, an object in the object list
         is dissolved (its points keep their class), and otherwise the selected points lose their label.
@@ -1092,11 +1161,11 @@ class Labelling(ClassHistory):
         return self._above[key]
 
     def track_boxes(self, direction=1):
-        """Auto 3D box labelling through the frames on screen, forwards in time (direction 1) or backwards (-1).
+        """Auto 3D box labeling through the frames on screen, forwards in time (direction 1) or backwards (-1).
 
         Every box made or corrected by hand (by Auto 3D boxes, from a selection, or edited) is a starting point:
         its object is followed from that frame in the chosen direction until the range ends, the object is lost,
-        or the next such box of the same object, which stays as it is. So an object labelled in the middle of the
+        or the next such box of the same object, which stays as it is. So an object labeled in the middle of the
         range can be followed from there either way. Each frame is judged only by the frame or two before it on
         the way, and the starting frame is the reference: what stood beside the object there without belonging
         to it is not taken later (tracking.Track). Box overlap (where the object was expected against where its
@@ -1189,7 +1258,7 @@ class Labelling(ClassHistory):
         box["yaw"] = float((box["yaw"] + quarter * np.pi / 2 + np.pi) % (2 * np.pi) - np.pi)
 
     def track_back(self):
-        """Auto 3D box labelling backwards in time (see track_boxes)."""
+        """Auto 3D box labeling backwards in time (see track_boxes)."""
         self.track_boxes(-1)
 
     def _aside(self, key, world, members, reach):
@@ -1285,7 +1354,7 @@ class Labelling(ClassHistory):
                             u=unsure, r=released), 12000)
 
     def _leftovers(self, key, box):
-        """Unlabelled points of a frame that hang on to a boxed object but were left outside it."""
+        """Unlabeled points of a frame that hang on to a boxed object but were left outside it."""
         number = box.get("instance", 0)
         mine = self._key_ids(key)
         owned = mine[self.labels.inst[mine] == number] if number else EMPTY
@@ -1337,7 +1406,7 @@ class Labelling(ClassHistory):
         return changed
 
     def select_strays(self):
-        """Select the points labelled as boxed objects on screen that their boxes leave out."""
+        """Select the points labeled as boxed objects on screen that their boxes leave out."""
         found = self._strays()
         self._stray_counts = {where: int(len(ids)) for where, ids in found.items()}
         self._fill_boxes()
@@ -1345,7 +1414,7 @@ class Labelling(ClassHistory):
         self.status(self.tr("status_filter", n=int(self.selected.sum())), 10000)
 
     def select_leftovers(self):
-        """Select the points that belong with the boxed objects on screen but are still unlabelled."""
+        """Select the points that belong with the boxed objects on screen but are still unlabeled."""
         pairs = [(key, box) for key in self._box_keys() for box in self._boxes_of(key)]
         parts = []
         with self.working(self.tr("boxes_select_left") + " …") as report:
@@ -1396,7 +1465,7 @@ class Labelling(ClassHistory):
                 box["left"] = 0
         self._group_since(depth)
         self._boxes_changed()
-        self.status(self.tr("status_labelled", what=self.tr("boxes_take_left"), n=taken), 10000)
+        self.status(self.tr("status_labeled", what=self.tr("boxes_take_left"), n=taken), 10000)
 
     def label_box_from_selection(self):
         """One box around the selected points of each frame, with their main class and instance."""
@@ -1489,7 +1558,8 @@ class Labelling(ClassHistory):
         box = self.box_store[key][index]
         text = "×".join(f"{v:.2f}" for v in box["size"])
         if "score" in box:
-            text += f"  ·  {box['score']:.2f}" + ("  ?" if box["score"] < self.track_accept.value() else "")
+            unsure = box["score"] < self.track_accept.value() and not box.get("accepted")
+            text += f"  ·  {box['score']:.2f}" + ("  ?" if unsure else "")
         if box.get("left"):
             text += "  ·  " + self.tr("boxes_left", n=box["left"])
         if self._stray_counts.get((key, index)):
@@ -1557,7 +1627,7 @@ class Labelling(ClassHistory):
         self._hint_track_again(old)
 
     def refit_box(self):
-        """Fit the chosen box again: to its object's points as labelled now, or else to the points it holds."""
+        """Fit the chosen box again: to its object's points as labeled now, or else to the points it holds."""
         world = self._active_box_world()
         if world is None:
             return
@@ -1934,11 +2004,11 @@ class Labelling(ClassHistory):
         if self.sequence is None:
             self.timeline.hide()
             return
-        if not hasattr(self, "_labelled_frames"):
-            self._labelled_frames = {index for index in range(len(self.sequence))
+        if not hasattr(self, "_labeled_frames"):
+            self._labeled_frames = {index for index in range(len(self.sequence))
                                      if os.path.isfile(self.sequence.label_path(index))}
-        labelled = self._labelled_frames | {index for index, item in self.frame_store.items() if item[0].any()}
-        self.timeline.slider.set_marks(labelled, self.frame_dirty)
+        labeled = self._labeled_frames | {index for index, item in self.frame_store.items() if item[0].any()}
+        self.timeline.slider.set_marks(labeled, self.frame_dirty)
         self.timeline.show_range(self.sequence.names, self.frame_ids[0], self.frame_ids[-1])
         self.timeline.show()
 
@@ -2278,8 +2348,8 @@ class Labelling(ClassHistory):
         return keys + extra
 
 
-class VoxelLabelling(ClassHistory):
-    """Mixed into the voxel editor: voxel classes voted from points, relabelling, and their way back to points."""
+class VoxelLabeling(ClassHistory):
+    """Mixed into the voxel editor: voxel classes voted from points, relabeling, and their way back to points."""
 
     @property
     def label_panel(self):
@@ -2326,7 +2396,7 @@ class VoxelLabelling(ClassHistory):
                                   "at_once": False})
 
     def _voxel_labels_from(self, payload, source, path):
-        """Labels a new voxel document starts with: voted from a labelled cloud, or read from beside the file."""
+        """Labels a new voxel document starts with: voted from a labeled cloud, or read from beside the file."""
         self.vlabels = labels.VoxelLabels()
         if source is not None and source.get("voxel") is not None:
             self.vlabels = labels.VoxelLabels(*source["voxel"])
@@ -2416,7 +2486,7 @@ class VoxelLabelling(ClassHistory):
                                + (f"  ·  {self.tr('status_protected', n=kept)}" if kept else ""))
         self._record("label")
         self._after_voxel_labels()
-        self.status(self.tr("status_labelled", what=self.tr(what), n=changed)
+        self.status(self.tr("status_labeled", what=self.tr(what), n=changed)
                     + (f"  ·  {self.tr('status_protected', n=kept)}" if kept else ""))
 
     def assign_selection(self, number=None):
@@ -2570,7 +2640,7 @@ class VoxelLabelling(ClassHistory):
     # ---- conversions
 
     def ask_relabel_back(self):
-        """Before points come back: say how many voxels were relabelled; their points will take the new class."""
+        """Before points come back: say how many voxels were relabeled; their points will take the new class."""
         keys, _ = self.vlabels.edited()
         if self.source is None or not len(keys):
             return True

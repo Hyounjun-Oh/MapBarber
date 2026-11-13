@@ -270,8 +270,8 @@ class VoxelMap(KeySet):
             xyz = np.stack([local & mask, (local >> CHUNK_BITS) & mask, (local >> (2 * CHUNK_BITS)) & mask], axis=1)
             grid = np.zeros((CHUNK, CHUNK, CHUNK), bool)
             grid[xyz[:, 0], xyz[:, 1], xyz[:, 2]] = True
-            labelled, count = ndimage.label(grid, structure=structure)
-            mine = labelled[xyz[:, 0], xyz[:, 1], xyz[:, 2]] - 1
+            labeled, count = ndimage.label(grid, structure=structure)
+            mine = labeled[xyz[:, 0], xyz[:, 1], xyz[:, 2]] - 1
             coords[chunk_key], labels[chunk_key], offsets[chunk_key] = xyz, mine + total, total
             sizes.append(np.bincount(mine, minlength=count))
             total += count

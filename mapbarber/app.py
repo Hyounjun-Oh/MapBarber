@@ -305,7 +305,7 @@ class Workbench(QtWidgets.QMainWindow):
         self.settings.setValue("backup", "true" if self.backup_action.isChecked() else "false")
 
     def set_label_mode(self, on):
-        """Switch the current editor between editing and labelling; leaving labelling restores the editing state."""
+        """Switch the current editor between editing and labeling; leaving labeling restores the editing state."""
         editor = self.editor
         if editor is None or not hasattr(editor, "label_mode") or editor.label_mode == on:
             return

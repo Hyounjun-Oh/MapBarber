@@ -1,4 +1,4 @@
-"""Whole labelling sessions driven through the same paths a user takes, with the editor's state checked after every step.
+"""Whole labeling sessions driven through the same paths a user takes, with the editor's state checked after every step.
 
 After each step the lists, the corner bar, the toolbar and the dirty flag must agree with the data; at the end
 every step is undone one by one back to the start and redone to the end, comparing full snapshots.
@@ -208,7 +208,7 @@ def test_label_objects_boxes_session(session):
     session.pump(0.3)
     editor = session.editor
     session.step("open", undoable=False)
-    session.step("labelling mode", lambda: session.trigger("Ctrl+L"), undoable=False)
+    session.step("labeling mode", lambda: session.trigger("Ctrl+L"), undoable=False)
     assert editor.label_mode and editor.protecting()
 
     session.step("smart tool", lambda: session.trigger("W"), undoable=False)
@@ -232,7 +232,7 @@ def test_label_objects_boxes_session(session):
     session.step("select tool", lambda: session.trigger("V"), undoable=False)
     width, height = editor.viewport.renderer.GetSize()
     session.step("rectangle over everything", lambda: editor._rectangle((0, 0), (width, height), False), undoable=False)
-    assert editor.selected.any() and not editor.selected[editor.labels.cls > 0].any(), "protection let labelled points in"
+    assert editor.selected.any() and not editor.selected[editor.labels.cls > 0].any(), "protection let labeled points in"
     crates_left = (part == 1) | (part == 3)
     editor.select(np.flatnonzero(crates_left), "replace")
     session.step("label the other crates", lambda: session.trigger("Ctrl+5"))
@@ -273,7 +273,7 @@ def test_label_objects_boxes_session(session):
     session.step("label brush", lambda: session.trigger("B"), undoable=False)
     editor.radius.setValue(0.3)
     target = points[part == 3][np.argmax(points[part == 3][:, 2])]
-    session.step("brush over a labelled crate", lambda: session.click(target))
+    session.step("brush over a labeled crate", lambda: session.click(target))
     assert (editor.labels.cls[np.linalg.norm(points - target, axis=1) < 0.25] == 7).all()
     session.step("protection back on with P", lambda: session.trigger("P"), undoable=False)
     assert editor.protecting() and editor.label_bar.protect.isChecked()
@@ -303,7 +303,7 @@ def test_label_objects_boxes_session(session):
     editor.select(np.flatnonzero(part == 1), "replace")
     session.trigger("Delete")
     assert not editor.cloud.alive[part == 1].any(), "Delete removes points in editing mode"
-    session.step("labelling again", lambda: session.trigger("Ctrl+L"), undoable=False)
+    session.step("labeling again", lambda: session.trigger("Ctrl+L"), undoable=False)
     session.trigger("Ctrl+L")
     session.trigger("Ctrl+Z")
     assert editor.cloud.alive.all()
@@ -385,8 +385,14 @@ def test_frames_session(session):
 
     out = session.folder / "export"
     out.mkdir()
-    editor.export_standard(str(out), [True, True, True])
+    editor.export_standard(str(out), [True, True, True, True])
     assert sorted(os.listdir(out / "velodyne")) == [f"{i:06d}.bin" for i in range(6)]
+    assert sorted(os.listdir(out / "label_2")) == sorted(os.listdir(out / "calib")) == [f"{i:06d}.txt" for i in range(6)], \
+        "KITTI object needs a label and a calibration file for every frame"
+    assert (out / "label_2" / "000005.txt").read_text() == "" and (out / "ImageSets" / "train.txt").read_text().split()[0] == "000000"
+    tracks = [line.split() for line in (out / "tracking" / "label_02" / "0000.txt").read_text().splitlines()]
+    assert tracks and all(len(row) == 17 for row in tracks) and tracks[0][2] == editor.classes.name(car_class)
+    assert sorted(os.listdir(out / "openpcdet" / "labels")) == [f"{i:06d}.txt" for i in range(6)]
     assert (np.fromfile(str(out / "labels" / "000002.label"), "<u4")[4000:4600] & 0xFFFF == car_class).all()
     assert (out / "label_2" / "000001.txt").read_text().split()[0] == editor.classes.name(car_class)
     assert len((out / "poses.txt").read_text().splitlines()) == 6
@@ -410,7 +416,7 @@ def test_voxel_session(session):
     editor = session.window.show_document(VOXEL, (pack(np.vstack([floor, crate])), 0.05))
     session.pump(0.3)
     session.step("voxels open", undoable=False)
-    session.step("labelling mode", lambda: session.trigger("Ctrl+L"), undoable=False)
+    session.step("labeling mode", lambda: session.trigger("Ctrl+L"), undoable=False)
     session.step("smart tool", lambda: session.trigger("W"), undoable=False)
     editor.look_from((1, -1, 0.8), (0, 0, 1))
     session.pump()
@@ -419,7 +425,7 @@ def test_voxel_session(session):
     session.step("label it", lambda: session.trigger("Ctrl+5"))
     editor.smart_box.setCurrentIndex(editor.smart_box.findData("plane"))
     session.step("pick the floor", lambda: session.click((1.5, 0.3, 0.05)), undoable=False)
-    assert set(editor.selection.tolist()) == set(pack(floor).tolist()), "protection keeps the labelled crate out"
+    assert set(editor.selection.tolist()) == set(pack(floor).tolist()), "protection keeps the labeled crate out"
     session.step("label it", lambda: session.trigger("Ctrl+1"))
     session.step("select class", lambda: editor.select_voxel_class(), undoable=False)
     total = len(editor.map)
@@ -617,7 +623,7 @@ def test_tracking_session(session):
             assert box["class"] == 10 and box["score"] > 0.6 and np.allclose(box["size"], editor.box_store[0][0]["size"], atol=1.0)
         start = int(editor.frame_starts[index])
         cls, inst = editor.labels.cls[start:start + count], editor.labels.inst[start:start + count]
-        assert (cls[6000:] == 10).mean() > 0.97 and not cls[:6000].any(), f"frame {index}: wrong points labelled"
+        assert (cls[6000:] == 10).mean() > 0.97 and not cls[:6000].any(), f"frame {index}: wrong points labeled"
         assert (inst[6000:6700] == editor.labels.inst[mover_ids[0]]).mean() > 0.97, "the object keeps its number"
         assert (inst[6700:] == editor.labels.inst[parked_ids[0]]).mean() > 0.97
     assert editor.box_list.topLevelItemCount() == 12 and not editor.labels.pending.any()
@@ -745,7 +751,7 @@ def test_arrow_keys_slide_the_frame_range_by_its_width(session):
 def test_tracking_keeps_up_with_a_changing_view(session):
     """A car drives past: first only its front is seen, then its side, then its back. In every frame the box
     holds what that frame and the two before it show of the car, keeps the car's heading, and no frame may keep
-    car points unlabelled."""
+    car points unlabeled."""
     folder = session.folder / "passing"
     (folder / "velodyne").mkdir(parents=True)
     rng = np.random.default_rng(9)
@@ -796,7 +802,7 @@ def test_tracking_keeps_up_with_a_changing_view(session):
         start = int(editor.frame_starts[index])
         cls = editor.labels.cls[start:start + counts[index]]
         inst = editor.labels.inst[start:start + counts[index]]
-        assert (cls[9000:] == 10).mean() > 0.97, f"frame {index}: {(cls[9000:] != 10).sum()} car points left unlabelled"
+        assert (cls[9000:] == 10).mean() > 0.97, f"frame {index}: {(cls[9000:] != 10).sum()} car points left unlabeled"
         assert (inst[9000:] == number).mean() > 0.97 and not cls[:9000].any()
     session.step("look for points left outside", lambda: editor.select_leftovers(), undoable=False)
     assert editor.selected.sum() < 40
@@ -896,7 +902,7 @@ def test_view_can_be_fixed_to_the_world_the_sensor_or_a_box(session):
     session.check("anchors")
 
 
-def test_a_few_mislabelled_points_do_not_spoil_a_box(session):
+def test_a_few_mislabeled_points_do_not_spoil_a_box(session):
     from mapbarber.formats import CLOUD
     rng = np.random.default_rng(14)
     floor = np.column_stack([rng.uniform(-4, 4, 6000), rng.uniform(-4, 4, 6000), np.zeros(6000)])
@@ -921,7 +927,7 @@ def test_a_few_mislabelled_points_do_not_spoil_a_box(session):
 
     editor.box_list.setCurrentItem(editor.box_list.topLevelItem(0))
     editor.robust_boxes.setChecked(False)
-    session.step("refit around every labelled point", lambda: editor.refit_box())
+    session.step("refit around every labeled point", lambda: editor.refit_box())
     assert max(editor.box_store[None][0]["size"]) > 3.0 and "stray" not in editor.box_list.topLevelItem(0).text(2)
     editor.robust_boxes.setChecked(True)
     session.step("refit without the slips", lambda: editor.refit_box())
@@ -991,7 +997,7 @@ def test_a_corrected_box_is_tracked_again_up_to_the_corrected_boxes(session):
     assert "Auto-label again" in session.window.statusBar().currentMessage()
     assert "corrected" in editor.box_list.currentItem().text(2)
     session.step("track again from it", lambda: editor.track_again())
-    assert "Auto-labelled again" in session.window.statusBar().currentMessage()
+    assert "Auto-labeled again" in session.window.statusBar().currentMessage()
 
     for frame in range(12):
         car, count = layout[frame]
@@ -1016,7 +1022,7 @@ def test_a_corrected_box_is_tracked_again_up_to_the_corrected_boxes(session):
     assert session.same(final, session.snapshot()) is None
 
 
-def test_an_object_labelled_in_a_middle_frame_is_tracked_backwards_and_forwards(session):
+def test_an_object_labeled_in_a_middle_frame_is_tracked_backwards_and_forwards(session):
     """Labels added in the middle of a sequence: the object is followed back to the first frame with one button
     and on to the last with the other; the box made by hand stays, and each direction leaves the other side alone."""
     folder = session.folder / "middle"
@@ -1050,20 +1056,20 @@ def test_an_object_labelled_in_a_middle_frame_is_tracked_backwards_and_forwards(
         found = [box for box in editor.box_store.get(frame, []) if box.get("instance") == number]
         return found[0] if found else None
 
-    def car_labelled(frame):
+    def car_labeled(frame):
         start = int(editor.frame_starts[frame])
         return (editor.labels.inst[start + 6000:start + 7500] == number).mean()
 
     session.step("track backwards", lambda: editor.track_back())
     assert "◀" in editor.tr("track_back") and all(box_of(frame) is not None for frame in range(5))
     assert all(box_of(frame) is None for frame in range(6, 11)), "tracking backwards leaves the later frames alone"
-    assert all(car_labelled(frame) > 0.97 for frame in range(6)) and car_labelled(7) == 0
+    assert all(car_labeled(frame) > 0.97 for frame in range(6)) and car_labeled(7) == 0
     for frame in range(5):
         assert np.allclose(box_of(frame)["center"][:2], centres[frame][:2], atol=0.3), frame
     hand_made = copy.deepcopy(box_of(5))
     session.step("track forwards", lambda: editor.track_boxes(1))
     assert all(box_of(frame) is not None for frame in range(11))
-    assert all(car_labelled(frame) > 0.97 for frame in range(11))
+    assert all(car_labeled(frame) > 0.97 for frame in range(11))
     assert box_of(5)["center"] == hand_made["center"] and box_of(5)["size"] == hand_made["size"], "the hand-made box stays"
     for frame in range(6, 11):
         assert np.allclose(box_of(frame)["center"][:2], centres[frame][:2], atol=0.3), frame

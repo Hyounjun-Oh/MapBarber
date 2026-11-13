@@ -941,7 +941,7 @@ def unambiguous(window):
             seen[key] = action.text()
 
 
-def labelled_scene():
+def labeled_scene():
     """Floor (class 1), wall (2) and a box floating apart (3)."""
     rng = np.random.default_rng(0)
     floor = np.column_stack([rng.uniform(0, 4, 4000), rng.uniform(0, 4, 4000), rng.normal(0, 0.004, 4000)])
@@ -950,11 +950,11 @@ def labelled_scene():
     return np.vstack([floor, wall, box]), np.repeat([1, 2, 3], [4000, 3000, 1500])
 
 
-def test_labelling_a_cloud(workbench):
+def test_labeling_a_cloud(workbench):
     from mapbarber import formats
     from mapbarber.qt import QtCore
     window, folder, pump, dialogs = workbench
-    points, truth = labelled_scene()
+    points, truth = labeled_scene()
     path = folder / "scene.pcd"
     formats.save_cloud(str(path), points)
     assert window.open(str(path))
@@ -1082,7 +1082,7 @@ def test_labelling_a_cloud(workbench):
     assert not dialogs
 
 
-def test_labelling_frames(workbench):
+def test_labeling_frames(workbench):
     from mapbarber import formats
     window, folder, pump, dialogs = workbench
     sequence = folder / "drive"
@@ -1168,8 +1168,8 @@ def test_labels_survive_the_trip_through_voxels(workbench, monkeypatch):
     from mapbarber import formats
     from mapbarber.qt import QtWidgets
     window, folder, pump, dialogs = workbench
-    points, truth = labelled_scene()
-    path = folder / "labelled.pcd"
+    points, truth = labeled_scene()
+    path = folder / "labeled.pcd"
     person = np.random.default_rng(2).uniform([3.0, 3.0, 0.0], [3.3, 3.3, 1.7], (200, 3))
     points = np.vstack([points, person])
     truth = np.concatenate([truth, np.full(200, 7)])
@@ -1213,22 +1213,22 @@ def test_labels_survive_the_trip_through_voxels(workbench, monkeypatch):
     voxels.undo()
     voxels.redo()
     window.convert(voxels.to_cloud)
-    relabelled = window.editor
+    relabeled = window.editor
     in_wall = point_keys(points, 0.1) == wall_key[0]
     gone = point_keys(points, 0.1) == point_keys(points[:1], 0.1)[0]
     expected = table["label"].copy()
     expected[in_wall & (table["label"] != 7)] = 4
-    assert relabelled.labels.cls.tolist() == expected[~gone].tolist()
+    assert relabeled.labels.cls.tolist() == expected[~gone].tolist()
 
     window.tabs.setCurrentWidget(voxels.widget)
-    target = folder / "labelled_map.bt"
+    target = folder / "labeled_map.bt"
     assert window.write(str(target), None)
     assert window.answered_losses[-1] == ("bt", [window.tr_("loss_points")])
     expected_labels = voxels.vlabels.get(voxels.map.occupied).tolist()
     voxels.map.mark_saved()
     voxels.vlabels.mark_saved()
     window.close_document(voxels, ask=False)
-    assert (folder / "labelled_map.bt.labels.npz").is_file() and (folder / "labelled_map.bt.labels.yaml").is_file()
+    assert (folder / "labeled_map.bt.labels.npz").is_file() and (folder / "labeled_map.bt.labels.yaml").is_file()
     assert window.open(str(target))
     pump()
     reopened = window.editor
@@ -1244,7 +1244,7 @@ def test_labels_survive_the_trip_through_voxels(workbench, monkeypatch):
 def test_protected_labels_stay_out_of_a_wide_selection(workbench):
     from mapbarber.formats import CLOUD
     window, _folder, pump, dialogs = workbench
-    points, truth = labelled_scene()
+    points, truth = labeled_scene()
     editor = window.show_document(CLOUD, (points, None))
     pump()
     window.set_label_mode(True)
@@ -1276,7 +1276,7 @@ def test_protected_labels_stay_out_of_a_wide_selection(workbench):
 def test_undo_covers_classes_and_frame_writes(workbench, tmp_path):
     from mapbarber.formats import CLOUD
     window, folder, pump, dialogs = workbench
-    points, truth = labelled_scene()
+    points, truth = labeled_scene()
     editor = window.show_document(CLOUD, (points, None))
     pump()
     window.set_label_mode(True)
@@ -1423,15 +1423,23 @@ def test_objects_and_boxes(workbench, tmp_path):
 
     out = tmp_path / "standard"
     out.mkdir()
+    waiting = np.flatnonzero(editor.labels.cls == 0)[:7]
+    editor.labels.assign(waiting, 5, pending=True)
     editor.export_standard(str(out), [True, True, True])
     scan = np.fromfile(str(out / "velodyne" / "000000.bin"), "<f4").reshape(-1, 4)
     packed = np.fromfile(str(out / "labels" / "000000.label"), "<u4")
-    assert np.allclose(scan[:, :3], points, atol=1e-4) and (packed & 0xFFFF).tolist() == editor.labels.cls.tolist()
-    assert (packed >> 16).tolist() == editor.labels.inst.tolist()
+    confirmed = editor.labels.cls.copy()
+    confirmed[waiting] = 0
+    assert np.allclose(scan[:, :3], points, atol=1e-4) and (packed & 0xFFFF).tolist() == confirmed.tolist(), "suggestions stay out"
+    assert (packed[waiting] == 0).all() and ((packed >> 16)[editor.labels.cls > 0]).tolist() == editor.labels.inst[editor.labels.cls > 0].tolist()
     config = (out / "semantic-kitti.yaml").read_text()
     assert '5: "furniture"' in config and "learning_map:" in config and "color_map: # bgr" in config
     kitti_rows = (out / "label_2" / "000000.txt").read_text().splitlines()
-    pcdet_rows = (out / "boxes_pcdet" / "000000.txt").read_text().splitlines()
+    pcdet_rows = (out / "openpcdet" / "labels" / "000000.txt").read_text().splitlines()
+    assert np.load(str(out / "openpcdet" / "points" / "000000.npy")).shape == (len(points), 4)
+    assert (out / "openpcdet" / "ImageSets" / "train.txt").read_text().split() == ["000000"]
+    calib = dict(line.split(":", 1) for line in (out / "calib" / "000000.txt").read_text().splitlines())
+    assert {"P0", "P2", "R0_rect", "Tr_velo_to_cam"} <= set(calib) and len(calib["P2"].split()) == 12
     assert len(kitti_rows) == len(pcdet_rows) == 4 and len(kitti_rows[0].split()) == 15
     first = editor.box_store[None][0]
     values = pcdet_rows[0].split()

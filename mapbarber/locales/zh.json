@@ -270,7 +270,7 @@
  "smart_at_once": "选中即标注",
  "smart_too_many": "范围内有 {n} 个点；请缩小搜索范围。",
  "status_smart": "选取了 {n} 个点 — Enter 标注，[ / ] 调整",
- "status_labelled": "{what}：{n} 个点",
+ "status_labeled": "{what}：{n} 个点",
  "status_picked": "当前类别：{name}",
  "review": "检查",
  "review_next": "跳到下一个未标注区域",
@@ -391,10 +391,10 @@
  "boxes_no_class": "还没有标注为 {name} 的点。",
  "status_class_boxes": "{name}：已为 {n} 个物体生成包围盒",
  "label_export": "以标准格式导出…",
- "label_export_tip": "按其他工具和训练代码可直接读取的格式写出标签：SemanticKITTI 序列（velodyne/*.bin、labels/*.label、poses、semantic-kitti.yaml）、KITTI object 标签（label_2/*.txt）以及 OpenPCDet 包围盒（x y z dx dy dz heading class）。",
+ "label_export_tip": "按基准测试和训练代码期望的格式写出标签：SemanticKITTI 序列 (velodyne/*.bin、含类别和物体编号的 labels/*.label、位姿、semantic-kitti.yaml)、KITTI object (每一帧的 label_2/*.txt 和 calib/*.txt)、OpenPCDet 自定义数据集 (points/*.npy、labels/*.txt、ImageSets) 以及 KITTI tracking (以物体编号作为 track id 的 label_02)。尚未确认的建议除非勾选，否则不导出。",
  "export_semantic_kitti": "点与标签：SemanticKITTI 序列 (.bin + .label + yaml)",
- "export_kitti_boxes": "3D 包围盒：KITTI object 标签 (label_2/*.txt)",
- "export_pcdet_boxes": "3D 包围盒：OpenPCDet 格式 (x y z dx dy dz heading class)",
+ "export_kitti_boxes": "3D框: KITTI object (label_2 + calib，每一帧)",
+ "export_pcdet_boxes": "3D框: OpenPCDet 自定义数据集 (点 + 标签)",
  "status_exported": "已把 {f} 帧和 {b} 个包围盒导出到 {folder}",
  "instance_gap": "物体间距 [m]",
  "instance_gap_tip": "距离小于此值的点属于同一物体。稀疏的 LiDAR 扫描需要更大的值（0.5 m），稠密扫描用更小的值。",
@@ -432,5 +432,8 @@
  "status_corrected": "框已修正。点击“从修正的框重新自动标注”可将修正带到前后的帧。",
  "status_tracked_again": "在 {n} 帧中重新自动标注 ({first} – {last})  ·  {u} 个不确定(检查 '?')  ·  {r} 个点不再属于它",
  "frames_loading": "正在载入 {n} 帧…",
- "track_back": "自动3D包围盒标注 ◀ 按时间倒序"
+ "track_back": "自动3D包围盒标注 ◀ 按时间倒序",
+ "export_kitti_tracking": "带物体编号的3D框: KITTI tracking (label_02)",
+ "export_include_pending": "同时导出尚未确认的建议('?')",
+ "export_skipped": "已排除 {n} 个建议点和 {b} 个不确定的框(请先确认，或勾选该选项)"
 }

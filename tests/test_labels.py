@@ -1,4 +1,4 @@
-"""Label classes, the label layer, voting, the labelling helpers, label files and frame sequences."""
+"""Label classes, the label layer, voting, the labeling helpers, label files and frame sequences."""
 import os
 
 import numpy as np
@@ -219,7 +219,7 @@ def test_voxel_labels_keep_edits_apart_from_the_vote():
     assert voxels.counts(keys) == {3: 1, 7: 1, 1: 1}
 
 
-def labelled_cloud():
+def labeled_cloud():
     """Points in 0.1 m voxels: a floor voxel row, a wall voxel with one person point inside, and a person apart."""
     rng = np.random.default_rng(5)
     xyz = np.vstack([rng.uniform([0, 0, 0], [0.6, 0.1, 0.1], (60, 3)),
@@ -237,7 +237,7 @@ def labelled_cloud():
 
 
 def test_points_come_back_with_their_own_labels():
-    xyz, table, cls, inst = labelled_cloud()
+    xyz, table, cls, inst = labeled_cloud()
     classes = labels.ClassList("indoor")
     keys, winner, purity = convert.vote_voxels(xyz, cls, 0.1, classes)
     wall = convert.point_keys(xyz[60:61], 0.1)[0]
@@ -249,7 +249,7 @@ def test_points_come_back_with_their_own_labels():
     restored = convert.restore(xyz, table, 0.1, voxel_map, cls, inst, labels.VoxelLabels(keys, winner, purity))
     assert np.array_equal(restored["xyz"], xyz) and restored["table"].tobytes() == table.tobytes()
     assert restored["cls"].tolist() == cls.tolist() and restored["inst"].tolist() == inst.tolist()
-    assert restored["added"] == restored["dropped"] == restored["relabelled"] == 0
+    assert restored["added"] == restored["dropped"] == restored["relabeled"] == 0
 
     person = convert.point_keys(xyz[70:], 0.1)[0]
     outside = cls == 7
@@ -274,7 +274,7 @@ def test_points_come_back_with_their_own_labels():
     in_wall = convert.point_keys(xyz[survivors], 0.1) == wall
     expected[in_wall & ~outside[survivors]] = 5
     assert restored["cls"].tolist() == expected.tolist() + [2]
-    assert restored["relabelled"] == 9 and restored["relabelled_voxels"] == 1
+    assert restored["relabeled"] == 9 and restored["relabeled_voxels"] == 1
     assert restored["inst"][:-1][in_wall & ~outside[survivors]].tolist() == [0] * 9
     assert restored["table"]["intensity"][:-1].tolist() == table["intensity"][survivors].tolist()
 

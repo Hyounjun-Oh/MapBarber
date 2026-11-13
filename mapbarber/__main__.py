@@ -56,9 +56,9 @@ def load(path):
 
 def describe(kind, payload):
     if kind == FRAMES:
-        labelled = sum(os.path.isfile(payload.label_path(i)) for i in range(len(payload)))
+        labeled = sum(os.path.isfile(payload.label_path(i)) for i in range(len(payload)))
         lines = [("type", "frame sequence"), ("frames", len(payload)), ("scans", payload.scan_folder),
-                 ("poses", payload.pose_source or "none"), ("labelled", f"{labelled} frames")]
+                 ("poses", payload.pose_source or "none"), ("labeled", f"{labeled} frames")]
         if payload.poses is not None:
             travel = np.linalg.norm(np.diff(payload.poses[:, :3, 3], axis=0), axis=1).sum()
             lines.append(("path length", f"{travel:.1f} m"))
@@ -83,7 +83,7 @@ def describe(kind, payload):
             cls, _ = formats.table_labels(table)
             if cls is not None:
                 counts = np.bincount(cls)
-                lines.append(("labels", f"{100.0 * (cls != 0).mean():.1f}% labelled, "
+                lines.append(("labels", f"{100.0 * (cls != 0).mean():.1f}% labeled, "
                                         + ", ".join(f"{n}: {counts[n]}" for n in np.flatnonzero(counts)[:12] if n)))
         if len(finite):
             lines += [(f"{a} range", f"{lo:+.3f} .. {hi:+.3f} m") for a, lo, hi in zip("xyz", finite.min(0), finite.max(0))]

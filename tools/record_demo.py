@@ -1,8 +1,8 @@
 """Record the README animations by driving the real application and capturing every frame.
 
-    python tools/record_demo.py docs/ [name.gif ...] [--kitti=/path/to/2011_09_26_drive_0005_sync]
+    python tools/record_demo.py docs/media/ [name.gif ...] [--kitti=/path/to/2011_09_26_drive_0005_sync]
 
-Needs ffmpeg and a display. The labelling animations need the KITTI raw drive 2011_09_26_0005 (with its
+Needs ffmpeg and a display. The labeling animations need the KITTI raw drive 2011_09_26_0005 (with its
 calib_*.txt one folder up) whose frame 0 holds labels and boxes made by hand (labels/, boxes/); they only show
 and use those, and are skipped without --kitti.
 """
@@ -521,7 +521,7 @@ KITTI_CLASSES = {"road": 40, "car": 10, "person": 30, "pole": 80, "bus": 13}
 def kitti(rec, labels=True, boxes=True):
     """A working copy of a KITTI raw drive (the scans stay where they are and are only read), opened in the editor.
 
-    labels / boxes: also copy the drive's labels/ and boxes/ folders (the frame labelled by hand).
+    labels / boxes: also copy the drive's labels/ and boxes/ folders (the frame labeled by hand).
     """
     root = os.path.join(rec.workdir, "kitti")
     target = os.path.join(root, "drive")
@@ -545,7 +545,7 @@ def kitti(rec, labels=True, boxes=True):
 
 
 def hand_boxes(editor):
-    """The boxes of the frame labelled by hand (frame 0), in world coordinates, by object number."""
+    """The boxes of the frame labeled by hand (frame 0), in world coordinates, by object number."""
     from mapbarber import boxes
     path = os.path.join(KITTI, "boxes", editor.sequence.names[0] + ".json")
     return {box["instance"]: boxes.moved(box, editor.sequence.poses[0]) for box in boxes.load(path)}
@@ -580,14 +580,14 @@ def tree_item(rec, tree, item):
     return rec.in_window(tree.viewport(), QtCore.QPointF(tree.visualItemRect(item).center()))
 
 
-def demo_labelling(rec, out):
+def demo_labeling(rec, out):
     editor = kitti(rec, labels=True, boxes=False)
     known = hand_boxes(editor)
     editor.timeline.slider.on_range(0, 0)
     rec.pump(0.5)
     show(editor, (-14, -12, -2.5), (16, 12, 2), (-0.8, -1.0, 0.9))
     rec.start()
-    rec.say("KITTI drive 0005, frame 0 labelled by hand: cars, a bus, pedestrians, poles", 2.0)
+    rec.say("KITTI drive 0005, frame 0 labeled by hand: cars, a bus, pedestrians, poles", 2.0)
     rec.scroll_panel_to(editor.class_list)
     rec.say("The class list counts the points of every class; the corner bar shows the active one")
     rec.glide(rec.in_window(editor.class_list), 10)
@@ -612,7 +612,7 @@ def demo_labelling(rec, out):
     editor.colour_box.setCurrentIndex(editor.colour_box.findData("label"))
     zoom(editor, known[8], 7.0)
     rec.shortcut("V")
-    rec.say("Labelled points are protected: a wide rectangle takes only what is still unlabelled")
+    rec.say("Labeled points are protected: a wide rectangle takes only what is still unlabeled")
     car = np.asarray(known[8]["center"])
     rec.vtk_drag(rec.project(car + [-4, -3, -1]), rec.project(car + [4, 3, 1.5]), 16, shift=True)
     rec.hold(2.0)
@@ -629,7 +629,7 @@ def demo_smart_pick(rec, out):
     show(editor, (-12, -12, -2.5), (16, 12, 2), (-0.8, -1.0, 0.9))
     rec.start()
     rec.say("Smart pick (W) against the hand labels of frame 0", 1.6)
-    rec.say("Protection off, so labelled points can be picked (the labels stay as they are)")
+    rec.say("Protection off, so labeled points can be picked (the labels stay as they are)")
     rec.glide(rec.in_window(editor.label_bar.protect), 10)
     rec.ripple = 4
     editor.label_bar.protect.click()
@@ -669,7 +669,7 @@ def demo_boxes(rec, out):
     rec.pump(0.5)
     show(editor, (-12, -12, -2.5), (16, 10, 2), (-0.8, -1.0, 0.9))
     rec.start()
-    rec.say("Frame 0 labelled by hand: cars, a bus, pedestrians, poles", 1.8)
+    rec.say("Frame 0 labeled by hand: cars, a bus, pedestrians, poles", 1.8)
     for name in ("car", "person"):
         editor.set_active(KITTI_CLASSES[name])
         rec.scroll_panel_to(editor.class_boxes)
@@ -697,7 +697,7 @@ def demo_boxes(rec, out):
     rec.write_gif(out)
 
 
-def demo_auto_labelling(rec, out):
+def demo_auto_labeling(rec, out):
     editor = kitti(rec, labels=True, boxes=True)
     known = hand_boxes(editor)
     last = len(editor.sequence) - 1
@@ -706,7 +706,7 @@ def demo_auto_labelling(rec, out):
     low, high = around(list(known.values()), 6.0)
     show(editor, low, high, (-0.8, -1.0, 1.0))
     rec.start(crop=editor.timeline.parentWidget())
-    rec.say("Frame 0 labelled by hand, with its 3D boxes", 1.6)
+    rec.say("Frame 0 labeled by hand, with its 3D boxes", 1.6)
     rec.say(f"Set the timeline to the whole drive: frames 0–{last}")
     rec.glide(rec.in_window(editor.timeline.slider), 10)
     editor.timeline.slider.on_range(0, last)
@@ -715,7 +715,7 @@ def demo_auto_labelling(rec, out):
     rec.hold(1.4)
     forward = rec.panel_button(editor.tr("track"))
     rec.scroll_panel_to(forward)
-    rec.say("▶ Auto 3D box labelling forwards in time")
+    rec.say("▶ Auto 3D box labeling forwards in time")
     rec.click_widget(forward)
     rec.hold(1.4)
     rec.say(f"The result, scan by scan from frame 0 to {last}, with the view fixed to the LiDAR")
@@ -729,7 +729,7 @@ def demo_auto_labelling(rec, out):
     for frame in range(1, last + 1):
         editor.timeline.slider.on_range(frame, frame)
         rec.pump(0.05)
-        rec.caption = f"Auto 3D box labelling from the hand-labelled frame 0 — frame {frame} / {last}"
+        rec.caption = f"Auto 3D box labeling from the hand-labeled frame 0 — frame {frame} / {last}"
         rec.frame()
     rec.hold(1.2)
     rec.write_gif(out, width=720)
@@ -814,10 +814,10 @@ def main(out_dir):
     recorder = Recorder(app, window, workdir)
     recorder.pump(1.0)
     demos = (("overview.gif", demo_overview), ("voxel.gif", demo_voxels), ("cloud.gif", demo_cloud),
-             ("grid.gif", demo_grid), ("labelling.gif", demo_labelling), ("smart_pick.gif", demo_smart_pick),
-             ("boxes.gif", demo_boxes), ("auto_labelling.webp", demo_auto_labelling),
+             ("grid.gif", demo_grid), ("labeling.gif", demo_labeling), ("smart_pick.gif", demo_smart_pick),
+             ("boxes.gif", demo_boxes), ("auto_labeling.webp", demo_auto_labeling),
              ("conversion.gif", demo_conversion), ("frames.gif", demo_frames))
-    KITTI_DEMOS = {"labelling.gif", "smart_pick.gif", "boxes.gif", "auto_labelling.webp", "frames.gif"}
+    KITTI_DEMOS = {"labeling.gif", "smart_pick.gif", "boxes.gif", "auto_labeling.webp", "frames.gif"}
     options = [arg for arg in sys.argv[2:] if arg.startswith("--kitti=")]
     KITTI = options[0].split("=", 1)[1] if options else None
     selected = [arg for arg in sys.argv[2:] if not arg.startswith("--")] or [name for name, _ in demos]

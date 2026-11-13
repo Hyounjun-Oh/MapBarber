@@ -133,6 +133,58 @@ def natural_key(name):
     return [int(part) if part.isdigit() else part.lower() for part in re.split(r"(\d+)", name)]
 
 
+def kitti_calibration(folder=None):
+    """Camera calibration of the recording in the KITTI object layout, as 3x4 / 3x3 arrays.
+
+    P0..P3 (rectified projections), R0_rect (rectification) and Tr_velo_to_cam come from a KITTI raw
+    recording's calib_cam_to_cam.txt and calib_velo_to_cam.txt, or from a KITTI odometry calib.txt (already
+    rectified). Without a camera calibration the projections are left as identity and Tr_velo_to_cam is the
+    usual axis convention (camera x = -LiDAR y, y = -z, z = x). Tr_imu_to_velo is added when known.
+    """
+    flat = np.hstack([np.eye(3), np.zeros((3, 1))])
+    calib = {f"P{i}": flat.copy() for i in range(4)}
+    calib["R0_rect"] = np.eye(3)
+    calib["Tr_velo_to_cam"] = np.array([[0.0, -1.0, 0.0, 0.0], [0.0, 0.0, -1.0, 0.0], [1.0, 0.0, 0.0, 0.0]])
+    for base in ((folder, os.path.dirname(folder)) if folder else ()):
+        velo = read_rigid(os.path.join(base, "calib_velo_to_cam.txt"))
+        if velo is not None:
+            calib["Tr_velo_to_cam"] = velo[:3]
+            cameras = _numbers(os.path.join(base, "calib_cam_to_cam.txt"))
+            for i in range(4):
+                if f"P_rect_0{i}" in cameras:
+                    calib[f"P{i}"] = cameras[f"P_rect_0{i}"].reshape(3, 4)
+            if "R_rect_00" in cameras:
+                calib["R0_rect"] = cameras["R_rect_00"].reshape(3, 3)
+            imu = read_rigid(os.path.join(base, "calib_imu_to_velo.txt"))
+            if imu is not None:
+                calib["Tr_imu_to_velo"] = imu[:3]
+            return calib
+        odometry = _numbers(os.path.join(base, "calib.txt"))
+        if "Tr" in odometry:
+            for i in range(4):
+                if f"P{i}" in odometry:
+                    calib[f"P{i}"] = odometry[f"P{i}"].reshape(3, 4)
+            calib["Tr_velo_to_cam"] = odometry["Tr"].reshape(3, 4)
+            return calib
+    return calib
+
+
+def _numbers(path):
+    """'key: numbers' lines of a calibration file as {key: array}; empty when the file is missing."""
+    found = {}
+    if not path or not os.path.isfile(path):
+        return found
+    for line in open(path, errors="replace"):
+        key, _, rest = line.partition(":")
+        try:
+            values = np.array(rest.split(), float)
+        except ValueError:
+            continue
+        if len(values):
+            found[key.strip()] = values
+    return found
+
+
 def _lidar_to_camera(path):
     if not path or not os.path.isfile(path):
         return None
@@ -248,6 +300,10 @@ class Sequence:
             if found is not None:
                 return found
         return None
+
+    def kitti_calibration(self):
+        """Camera calibration of the recording in the KITTI object layout (see kitti_calibration())."""
+        return kitti_calibration(self.folder)
 
     def drop_poses(self):
         """Treat the frames as already sharing one coordinate frame."""

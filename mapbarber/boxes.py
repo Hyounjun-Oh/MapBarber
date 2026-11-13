@@ -176,6 +176,6 @@ def save(path, boxes, classes, frame=None):
 def load(path):
     with open(path, encoding="utf-8") as f:
         rows = json.load(f).get("boxes", [])
-    keys = ("class", "instance", "center", "size", "yaw", "points", "score", "left", "key")
+    keys = ("class", "instance", "center", "size", "yaw", "points", "score", "left", "key", "accepted")
     return [{key: row[key] for key in keys if key in row} for row in rows
             if all(key in row for key in ("center", "size", "yaw"))]

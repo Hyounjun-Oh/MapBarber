@@ -270,7 +270,7 @@
  "smart_at_once": "Etiquetar al seleccionar",
  "smart_too_many": "{n} puntos al alcance; reduce la distancia de búsqueda.",
  "status_smart": "{n} puntos elegidos; Enter los etiqueta, [ / ] ajustan",
- "status_labelled": "{what}: {n} puntos",
+ "status_labeled": "{what}: {n} puntos",
  "status_picked": "Clase activa: {name}",
  "review": "Revisión",
  "review_next": "Ir a la siguiente zona sin etiqueta",
@@ -391,10 +391,10 @@
  "boxes_no_class": "Aún no hay puntos etiquetados como {name}.",
  "status_class_boxes": "{name}: {n} objetos con caja",
  "label_export": "Exportar en formatos estándar…",
- "label_export_tip": "Escribe las etiquetas donde otras herramientas y el código de entrenamiento las esperan: una secuencia SemanticKITTI (velodyne/*.bin, labels/*.label, poses, semantic-kitti.yaml), etiquetas de objetos KITTI (label_2/*.txt) y cajas OpenPCDet (x y z dx dy dz heading class).",
+ "label_export_tip": "Escribe las etiquetas como las esperan los benchmarks y el código de entrenamiento: una secuencia SemanticKITTI (velodyne/*.bin, labels/*.label con clase y número de objeto, poses, semantic-kitti.yaml), KITTI object (label_2/*.txt y calib/*.txt para cada fotograma), el conjunto personalizado de OpenPCDet (points/*.npy, labels/*.txt, ImageSets) y KITTI tracking (label_02 con los números de objeto como track id). Las sugerencias aún no aceptadas se omiten salvo que las pidas.",
  "export_semantic_kitti": "Puntos y etiquetas: secuencia SemanticKITTI (.bin + .label + yaml)",
- "export_kitti_boxes": "Cajas 3D: etiquetas de objetos KITTI (label_2/*.txt)",
- "export_pcdet_boxes": "Cajas 3D: formato OpenPCDet (x y z dx dy dz heading class)",
+ "export_kitti_boxes": "Cajas 3D: KITTI object (label_2 + calib, cada fotograma)",
+ "export_pcdet_boxes": "Cajas 3D: conjunto personalizado de OpenPCDet (puntos + etiquetas)",
  "status_exported": "{f} fotogramas y {b} cajas exportados a {folder}",
  "instance_gap": "Separación entre objetos [m]",
  "instance_gap_tip": "Los puntos más cercanos que esto pertenecen al mismo objeto. Los barridos LiDAR dispersos necesitan más (0,5 m); los densos, menos.",
@@ -432,5 +432,8 @@
  "status_corrected": "Caja corregida. Pulsa «Volver a etiquetar automáticamente desde la caja corregida» para llevar la corrección a los fotogramas anteriores y posteriores.",
  "status_tracked_again": "Etiquetado de nuevo en {n} fotogramas ({first} – {last})  ·  {u} dudosos (revisa los '?')  ·  {r} puntos ya no le pertenecen",
  "frames_loading": "Cargando {n} fotogramas…",
- "track_back": "Etiquetado automático de cajas 3D ◀ hacia atrás"
+ "track_back": "Etiquetado automático de cajas 3D ◀ hacia atrás",
+ "export_kitti_tracking": "Cajas 3D con número de objeto: KITTI tracking (label_02)",
+ "export_include_pending": "Exportar también las sugerencias aún no aceptadas ('?')",
+ "export_skipped": "Se omitieron {n} puntos sugeridos y {b} cajas dudosas (acéptalos primero o marca la opción)"
 }

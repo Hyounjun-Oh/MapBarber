@@ -28,7 +28,7 @@ them, and check the results against the numbers below.
 | `warehouse_map.yaml` + `.pgm` | grid editor | 2D LiDAR SLAM, 50 × 40 m, 5 cm cells | speckles, ghost double wall, a person's trail, an unknown hole, an open doorway, unknown border |
 | `lab_map.yaml` + `.png` | grid editor | map_server map with `negate: 1` and a rotated origin (yaw 0.35 rad) | speckles |
 | `keepout_mask.yaml` + `.pgm` | grid editor | costmap filter mask in `mode: raw` | — |
-| `drive/` | point cloud editor, labelling mode | 16 LiDAR frames of a street with poses (KITTI layout), a class list and noisy model predictions | a walking person, a car driving towards the sensor, wrong predictions along the kerb |
+| `drive/` | point cloud editor, labeling mode | 16 LiDAR frames of a street with poses (KITTI layout), a class list and noisy model predictions | a walking person, a car driving towards the sensor, wrong predictions along the kerb |
 | `broken_truncated.bt` | — | an octree cut off at 60 % | must be refused |
 | `not_a_map.yaml` | — | a parameter file, not a map | must be refused |
 | `not_points.txt` | — | meeting notes | must be refused |
@@ -136,20 +136,20 @@ extrude the warehouse map to 2 m walls.
 ./mapbarber.sh demo/drive
 ```
 
-1. The folder opens in labelling mode with its own classes (`labels.yaml`). Drag the right handle of the
+1. The folder opens in labeling mode with its own classes (`labels.yaml`). Drag the right handle of the
    timeline under the view to frame 5: six frames are merged by their poses.
 2. **Ground filter** ▸ *Select ground*, then `Enter` with *road* active. Fix the kerb with the label
    brush `B` (*sidewalk*); `Ctrl`+drag paints with the view fixed.
 3. Press `W` and click a parked car: only the car is picked, without the road under it. Choose
-   *parked car* and press `Enter`. With *Protect labelled points* on, a rectangle over the whole street
-   now selects only what is still unlabelled.
+   *parked car* and press `Enter`. With *Protect labeled points* on, a rectangle over the whole street
+   now selects only what is still unlabeled.
 4. With *parked car* active press *Auto 3D boxes: parked car*. Each car becomes its own object with
    a box; turn or resize one in the box list.
-5. *Auto 3D box labelling ▶ forwards in time* carries the boxes and object numbers from the first frame
-   to the later ones (◀ goes back to earlier frames, for objects labelled in a middle frame); the score of
+5. *Auto 3D box labeling ▶ forwards in time* carries the boxes and object numbers from the first frame
+   to the later ones (◀ goes back to earlier frames, for objects labeled in a middle frame); the score of
    each step is shown in the box list.
 6. *Load labels…* ▸ pick `drive/predictions`: the model's guesses arrive as pale suggestions on the points
-   that are still unlabelled. *Select labels unlike their neighbours* shows its mistakes along the kerb.
+   that are still unlabeled. *Select labels unlike their neighbours* shows its mistakes along the kerb.
 7. `Ctrl+S` writes `labels/*.label` and `boxes/*.json`; *Export in standard formats…* writes a
    SemanticKITTI sequence with KITTI and OpenPCDet boxes. Every step can be undone with `Ctrl+Z`.
 

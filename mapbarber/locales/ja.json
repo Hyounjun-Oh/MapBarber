@@ -270,7 +270,7 @@
  "smart_at_once": "選んだらすぐラベルを付ける",
  "smart_too_many": "範囲内に点が {n} 個あります。探索範囲を小さくしてください。",
  "status_smart": "{n} 点を選択 — Enter でラベル、[ / ] で調整",
- "status_labelled": "{what}: {n} 点",
+ "status_labeled": "{what}: {n} 点",
  "status_picked": "現在のクラス: {name}",
  "review": "検査",
  "review_next": "次の未ラベル領域へ移動",
@@ -391,10 +391,10 @@
  "boxes_no_class": "{name} のラベルが付いた点がまだありません。",
  "status_class_boxes": "{name}: {n} 個の物体にボックス",
  "label_export": "標準形式で書き出す…",
- "label_export_tip": "ほかのツールや学習コードがそのまま読める形式でラベルを書きます: SemanticKITTI シーケンス（velodyne/*.bin、labels/*.label、poses、semantic-kitti.yaml）、KITTI object ラベル（label_2/*.txt）、OpenPCDet ボックス（x y z dx dy dz heading class）。",
+ "label_export_tip": "ベンチマークや学習コードが期待する形式でラベルを書き出します: SemanticKITTI シーケンス (velodyne/*.bin、クラスと物体番号を含む labels/*.label、ポーズ、semantic-kitti.yaml)、KITTI object (全フレームの label_2/*.txt と calib/*.txt)、OpenPCDet カスタムデータセット (points/*.npy、labels/*.txt、ImageSets)、KITTI tracking (物体番号を track id にした label_02)。まだ確定していない提案は、選ばない限り除きます。",
  "export_semantic_kitti": "点とラベル: SemanticKITTI シーケンス (.bin + .label + yaml)",
- "export_kitti_boxes": "3D ボックス: KITTI object ラベル (label_2/*.txt)",
- "export_pcdet_boxes": "3D ボックス: OpenPCDet 形式 (x y z dx dy dz heading class)",
+ "export_kitti_boxes": "3Dボックス: KITTI object (label_2 + calib、全フレーム)",
+ "export_pcdet_boxes": "3Dボックス: OpenPCDet カスタムデータセット (点 + ラベル)",
  "status_exported": "{f} フレームと {b} 個のボックスを {folder} に書き出しました",
  "instance_gap": "物体間のすき間 [m]",
  "instance_gap_tip": "この距離より近い点は同じ物体とみなします。疎な LiDAR スキャンでは大きく（0.5 m）、密なスキャンでは小さくします。",
@@ -432,5 +432,8 @@
  "status_corrected": "ボックスを直しました。「直したボックスから自動ラベル付けをやり直す」を押すと前後のフレームにも反映されます。",
  "status_tracked_again": "{n} フレームで自動ラベル付けをやり直し ({first} – {last})  ·  不確か {u} 個('?' を確認)  ·  物体から外れた点 {r} 個",
  "frames_loading": "{n} フレームを読み込み中…",
- "track_back": "自動3Dボックスラベル付け ◀ 逆順"
+ "track_back": "自動3Dボックスラベル付け ◀ 逆順",
+ "export_kitti_tracking": "物体番号付き3Dボックス: KITTI tracking (label_02)",
+ "export_include_pending": "まだ確定していない提案('?')も書き出す",
+ "export_skipped": "提案の点 {n} 個と不確かなボックス {b} 個は除きました(先に確定するか、オプションをオンに)"
 }

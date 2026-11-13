@@ -11,7 +11,7 @@ from .chunk_view import PointChunkView
 from .editor import Editor
 from .formats import CLOUD, GRID, VOXEL
 from .grid import FREE, UNKNOWN
-from .label_tools import Labelling
+from .label_tools import Labeling
 from .timeline import LabelBar, TimelineBar
 from .gizmo import AXIS_NAMES, SLICE_DEFAULTS, BoxGizmo, SliceControls, SliceGizmo, Snap
 from .qt import QtCore, QtWidgets
@@ -59,7 +59,7 @@ EDIT_TOOLS = (("view", "H"), ("select", "V"), ("delete", "E"), ("measure", "I"))
 LABEL_TOOLS = (("view", "H"), ("select", "V"), ("label", "B"), ("smart", "W"), ("measure", "I"))
 
 
-class CloudEditor(Labelling, Editor):
+class CloudEditor(Labeling, Editor):
     kind = CLOUD
     export_filters = (("PCD point cloud", "pcd"), ("PLY point cloud", "ply"), ("LAS point cloud", "las"),
                       ("LAZ point cloud", "laz"), ("XYZ text", "xyz"), ("CSV text", "csv"), ("LiDAR scan", "bin"),
@@ -208,7 +208,7 @@ class CloudEditor(Labelling, Editor):
         if self.sequence is not None and os.path.isdir(path):
             self._save_frames()
         else:
-            self._write_labelled(path, fmt)
+            self._write_labeled(path, fmt)
 
     def losses(self, fmt):
         pending = self.pending_count()
@@ -435,7 +435,7 @@ class CloudEditor(Labelling, Editor):
         return panel
 
     def _build_ground_section(self, layout):
-        """Ground filter: in editing mode to remove or keep the ground, in labelling mode to label it."""
+        """Ground filter: in editing mode to remove or keep the ground, in labeling mode to label it."""
         t, values, W = self.tr, self.panel_values, QtWidgets
         group = Section(t("ground"), "ground")
         group.setToolTip(t("ground_tip"))
@@ -707,8 +707,8 @@ class CloudEditor(Labelling, Editor):
     def select(self, ids, mode="add", review=False):
         """Change the selection with alive, visible points: 'add', 'remove' or 'replace'.
 
-        In labelling mode with protection on, points the next labelling may not change are left out, so the
-        selection shows exactly what will be labelled; review tools (review=True) pick labelled points on purpose.
+        In labeling mode with protection on, points the next labeling may not change are left out, so the
+        selection shows exactly what will be labeled; review tools (review=True) pick labeled points on purpose.
         """
         ids = np.asarray(ids, np.int64)
         self._delete_target = None
@@ -882,7 +882,7 @@ class CloudEditor(Labelling, Editor):
         answer = ask_numbers(self.window, self.tr("voxel_size_title"), [(self.tr("voxel_size_cloud"), guess, 1e-4, 1e3, 4)])
         return (xyz, answer[0]) if answer else (None, None)
 
-    def _labelled_source(self, xyz):
+    def _labeled_source(self, xyz):
         """What a conversion needs to know about the labels of the surviving points, or None when there are none."""
         if not self.labels.any:
             return None
@@ -906,7 +906,7 @@ class CloudEditor(Labelling, Editor):
             return None
         table = self.cloud.surviving()[1]
         source = {"xyz": xyz, "table": table}
-        marks = self._labelled_source(xyz)
+        marks = self._labeled_source(xyz)
         ignored = self._ask_ignore(marks)
         if ignored is None:
             return None
@@ -934,7 +934,7 @@ class CloudEditor(Labelling, Editor):
         if band is None:
             return None
         empty = FREE if band[2] else UNKNOWN
-        marks = self._labelled_source(xyz)
+        marks = self._labeled_source(xyz)
         if not marks:
             return lambda: (GRID, convert.voxels_to_grid(convert.points_to_voxels(xyz, size), size, *sorted(band[:2]), empty))
         classes = self.classes

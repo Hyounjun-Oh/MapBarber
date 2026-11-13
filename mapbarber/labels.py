@@ -52,7 +52,7 @@ def guess_role(name):
 
 
 class ClassList:
-    """Label classes by number. Class 0 always exists and means 'not labelled'."""
+    """Label classes by number. Class 0 always exists and means 'not labeled'."""
 
     def __init__(self, preset="blank"):
         self.items = {}
@@ -274,19 +274,19 @@ class LabelLayer:
 def vote(groups, cls, priority=(), dominant=()):
     """Label of each group of points (for example the points of one voxel) by majority.
 
-    Unlabelled points do not vote. Ties go to the class that comes first in `priority`, then to the
+    Unlabeled points do not vote. Ties go to the class that comes first in `priority`, then to the
     lower number. A class listed in `dominant` wins a group as soon as one of its points is there.
-    Returns (sorted unique groups, winning class per group, share of the group's labelled points that agree).
+    Returns (sorted unique groups, winning class per group, share of the group's labeled points that agree).
     """
     groups, cls = np.asarray(groups, np.int64), np.asarray(cls, np.int64)
     unique = np.unique(groups)
     winner, purity = np.zeros(len(unique), np.uint16), np.ones(len(unique))
-    labelled = cls != UNLABELED
-    if not labelled.any():
+    labeled = cls != UNLABELED
+    if not labeled.any():
         return unique, winner, purity
-    slot = np.searchsorted(unique, groups[labelled])
+    slot = np.searchsorted(unique, groups[labeled])
     top = int(cls.max()) + 1
-    pair, votes = np.unique(slot * top + cls[labelled], return_counts=True)
+    pair, votes = np.unique(slot * top + cls[labeled], return_counts=True)
     pair_slot, pair_cls = pair // top, pair % top
     rank = np.full(top, len(priority) + len(dominant), np.int64)
     for position, number in enumerate(list(dominant) + [n for n in priority if n not in dominant]):
@@ -481,32 +481,32 @@ def connected(points, seed, gap, bend=None, surface=1.5, neighbours=12, cells=No
 
 
 def disagreeing(points, cls, neighbours=8, share=0.5):
-    """Indices of labelled points whose label is shared by less than `share` of their labelled neighbours."""
+    """Indices of labeled points whose label is shared by less than `share` of their labeled neighbours."""
     from scipy.spatial import cKDTree
-    labelled = np.flatnonzero(np.asarray(cls) != UNLABELED)
-    k = min(neighbours + 1, len(labelled))
+    labeled = np.flatnonzero(np.asarray(cls) != UNLABELED)
+    k = min(neighbours + 1, len(labeled))
     if k < 2:
         return EMPTY
-    local = np.asarray(points, np.float64)[labelled]
+    local = np.asarray(points, np.float64)[labeled]
     _, index = cKDTree(local).query(local, k=k)
-    own = np.asarray(cls)[labelled]
+    own = np.asarray(cls)[labeled]
     agree = (own[index[:, 1:]] == own[:, None]).mean(axis=1)
-    return labelled[agree < share]
+    return labeled[agree < share]
 
 
 def suggest(points, cls, radius, neighbours=8):
-    """For unlabelled points with labelled points within `radius`: (indices, majority class of those neighbours)."""
+    """For unlabeled points with labeled points within `radius`: (indices, majority class of those neighbours)."""
     from scipy.spatial import cKDTree
     cls = np.asarray(cls)
-    labelled, empty = np.flatnonzero(cls != UNLABELED), np.flatnonzero(cls == UNLABELED)
-    if not len(labelled) or not len(empty):
+    labeled, empty = np.flatnonzero(cls != UNLABELED), np.flatnonzero(cls == UNLABELED)
+    if not len(labeled) or not len(empty):
         return EMPTY, np.zeros(0, np.uint16)
     points = np.asarray(points, np.float64)
-    k = min(neighbours, len(labelled))
-    distance, index = cKDTree(points[labelled]).query(points[empty], k=k, distance_upper_bound=radius)
+    k = min(neighbours, len(labeled))
+    distance, index = cKDTree(points[labeled]).query(points[empty], k=k, distance_upper_bound=radius)
     distance, index = distance.reshape(len(empty), k), index.reshape(len(empty), k)
     found = np.isfinite(distance)
-    seen = np.where(found, cls[labelled][np.minimum(index, len(labelled) - 1)], UNLABELED)
+    seen = np.where(found, cls[labeled][np.minimum(index, len(labeled) - 1)], UNLABELED)
     best, best_votes = np.zeros(len(empty), np.uint16), np.zeros(len(empty), np.int64)
     for number in np.unique(seen[found]).tolist():
         votes = (seen == number).sum(axis=1)
@@ -528,7 +528,7 @@ class Transfer:
         self.tree = cKDTree(np.asarray(points, np.float64)[usable]) if usable.any() else None
 
     def to(self, points, radius):
-        """Class for each point from the nearest labelled source point within `radius` (0 where there is none)."""
+        """Class for each point from the nearest labeled source point within `radius` (0 where there is none)."""
         out = np.zeros(len(points), np.uint16)
         if self.tree is None or not len(points):
             return out
@@ -543,19 +543,19 @@ def transfer(source_points, source_cls, target_points, radius, classes=None):
 
 
 def conflicts(points, cls, frame, radius, neighbours=8):
-    """Indices of labelled points that have a point of another frame within `radius` carrying a different label."""
+    """Indices of labeled points that have a point of another frame within `radius` carrying a different label."""
     from scipy.spatial import cKDTree
     cls, frame = np.asarray(cls), np.asarray(frame)
-    labelled = np.flatnonzero(cls != UNLABELED)
-    k = min(neighbours + 1, len(labelled))
+    labeled = np.flatnonzero(cls != UNLABELED)
+    k = min(neighbours + 1, len(labeled))
     if k < 2:
         return EMPTY
-    local = np.asarray(points, np.float64)[labelled]
+    local = np.asarray(points, np.float64)[labeled]
     distance, index = cKDTree(local).query(local, k=k, distance_upper_bound=radius)
-    index = np.minimum(index, len(labelled) - 1)
-    own_cls, own_frame = cls[labelled], frame[labelled]
+    index = np.minimum(index, len(labeled) - 1)
+    own_cls, own_frame = cls[labeled], frame[labeled]
     clash = np.isfinite(distance) & (own_cls[index] != own_cls[:, None]) & (own_frame[index] != own_frame[:, None])
-    return labelled[clash.any(axis=1)]
+    return labeled[clash.any(axis=1)]
 
 
 def oriented_box(points):
@@ -598,7 +598,7 @@ def _lookup(keys, table_keys, table_values):
 class VoxelLabels:
     """Class of each voxel: a base layer (voted from points, or read from a file) with edits on top, and undo.
 
-    Keeping the edits apart from the base tells which voxels a person relabelled, so that turning the map
+    Keeping the edits apart from the base tells which voxels a person relabeled, so that turning the map
     back into points can change exactly the points of those voxels and leave every other point as it was.
     """
 
@@ -689,7 +689,7 @@ class VoxelLabels:
         return self.edit_keys[differs], self.edit_values[differs]
 
     def mixed(self, keys, below):
-        """Keys whose points agreed on their class less than `below` (0..1) and that nobody relabelled since."""
+        """Keys whose points agreed on their class less than `below` (0..1) and that nobody relabeled since."""
         if self.purity is None:
             return EMPTY
         keys = np.asarray(keys, np.int64)

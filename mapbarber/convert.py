@@ -43,7 +43,7 @@ def restore(xyz, table, resolution, voxel_map, cls=None, inst=None, voxel_labels
     fresh = centers(fresh_keys, resolution)
     count = int(kept.sum())
     points = np.vstack([xyz[kept], fresh])
-    out = {"xyz": points, "table": None, "cls": None, "inst": None, "relabelled": 0, "relabelled_voxels": 0,
+    out = {"xyz": points, "table": None, "cls": None, "inst": None, "relabeled": 0, "relabeled_voxels": 0,
            "dropped": int((~kept).sum()), "added": len(fresh)}
     if table is not None:
         rows = np.zeros(len(points), table.dtype)
@@ -63,8 +63,8 @@ def restore(xyz, table, resolution, voxel_map, cls=None, inst=None, voxel_labels
             hit = ~outside[kept] & np.isin(kept_keys, changed_keys)
             slot = np.searchsorted(changed_keys, kept_keys[hit])
             new_cls[hit], new_inst[hit] = changed_cls[slot], 0
-            out["relabelled"] = int(hit.sum())
-            out["relabelled_voxels"] = int(np.isin(changed_keys, kept_keys[hit]).sum())
+            out["relabeled"] = int(hit.sum())
+            out["relabeled_voxels"] = int(np.isin(changed_keys, kept_keys[hit]).sum())
         fresh_cls = voxel_labels.get(fresh_keys)
     else:
         fresh_cls = np.zeros(len(fresh_keys), np.uint16)
@@ -79,14 +79,14 @@ def point_keys(xyz, resolution):
 
 
 def vote_voxels(xyz, cls, resolution, classes):
-    """(keys, class, purity) of the voxels that labelled points fall into, decided by labels.vote with the class rules."""
+    """(keys, class, purity) of the voxels that labeled points fall into, decided by labels.vote with the class rules."""
     return labels.vote(point_keys(xyz, resolution), cls, priority=classes.priority(), dominant=classes.dominant())
 
 
 def split_by_role(keys, cls, classes):
     """Voxel keys split by what their class means for a map: (obstacles, free surface).
 
-    Unlabelled voxels count as obstacles; voxels of classes marked 'ignore' are left out.
+    Unlabeled voxels count as obstacles; voxels of classes marked 'ignore' are left out.
     """
     role = np.array([labels.OBSTACLE if number == labels.UNLABELED else classes.role(number)
                      for number in range(int(np.max(cls, initial=0)) + 1)])[np.asarray(cls, np.int64)]
@@ -94,7 +94,7 @@ def split_by_role(keys, cls, classes):
 
 
 def voxels_by_role(xyz, cls, resolution, classes):
-    """Voxels of labelled points split by role, each voxel taking the class its points vote for."""
+    """Voxels of labeled points split by role, each voxel taking the class its points vote for."""
     keys, winner, _ = vote_voxels(xyz, cls, resolution, classes)
     return split_by_role(keys, winner, classes)
 
@@ -104,7 +104,7 @@ def voxels_to_grid(keys, resolution, z_low=-np.inf, z_high=np.inf, empty=UNKNOWN
 
     A voxel map records obstacles only, so cells without one are unknown by default. Pass empty=FREE
     only when the whole area is known to have been observed. `free_keys` are voxels known to be
-    traversable surface (a labelled floor): their cells become free at any height, unless an obstacle
+    traversable surface (a labeled floor): their cells become free at any height, unless an obstacle
     stands in the band above them.
     """
     cells = unpack(keys)

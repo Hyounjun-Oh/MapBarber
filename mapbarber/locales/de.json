@@ -270,7 +270,7 @@
  "smart_at_once": "Sofort beim Auswählen beschriften",
  "smart_too_many": "{n} Punkte im Suchbereich; verkleinern Sie ihn.",
  "status_smart": "{n} Punkte gewählt; Enter beschriftet, [ / ] passen an",
- "status_labelled": "{what}: {n} Punkte",
+ "status_labeled": "{what}: {n} Punkte",
  "status_picked": "Aktive Klasse: {name}",
  "review": "Prüfen",
  "review_next": "Zum nächsten unbeschrifteten Bereich",
@@ -391,10 +391,10 @@
  "boxes_no_class": "Noch keine Punkte als {name} beschriftet.",
  "status_class_boxes": "{name}: {n} Objekte mit Quader",
  "label_export": "In Standardformaten exportieren…",
- "label_export_tip": "Schreibt die Beschriftung so, wie andere Werkzeuge und Trainingscode sie erwarten: eine SemanticKITTI-Sequenz (velodyne/*.bin, labels/*.label, poses, semantic-kitti.yaml), KITTI-Objektlabels (label_2/*.txt) und OpenPCDet-Quader (x y z dx dy dz heading class).",
+ "label_export_tip": "Schreibt die Labels so, wie Benchmarks und Trainingscode sie erwarten: eine SemanticKITTI-Sequenz (velodyne/*.bin, labels/*.label mit Klasse und Objektnummer, Posen, semantic-kitti.yaml), KITTI object (label_2/*.txt und calib/*.txt für jeden Frame), den OpenPCDet-Custom-Datensatz (points/*.npy, labels/*.txt, ImageSets) und KITTI tracking (label_02 mit Objektnummern als Track-IDs). Noch nicht übernommene Vorschläge bleiben außen vor, wenn Sie sie nicht ausdrücklich wählen.",
  "export_semantic_kitti": "Punkte und Beschriftung: SemanticKITTI-Sequenz (.bin + .label + yaml)",
- "export_kitti_boxes": "3D-Quader: KITTI-Objektlabels (label_2/*.txt)",
- "export_pcdet_boxes": "3D-Quader: OpenPCDet-Layout (x y z dx dy dz heading class)",
+ "export_kitti_boxes": "3D-Quader: KITTI object (label_2 + calib, jeder Frame)",
+ "export_pcdet_boxes": "3D-Quader: OpenPCDet-Custom-Datensatz (Punkte + Labels)",
  "status_exported": "{f} Frames und {b} Quader nach {folder} exportiert",
  "instance_gap": "Abstand zwischen Objekten [m]",
  "instance_gap_tip": "Punkte, die näher beieinander liegen, gehören zum selben Objekt. Dünne LiDAR-Scans brauchen mehr (0,5 m), dichte weniger.",
@@ -432,5 +432,8 @@
  "status_corrected": "Quader korrigiert. „Ab dem korrigierten Quader neu automatisch beschriften“ überträgt die Korrektur auf die Frames davor und danach.",
  "status_tracked_again": "In {n} Frames neu automatisch beschriftet ({first} – {last})  ·  {u} unsicher ('?' prüfen)  ·  {r} Punkte gehören nicht mehr dazu",
  "frames_loading": "{n} Frames werden geladen…",
- "track_back": "Automatische 3D-Quader-Beschriftung ◀ rückwärts"
+ "track_back": "Automatische 3D-Quader-Beschriftung ◀ rückwärts",
+ "export_kitti_tracking": "3D-Quader mit Objektnummern: KITTI tracking (label_02)",
+ "export_include_pending": "Auch noch nicht übernommene Vorschläge ('?') exportieren",
+ "export_skipped": "{n} vorgeschlagene Punkte und {b} unsichere Quader ausgelassen (zuerst übernehmen oder die Option wählen)"
 }

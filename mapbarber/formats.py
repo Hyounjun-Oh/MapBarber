@@ -193,7 +193,7 @@ def _read_xyz(path):
 
 
 def _read_named_text(path, names):
-    """Text points whose header line names the columns, as written for labelled clouds."""
+    """Text points whose header line names the columns, as written for labeled clouds."""
     with open(path, "r", errors="replace") as f:
         rows = np.loadtxt([line.replace(",", " ") for line in f if not line.startswith("#")], ndmin=2)
     if rows.shape[1] < len(names):
