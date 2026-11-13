@@ -659,7 +659,7 @@ def test_axes_and_markers_keep_their_size_on_screen(session):
 
 
 def test_arrow_keys_slide_the_frame_range_by_its_width(session):
-    from mapbarber.qt import QtCore, QtGui, QtWidgets
+    from mapbarber.qt import QtCore, QtGui, QtTest, QtWidgets
     folder = session.folder / "strip"
     (folder / "velodyne").mkdir(parents=True)
     for index in range(11):
@@ -679,6 +679,19 @@ def test_arrow_keys_slide_the_frame_range_by_its_width(session):
 
     slider.on_range(0, 2)
     assert editor.frame_ids == [0, 1, 2]
+    bar, focused = editor.timeline, []
+    real_focus = slider.setFocus
+    slider.setFocus = lambda *reason: focused.append(True)
+    for widget, spot in ((bar.caption, bar.caption.rect().center()), (bar, QtCore.QPoint(bar.width() - 4, bar.height() // 2)),
+                         (slider, QtCore.QPoint(slider.width() - 30, slider.height() // 2))):
+        QtTest.QTest.mouseClick(widget, QtCore.Qt.LeftButton, QtCore.Qt.NoModifier, spot)
+        session.pump()
+        assert editor.frame_ids == [0, 1, 2], "a click beside the handles must not move the range"
+    assert len(focused) >= 2, "a click on the frame numbers or the strip gives the slider the keyboard"
+    slider.setFocus = real_focus
+    slider.on_focus(True)
+    assert "4f9cf7" in bar.styleSheet()
+    slider.on_focus(False)
     press(QtCore.Qt.Key_Right)
     assert editor.frame_ids == [3, 4, 5]
     press(QtCore.Qt.Key_Right)

@@ -12,15 +12,15 @@ CHANGED = QtGui.QColor(242, 182, 50)
 class FrameRange(QtWidgets.QWidget):
     """A track with one tick per frame and two handles for the first and last frame shown.
 
-    Drag a handle to move one end, drag the band between them to slide the whole range, or click the
-    track to bring the nearer end there. `on_range(first, last)` is called when the mouse is released.
-    Once clicked it has the keyboard: the left and right arrow keys slide the range by its own width
-    (with Shift by a single frame) through `on_keys(direction, whole)`.
+    Drag a handle to move one end, or drag the band between them to slide the whole range; `on_range(first,
+    last)` is called when the mouse is released. A click anywhere else on it changes nothing and only gives
+    it the keyboard: the left and right arrow keys then slide the range by its own width (with Shift by a
+    single frame) through `on_keys(direction, whole)`.
     """
 
     def __init__(self, on_range, on_keys=None):
         super().__init__()
-        self.on_range, self.on_keys = on_range, on_keys
+        self.on_range, self.on_keys, self.on_focus = on_range, on_keys, None
         self.setFocusPolicy(Qt.ClickFocus)
         self.count, self.first, self.last = 1, 0, 0
         self.labelled, self.changed = set(), set()
@@ -71,18 +71,18 @@ class FrameRange(QtWidgets.QWidget):
             painter.setPen(QtGui.QPen(text, 1.5))
             painter.setBrush(ACCENT)
             painter.drawRoundedRect(QtCore.QRectF(x - HANDLE / 2, middle - 10, HANDLE, 20), 3, 3)
-        if self.hasFocus():
-            painter.setPen(QtGui.QPen(ACCENT, 1, Qt.DashLine))
-            painter.setBrush(Qt.NoBrush)
-            painter.drawRoundedRect(QtCore.QRectF(1, 1, self.width() - 2, self.height() - 2), 4, 4)
 
     def focusInEvent(self, event):
         super().focusInEvent(event)
         self.update()
+        if self.on_focus:
+            self.on_focus(True)
 
     def focusOutEvent(self, event):
         super().focusOutEvent(event)
         self.update()
+        if self.on_focus:
+            self.on_focus(False)
 
     def keyPressEvent(self, event):
         direction = {Qt.Key_Left: -1, Qt.Key_Right: 1}.get(event.key())
@@ -102,8 +102,7 @@ class FrameRange(QtWidgets.QWidget):
         elif left < x < right:
             self._drag, self._grip = "band", frame - self.first
         else:
-            self._drag = "first" if abs(x - left) < abs(x - right) else "last"
-            self._move(frame)
+            self._drag = None
 
     def _move(self, frame):
         if self._drag == "first":
@@ -128,13 +127,21 @@ class FrameRange(QtWidgets.QWidget):
 
 
 class TimelineBar(QtWidgets.QFrame):
-    """Bottom strip of a sequence: previous / next, the range slider and what it currently shows."""
+    """Bottom strip of a sequence: previous / next, the range slider and what it currently shows.
+
+    A click anywhere on the strip, on the frame numbers as well, gives the slider the keyboard without
+    touching the range, so the arrow keys can be used without risking a slip on the slider itself.
+    """
+
+    IDLE = "QFrame#timeline { border-top: 1px solid rgba(128, 128, 128, 0.35); }"
+    ACTIVE = "QFrame#timeline { border: 1px solid #4f9cf7; background-color: rgba(79, 156, 247, 0.10); }"
 
     def __init__(self, on_range, on_step, translate, on_keys=None):
         super().__init__()
         self.translate = translate
         self.setObjectName("timeline")
-        self.setStyleSheet("QFrame#timeline { border-top: 1px solid rgba(128, 128, 128, 0.35); }")
+        self.setStyleSheet(self.IDLE)
+        self.setCursor(Qt.PointingHandCursor)
         row = QtWidgets.QHBoxLayout(self)
         row.setContentsMargins(8, 4, 8, 4)
         self.back = QtWidgets.QToolButton()
@@ -144,12 +151,17 @@ class TimelineBar(QtWidgets.QFrame):
         self.forward.setText("▶")
         self.forward.clicked.connect(lambda: on_step(1))
         self.slider = FrameRange(on_range, on_keys)
+        self.slider.on_focus = lambda on: self.setStyleSheet(self.ACTIVE if on else self.IDLE)
         self.caption = QtWidgets.QLabel()
         self.caption.setMinimumWidth(260)
         row.addWidget(self.back)
         row.addWidget(self.slider, 1)
         row.addWidget(self.forward)
         row.addWidget(self.caption)
+
+    def mousePressEvent(self, event):
+        self.slider.setFocus(Qt.MouseFocusReason)
+        event.accept()
 
     def show_range(self, names, first, last):
         t = self.translate()
