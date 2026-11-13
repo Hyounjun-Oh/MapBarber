@@ -17,7 +17,7 @@ from .widgets import (add_button, ask_numbers, button, danger_button, int_spin, 
 Qt = QtCore.Qt
 FRAME_POINT_LIMIT = 40_000_000
 LOST_SCORE = 0.25
-LABEL_DEFAULTS = {"track_reach": 1.5, "track_accept": 0.6, "object_gap": 0.2, "min_points": 20, "show_boxes": True, "clearance": 0.15, "stop_bends": True, "rule": "unlabeled", "rule_class": 1, "smart": "object", "reach": 5.0, "flatness": 0.03, "bend": 30.0, "gap": 0.10,
+LABEL_DEFAULTS = {"track_reach": 1.5, "track_accept": 0.6, "object_gap": 0.2, "min_points": 20, "show_boxes": True, "robust_boxes": True, "clearance": 0.15, "stop_bends": True, "rule": "unlabeled", "rule_class": 1, "smart": "object", "reach": 5.0, "flatness": 0.03, "bend": 30.0, "gap": 0.10,
                   "at_once": False, "own_instance": False, "fill_radius": 0.15, "island": 20, "frame_radius": 0.10,
                   "paint_frame": -1}
 SMART_MODES = ("object", "plane", "surface")
@@ -124,6 +124,7 @@ class Labelling(ClassHistory):
         self.box_store, self._boxes_saved, self.active_box = {}, {}, None
         self._box_actor = self._box_focus = None
         self._above = {}
+        self._stray_counts = {}
         self._anchor_object = 0
         self.classes = ClassList("indoor")
         self.active_class = self.classes.numbers()[0]
@@ -748,6 +749,8 @@ class Labelling(ClassHistory):
         self.progress_bar.setValue(done)
         pending = int(self.labels.pending.sum())
         self._fill_instances()
+        if self._refresh_strays():
+            self._fill_boxes()
         self.progress_bar.setFormat(self.tr("label_progress", p=100.0 * done / max(total, 1), n=total - done)
                                     + (f"  ·  {self.tr('label_pending', n=pending)}" if pending else ""))
 
@@ -977,10 +980,31 @@ class Labelling(ClassHistory):
         self._boxes_changed()
         return True
 
+    def _box_settings(self):
+        """(gap between objects, whether stray points are kept out of boxes)."""
+        if self.label_panel:
+            return self.object_gap.value(), self.robust_boxes.isChecked()
+        return self.panel_values["object_gap"], self.panel_values["robust_boxes"]
+
+    def _fit(self, points, cls, number):
+        """A box for an object's points and how many of them it leaves out as strays.
+
+        Unless that is switched off, the few points that stand apart from the body do not shape the box.
+        """
+        gap, robust = self._box_settings()
+        box = box_labels.fit(points, cls, number, gap=gap if robust else None)
+        return box, box.pop("stray", 0)
+
+    def _boxes_made(self, key, made, strays):
+        text = self.tr(key, n=made) if isinstance(key, str) else key
+        if strays:
+            text += "  ·  " + self.tr("status_stray", n=strays)
+        self.status(text, 10000)
+
     def fit_boxes(self):
         """A box around every instance on screen (instances must exist: split a class into objects first)."""
         self._remember_boxes()
-        made = 0
+        made = strays = 0
         for key in self._box_keys():
             ids = self._key_ids(key)
             ids = ids[self.labels.inst[ids] > 0]
@@ -990,15 +1014,17 @@ class Labelling(ClassHistory):
             for number in np.unique(inst):
                 members = inst == number
                 cls = int(np.bincount(self.labels.cls[ids[members]]).argmax())
-                kept.append(box_labels.fit(local[members], cls, int(number)))
+                box, left_out = self._fit(local[members], cls, int(number))
+                kept.append(box)
                 made += 1
+                strays += left_out
             self.box_store[key] = kept
         if not made:
             self._box_undo.pop()
             self._order.pop()
             return self.status(self.tr("boxes_none"), 8000)
         self._boxes_changed()
-        self.status(self.tr("status_boxes", n=made), 8000)
+        self._boxes_made("status_boxes", made, strays)
 
     def boxes_for_class(self):
         """The box workflow for one class: its objects are told apart, and each gets a box.
@@ -1021,20 +1047,22 @@ class Labelling(ClassHistory):
                 self._record_step("label")
                 self._after_labels()
         self._remember_boxes()
-        made = 0
+        made = strays = 0
         for key in self._box_keys():
             mine = self._key_ids(key)
             mine = mine[(self.labels.cls[mine] == chosen) & (self.labels.inst[mine] > 0)]
             kept = [box for box in self._boxes_of(key) if not (box["class"] == chosen and box.get("instance"))]
             local, inst = self._local(key, mine), self.labels.inst[mine]
             for number in np.unique(inst):
-                kept.append(box_labels.fit(local[inst == number], chosen, int(number)))
+                box, left_out = self._fit(local[inst == number], chosen, int(number))
+                kept.append(box)
                 made += 1
+                strays += left_out
             self.box_store[key] = kept
         self._group_since(depth)
         self._fill_instances()
         self._boxes_changed()
-        self.status(self.tr("status_class_boxes", name=self.classes.name(chosen), n=made), 10000)
+        self._boxes_made(self.tr("status_class_boxes", name=self.classes.name(chosen), n=made), made, strays)
 
     def _above_ground(self, key):
         """Indices of a frame's points that stand above the ground (kept until other frames are shown)."""
@@ -1078,7 +1106,7 @@ class Labelling(ClassHistory):
                 if len(members) < 3:
                     continue
                 track = tracking.Track(self._box_world(start, first), self.cloud.xyz[members],
-                                       rigid=not self.classes.soft(first["class"]))
+                                       rigid=not self.classes.soft(first["class"]), margin=gap / 2.0)
 
                 def scene_of(frame, number=number):
                     above = self._above_ground(frame)
@@ -1125,6 +1153,51 @@ class Labelling(ClassHistory):
         free = free[box_labels.inside(dict(world, size=[v + 4 * gap for v in world["size"]]), self.cloud.xyz[free])]
         grown = labels.with_feet(self.cloud.xyz, owned, free, gap)
         return grown[len(owned):]
+
+    def _strays(self):
+        """Per box on screen, as {(frame, index): ids}: its object's points more than half an object gap outside it.
+
+        These are the points a box was not fitted to (slips of the brush, bits of a neighbour), or that a box
+        edited by hand no longer holds.
+        """
+        pairs = [(key, index, box) for key in self._box_keys() for index, box in enumerate(self._boxes_of(key))
+                 if box.get("instance")]
+        if not pairs:
+            return {}
+        gap, _ = self._box_settings()
+        ids = self.cloud.ids()
+        ids = ids[np.isin(self.labels.inst[ids], np.unique([box["instance"] for _, _, box in pairs]))]
+        frame = self.cloud.table["frame"][ids].astype(np.int64) if self.sequence is not None else np.zeros(len(ids), np.int64)
+        code = (frame << 32) | self.labels.inst[ids].astype(np.int64)
+        order = np.argsort(code, kind="stable")
+        ids, code = ids[order], code[order]
+        found = {}
+        for key, index, box in pairs:
+            target = (int(key or 0) << 32) | int(box["instance"])
+            mine = ids[np.searchsorted(code, target):np.searchsorted(code, target + 1)]
+            mine = mine[self.labels.cls[mine] == box["class"]]
+            if not len(mine):
+                continue
+            world = self._box_world(key, box)
+            out = mine[~box_labels.inside(dict(world, size=[v + gap for v in world["size"]]), self.cloud.xyz[mine])]
+            if len(out):
+                found[(key, index)] = out
+        return found
+
+    def _refresh_strays(self):
+        """Count the stray points of the boxes on screen again; True when a count changed."""
+        counts = {where: int(len(ids)) for where, ids in self._strays().items()}
+        changed = counts != self._stray_counts
+        self._stray_counts = counts
+        return changed
+
+    def select_strays(self):
+        """Select the points labelled as boxed objects on screen that their boxes leave out."""
+        found = self._strays()
+        self._stray_counts = {where: int(len(ids)) for where, ids in found.items()}
+        self._fill_boxes()
+        self.select(np.unique(np.concatenate(list(found.values()))) if found else EMPTY, "replace", review=True)
+        self.status(self.tr("status_filter", n=int(self.selected.sum())), 10000)
 
     def select_leftovers(self):
         """Select the points that belong with the boxed objects on screen but are still unlabelled."""
@@ -1197,7 +1270,7 @@ class Labelling(ClassHistory):
                 continue
             cls = int(np.bincount(self.labels.cls[mine]).argmax())
             inst = int(np.bincount(self.labels.inst[mine]).argmax())
-            self._boxes_of(key).append(box_labels.fit(self._local(key, mine), cls, inst))
+            self._boxes_of(key).append(self._fit(self._local(key, mine), cls, inst)[0])
             self.active_box = (key, len(self.box_store[key]) - 1)
         self._boxes_changed()
 
@@ -1207,6 +1280,7 @@ class Labelling(ClassHistory):
     def _boxes_changed(self):
         self._draw_boxes()
         if self.label_panel:
+            self._refresh_strays()
             self._fill_boxes()
         self.changed()
 
@@ -1264,6 +1338,8 @@ class Labelling(ClassHistory):
                     size += f"  ·  {box['score']:.2f}" + ("  ?" if box["score"] < self.track_accept.value() else "")
                 if box.get("left"):
                     size += "  ·  " + self.tr("boxes_left", n=box["left"])
+                if self._stray_counts.get((key, index)):
+                    size += "  ·  " + self.tr("boxes_stray", n=self._stray_counts[(key, index)])
                 frame = "" if key is None else f"{self.sequence.names[key]}  "
                 item = QtWidgets.QTreeWidgetItem([f"{frame}{self.classes.name(box['class'])}", str(box.get("instance", 0)), size])
                 item.setData(0, Qt.UserRole, (key, index))
@@ -1319,20 +1395,24 @@ class Labelling(ClassHistory):
         if item is not None:
             item.setText(2, "×".join(f"{v:.2f}" for v in self.box_store[key][index]["size"]))
         self.changed()
+        self._stats_timer.start()
 
     def refit_box(self):
-        """Fit the chosen box again to the points it holds now (in its frame)."""
+        """Fit the chosen box again: to its object's points as labelled now, or else to the points it holds."""
         world = self._active_box_world()
         if world is None:
             return
         key, index = self.active_box
-        ids = self._key_ids(key)
-        ids = ids[box_labels.inside(world, self.cloud.xyz[ids])]
+        old = self.box_store[key][index]
+        mine = self._key_ids(key)
+        ids = mine[(self.labels.inst[mine] == old.get("instance", 0)) & (self.labels.cls[mine] == old["class"])] \
+            if old.get("instance") else EMPTY
+        if len(ids) < 3:
+            ids = mine[box_labels.inside(world, self.cloud.xyz[mine])]
         if len(ids) < 3:
             return
         self._remember_boxes()
-        old = self.box_store[key][index]
-        self.box_store[key][index] = box_labels.fit(self._local(key, ids), old["class"], old.get("instance", 0))
+        self.box_store[key][index] = self._fit(self._local(key, ids), old["class"], old.get("instance", 0))[0]
         self._boxes_changed()
 
     def delete_box(self):
@@ -1627,6 +1707,7 @@ class Labelling(ClassHistory):
         if self.label_panel:
             self._fill_frames()
             self._fill_instances()
+            self._refresh_strays()
             self._fill_boxes()
         after = self._anchor_pose()
         if before is not None and after is not None:
@@ -1956,6 +2037,10 @@ class Labelling(ClassHistory):
         self.show_boxes.setChecked(values["show_boxes"])
         self.show_boxes.toggled.connect(lambda *_: self._draw_boxes())
         form.addRow(self.show_boxes)
+        self.robust_boxes = W.QCheckBox(t("boxes_robust"))
+        self.robust_boxes.setChecked(values["robust_boxes"])
+        self.robust_boxes.setToolTip(t("boxes_robust_tip"))
+        form.addRow(self.robust_boxes)
         self.class_boxes = add_button(t("boxes_class", name=""), self.boxes_for_class, t("boxes_class_tip"))
         form.addRow(self.class_boxes)
         form.addRow(button(t("boxes_from_selection"), self.label_box_from_selection))
@@ -1980,7 +2065,7 @@ class Labelling(ClassHistory):
             spin_box.valueChanged.connect(self._box_field_changed)
         form.addRow(grid)
         row = W.QHBoxLayout()
-        row.addWidget(button(t("boxes_refit"), self.refit_box))
+        row.addWidget(button(t("boxes_refit"), self.refit_box, t("boxes_refit_tip")))
         row.addWidget(danger_button(t("boxes_delete"), self.delete_box))
         form.addRow(row)
         form.addRow(select_button(t("boxes_select_points"), self.select_in_box))
@@ -1993,17 +2078,19 @@ class Labelling(ClassHistory):
             form.addRow(t("track_reach"), self.track_reach)
             form.addRow(t("track_accept"), self.track_accept)
             form.addRow(add_button(t("track"), self.track_boxes, t("track_tip")))
+        form.addRow(select_button(t("boxes_select_stray"), self.select_strays, t("boxes_stray_tip")))
         form.addRow(select_button(t("boxes_select_left"), self.select_leftovers, t("boxes_left_tip")))
         form.addRow(add_button(t("boxes_take_left"), self.take_leftovers, t("boxes_left_tip")))
         group.add_to(layout)
         self._fill_classes()
         self._fill_instances()
+        self._refresh_strays()
         self._fill_boxes()
         self._draw_boxes()
 
     def label_panel_values(self):
         return {"track_reach": self.track_reach.value(), "track_accept": self.track_accept.value(),
-                "object_gap": self.object_gap.value(), "min_points": self.min_points.value(), "show_boxes": self.show_boxes.isChecked(),
+                "object_gap": self.object_gap.value(), "min_points": self.min_points.value(), "show_boxes": self.show_boxes.isChecked(), "robust_boxes": self.robust_boxes.isChecked(),
                 "clearance": self.clearance.value(), "stop_bends": self.stop_bends.isChecked(), "rule": self.rule_box.currentData(), "rule_class": self.rule_class.currentData(), "smart": self.smart_box.currentData(), "reach": self.reach.value(),
                 "flatness": self.flatness.value(), "bend": self.bend.value(), "gap": self.gap.value(),
                 "at_once": self.at_once.isChecked(), "own_instance": self.own_instance.isChecked(),

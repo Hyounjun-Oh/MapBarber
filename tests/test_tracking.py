@@ -156,3 +156,36 @@ def test_tracking_from_a_middle_frame_reaches_both_ends():
     assert np.ptp(sizes, axis=0).max() < 1e-9 and np.allclose(sizes[0], [4.0, 1.8, 1.5], atol=0.35)
     for index in frames:
         assert np.allclose(track.box_in(index)["center"][:2], [-10.5 + 1.5 * index, 0.0], atol=0.3), index
+
+
+def test_a_few_wrong_points_do_not_spoil_the_box():
+    rng = np.random.default_rng(12)
+    local, _ = shell(rng, 3000)
+    c, s = np.cos(0.4), np.sin(0.4)
+    car_points = local @ np.array([[c, -s, 0], [s, c, 0], [0, 0, 1]]).T + [20.0, -5.0, 0.75]
+    far = rng.uniform([26, -9, 0], [27, -8, 1], (6, 3))
+    above = np.array([[20.0, -5.0, 2.6], [20.1, -5.1, 3.0]])
+    tail = np.column_stack([np.linspace(23.2, 24.6, 5), np.full(5, -3.6), np.full(5, 0.5)])
+    points = np.vstack([car_points, far, above, tail])
+    plain = boxes.fit(points)
+    assert max(plain["size"]) > 6.0 or plain["size"][2] > 2.0, "the stray points blow up a plain fit"
+    robust = boxes.fit(points, gap=0.5)
+    assert np.allclose(robust["size"], [4.0, 1.8, 1.5], atol=0.15), robust["size"]
+    assert np.allclose(robust["center"], [20.0, -5.0, 0.75], atol=0.1)
+    assert abs((robust["yaw"] - 0.4 + np.pi / 2) % np.pi - np.pi / 2) < np.radians(2.5)
+    assert robust["stray"] == 13 and robust["points"] == 3000
+    used = boxes.body(points, 0.5)
+    assert used[:3000].all() and not used[3000:].any()
+    assert boxes.body(car_points, 0.5).all(), "a clean object loses nothing"
+
+
+def test_the_box_turns_with_the_faces_when_two_are_seen():
+    rng = np.random.default_rng(13)
+    local, normals = shell(rng, 4000)
+    seen = local[(normals[:, 0] > 0.5) | (normals[:, 1] < -0.5)]
+    c, s = np.cos(0.3), np.sin(0.3)
+    world = seen @ np.array([[c, -s, 0], [s, c, 0], [0, 0, 1]]).T + [5.0, 5.0, 0.75]
+    plain, robust = boxes.fit(world), boxes.fit(world, gap=0.5)
+    error = lambda box: abs((box["yaw"] - 0.3 + np.pi / 2) % np.pi - np.pi / 2)
+    assert error(robust) < np.radians(2.0) < error(plain), "the main axis of an L-shaped view is not the heading"
+    assert np.allclose(robust["size"], [4.0, 1.8, 1.5], atol=0.12)

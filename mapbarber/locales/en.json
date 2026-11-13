@@ -416,5 +416,12 @@
  "anchor_world": "world",
  "anchor_lidar": "LiDAR",
  "anchor_object": "chosen box",
- "anchor_tip": "What stays put on screen while the frames change. World: the view does not move and the scene passes by. LiDAR: the view rides with the sensor of the first frame shown. Chosen box: the view follows the object of the box selected in the box list. The axes are drawn at what the view is fixed to."
+ "anchor_tip": "What stays put on screen while the frames change. World: the view does not move and the scene passes by. LiDAR: the view rides with the sensor of the first frame shown. Chosen box: the view follows the object of the box selected in the box list. The axes are drawn at what the view is fixed to.",
+ "boxes_robust": "Keep stray points out of boxes",
+ "boxes_robust_tip": "A few mislabelled points no longer spoil a box: small groups standing apart from the object's body (further than the gap between objects) and thin tails beyond an empty stretch are not used to fit it, and the box is turned to the faces of the object. The points keep their label; the box list shows how many a box leaves out. Switch off to fit boxes around every labelled point.",
+ "boxes_stray": "{n} stray",
+ "boxes_select_stray": "Select stray points of the boxes",
+ "boxes_stray_tip": "Points labelled as a boxed object that lie more than half the gap between objects outside its box. Look at them, then press Delete to clear their labels, or switch off 'Keep stray points out of boxes' and refit to take them in.",
+ "boxes_refit_tip": "Fits the box again to its object's points as they are labelled now. A box without an object is fitted to the points inside it.",
+ "status_stray": "{n} stray points left out"
 }

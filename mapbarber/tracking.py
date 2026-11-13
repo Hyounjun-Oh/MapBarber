@@ -148,11 +148,16 @@ class Track:
     previous frame, and its box is fitted again in every frame.
     """
 
-    def __init__(self, box, points, rigid=True, cell=0.05):
+    def __init__(self, box, points, rigid=True, cell=0.05, margin=None):
+        """`margin`: points further than this outside the box are strays and stay out of the model."""
         self.cls, self.instance, self.rigid, self.cell = int(box.get("class", 0)), int(box.get("instance", 0)), rigid, cell
         pose = pose_of(box)
         local = to_local(pose, points)
         half = np.asarray(box["size"], np.float64) / 2.0
+        if margin is not None:
+            near = np.all(np.abs(local) <= half + margin, axis=1)
+            if near.sum() >= 3:
+                local = local[near]
         self.low, self.high = np.minimum(-half, local.min(axis=0)), np.maximum(half, local.max(axis=0))
         self.model = thin(local, cell)
         self.first = pose
@@ -260,6 +265,9 @@ class Track:
                   "left": int((in_group & ~taken).sum()), "merged": merged}
         if learn:
             mine = local[taken]
+            # Only the body of what was taken shapes the model: a stray point at the edge would otherwise widen
+            # the box a little in every frame.
+            mine = mine[box_labels.body(mine, gap)]
             if self.rigid:
                 self.model = thin(np.vstack([self.model, mine]), self.cell)
                 self.low, self.high = np.minimum(self.low, mine.min(axis=0)), np.maximum(self.high, mine.max(axis=0))

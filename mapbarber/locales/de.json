@@ -416,5 +416,12 @@
  "anchor_world": "Welt",
  "anchor_lidar": "LiDAR",
  "anchor_object": "gewählter Quader",
- "anchor_tip": "Was beim Wechsel der Frames auf dem Bildschirm stehen bleibt. Welt: die Ansicht bewegt sich nicht, die Szene zieht vorbei. LiDAR: die Ansicht fährt mit dem Sensor des ersten angezeigten Frames. Gewählter Quader: die Ansicht folgt dem Objekt des in der Quaderliste gewählten Quaders. Die Achsen werden dort gezeichnet, woran die Ansicht fest ist."
+ "anchor_tip": "Was beim Wechsel der Frames auf dem Bildschirm stehen bleibt. Welt: die Ansicht bewegt sich nicht, die Szene zieht vorbei. LiDAR: die Ansicht fährt mit dem Sensor des ersten angezeigten Frames. Gewählter Quader: die Ansicht folgt dem Objekt des in der Quaderliste gewählten Quaders. Die Achsen werden dort gezeichnet, woran die Ansicht fest ist.",
+ "boxes_robust": "Ausreißer aus Boxen heraushalten",
+ "boxes_robust_tip": "Wenige falsch beschriftete Punkte verderben keine Box mehr: kleine Gruppen abseits des Objektkörpers (weiter als der Abstand zwischen Objekten) und dünne Ausläufer hinter einer Lücke werden beim Anpassen nicht verwendet, und die Box wird an den Flächen des Objekts ausgerichtet. Die Punkte behalten ihr Label; die Boxliste zeigt, wie viele eine Box auslässt. Ausschalten, um Boxen um alle beschrifteten Punkte zu legen.",
+ "boxes_stray": "{n} Ausreißer",
+ "boxes_select_stray": "Ausreißer der Boxen auswählen",
+ "boxes_stray_tip": "Punkte, die als Objekt mit Box beschriftet sind, aber mehr als den halben Abstand zwischen Objekten außerhalb der Box liegen. Ansehen, dann mit Entf die Labels löschen, oder „Ausreißer aus Boxen heraushalten“ ausschalten und neu anpassen, um sie aufzunehmen.",
+ "boxes_refit_tip": "Passt die Box erneut an die Punkte ihres Objekts an, wie sie jetzt beschriftet sind. Eine Box ohne Objekt wird an die Punkte in ihr angepasst.",
+ "status_stray": "{n} Ausreißer ausgelassen"
 }

@@ -718,7 +718,8 @@ def test_arrow_keys_slide_the_frame_range_by_its_width(session):
 
 def test_tracking_keeps_up_with_a_changing_view(session):
     """A car drives past: first only its front is seen, then its side, then its back. The box must end up the
-    size of the whole car in every frame, and no frame may keep car points unlabelled."""
+    size of the whole car as far as any frame shows it, turned with the car, in every frame, and no frame may
+    keep car points unlabelled. The far side never shows, so the box stays short of it."""
     folder = session.folder / "passing"
     (folder / "velodyne").mkdir(parents=True)
     rng = np.random.default_rng(9)
@@ -730,12 +731,14 @@ def test_tracking_keeps_up_with_a_changing_view(session):
         local[side == axis, axis] = half * sign[side == axis]
         normals[side == axis, axis] = sign[side == axis]
     road = np.column_stack([rng.uniform(-25, 25, 9000), rng.uniform(0, 18, 9000), np.full(9000, -1.2)])
-    centres, counts = [], []
+    centres, counts, shown = [], [], np.zeros(4000, bool)
     for index in range(13):
         centre = np.array([-9.0 + 1.5 * index, 9.0, -1.2 + 0.35 + 0.75])
         world = local + centre
         away = -world / np.linalg.norm(world, axis=1, keepdims=True)
-        seen = world[np.einsum("ij,ij->i", normals, away) > 0.6]
+        visible = np.einsum("ij,ij->i", normals, away) > 0.6
+        shown |= visible
+        seen = world[visible]
         scan = np.vstack([road, seen])
         np.column_stack([scan, np.zeros(len(scan))]).astype("<f4").tofile(str(folder / "velodyne" / f"{index:06d}.bin"))
         centres.append(centre)
@@ -756,12 +759,15 @@ def test_tracking_keeps_up_with_a_changing_view(session):
     session.step("all frames", lambda: editor.timeline.slider.on_range(0, 12), undoable=False)
     session.step("track", lambda: editor.track_boxes())
     sizes = []
+    width = np.ptp(local[shown, 1])
+    assert width < 1.5, "the far part of the car never shows"
     for index in range(13):
         boxes = [box for box in editor.box_store[index] if box["instance"] == number]
         assert len(boxes) == 1, f"frame {index}: {len(boxes)} boxes"
         box = boxes[0]
         sizes.append(box["size"])
-        assert np.allclose(box["size"], [4.0, 1.8, 1.5], atol=0.4), (index, box["size"])
+        assert np.allclose(box["size"], [4.0, width, 1.5], atol=[0.15, 0.15, 0.2]), (index, box["size"], width)
+        assert abs(np.sin(box["yaw"])) < np.sin(np.radians(3.0)), (index, np.degrees(box["yaw"]))
         assert abs(box["center"][0] - centres[index][0]) < 0.35, (index, box["center"], centres[index])
         assert abs(box["center"][1] - centres[index][1]) < 0.6, "the far side is never seen, so the box sits nearer"
         start = int(editor.frame_starts[index])
@@ -866,3 +872,45 @@ def test_view_can_be_fixed_to_the_world_the_sensor_or_a_box(session):
     session.pump()
     assert np.allclose(axes_at(), 0)
     session.check("anchors")
+
+
+def test_a_few_mislabelled_points_do_not_spoil_a_box(session):
+    from mapbarber.formats import CLOUD
+    rng = np.random.default_rng(14)
+    floor = np.column_stack([rng.uniform(-4, 4, 6000), rng.uniform(-4, 4, 6000), np.zeros(6000)])
+    crate = rng.uniform([-1.0, -0.4, 0.3], [1.0, 0.4, 1.1], (3000, 3))
+    slips = np.array([[2.2, 0.0, 0.0], [2.3, 0.1, 0.0], [-0.2, 1.5, 0.0], [0.3, 0.0, 2.0]])
+    editor = session.window.show_document(CLOUD, (np.vstack([floor, crate, slips]), None))
+    session.pump(0.3)
+    session.trigger("Ctrl+L")
+    crate_ids, slip_ids = 6000 + np.arange(3000), 9000 + np.arange(len(slips))
+    editor.select(np.concatenate([crate_ids, slip_ids]), "replace")
+    editor.set_active(5)
+    editor.own_instance.setChecked(True)
+    session.step("label the crate as one object, with a few slips", lambda: session.trigger("Return"))
+    assert len(np.unique(editor.labels.inst[np.concatenate([crate_ids, slip_ids])])) == 1
+    assert editor.robust_boxes.isChecked()
+    session.step("box it", lambda: editor.class_boxes.click())
+    box = editor.box_store[None][0]
+    assert np.allclose(sorted(box["size"]), [0.8, 0.8, 2.0], atol=0.05), box["size"]
+    assert np.allclose(box["center"], [0, 0, 0.7], atol=0.04) and "stray" not in box
+    assert "4 stray" in editor.box_list.topLevelItem(0).text(2)
+    assert "4 stray" in session.window.statusBar().currentMessage()
+
+    editor.box_list.setCurrentItem(editor.box_list.topLevelItem(0))
+    editor.robust_boxes.setChecked(False)
+    session.step("refit around every labelled point", lambda: editor.refit_box())
+    assert max(editor.box_store[None][0]["size"]) > 3.0 and "stray" not in editor.box_list.topLevelItem(0).text(2)
+    editor.robust_boxes.setChecked(True)
+    session.step("refit without the slips", lambda: editor.refit_box())
+    assert np.allclose(sorted(editor.box_store[None][0]["size"]), [0.8, 0.8, 2.0], atol=0.05)
+
+    session.step("select the stray points", lambda: editor.select_strays(), undoable=False)
+    assert np.array_equal(np.flatnonzero(editor.selected), slip_ids)
+    session.step("clear their labels", lambda: session.trigger("Delete"))
+    assert not editor.labels.cls[slip_ids].any() and not editor.labels.inst[slip_ids].any()
+    assert (editor.labels.cls[crate_ids] == 5).all() and editor.cloud.alive.all()
+    assert "stray" not in editor.box_list.topLevelItem(0).text(2)
+    final = session.snapshot()
+    session.walk_history()
+    assert session.same(final, session.snapshot()) is None

@@ -416,5 +416,12 @@
  "anchor_world": "mundo",
  "anchor_lidar": "LiDAR",
  "anchor_object": "caja elegida",
- "anchor_tip": "Lo que permanece quieto en pantalla al cambiar de fotograma. Mundo: la vista no se mueve y la escena pasa. LiDAR: la vista viaja con el sensor del primer fotograma mostrado. Caja elegida: la vista sigue al objeto de la caja seleccionada en la lista de cajas. Los ejes se dibujan en aquello a lo que está fija la vista."
+ "anchor_tip": "Lo que permanece quieto en pantalla al cambiar de fotograma. Mundo: la vista no se mueve y la escena pasa. LiDAR: la vista viaja con el sensor del primer fotograma mostrado. Caja elegida: la vista sigue al objeto de la caja seleccionada en la lista de cajas. Los ejes se dibujan en aquello a lo que está fija la vista.",
+ "boxes_robust": "Dejar los puntos sueltos fuera de las cajas",
+ "boxes_robust_tip": "Unos pocos puntos mal etiquetados ya no estropean una caja: los grupos pequeños apartados del cuerpo del objeto (más lejos que la separación entre objetos) y las colas finas tras un tramo vacío no se usan para ajustarla, y la caja se orienta según las caras del objeto. Los puntos conservan su etiqueta; la lista de cajas muestra cuántos deja fuera cada una. Desactívelo para ajustar las cajas a todos los puntos etiquetados.",
+ "boxes_stray": "{n} sueltos",
+ "boxes_select_stray": "Seleccionar puntos sueltos de las cajas",
+ "boxes_stray_tip": "Puntos etiquetados como un objeto con caja que quedan a más de media separación entre objetos fuera de ella. Revíselos y pulse Supr para borrar sus etiquetas, o desactive «Dejar los puntos sueltos fuera de las cajas» y reajuste para incluirlos.",
+ "boxes_refit_tip": "Vuelve a ajustar la caja a los puntos de su objeto tal como están etiquetados ahora. Una caja sin objeto se ajusta a los puntos que contiene.",
+ "status_stray": "{n} puntos sueltos excluidos"
 }
