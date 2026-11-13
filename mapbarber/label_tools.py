@@ -68,6 +68,10 @@ def ask_class(parent, t, classes, number=None):
     wins.setChecked(bool(number and classes.items[number]["wins"]))
     wins.setToolTip(t("class_wins_tip"))
     form.addRow(wins)
+    soft = QtWidgets.QCheckBox(t("class_soft"))
+    soft.setChecked(bool(number and classes.items[number]["soft"]))
+    soft.setToolTip(t("class_soft_tip"))
+    form.addRow(soft)
     buttons = QtWidgets.QDialogButtonBox(QtWidgets.QDialogButtonBox.Ok | QtWidgets.QDialogButtonBox.Cancel)
     buttons.accepted.connect(dialog.accept)
     buttons.rejected.connect(dialog.reject)
@@ -75,7 +79,7 @@ def ask_class(parent, t, classes, number=None):
     if run(dialog) != QtWidgets.QDialog.Accepted:
         return None
     return (number_box.value(), name_box.text().strip() or f"class {number_box.value()}", colour[0],
-            role_box.currentData(), wins.isChecked())
+            role_box.currentData(), wins.isChecked(), soft.isChecked())
 
 
 
@@ -119,6 +123,7 @@ class Labelling(ClassHistory):
         self._box_undo, self._box_redo = [], []
         self.box_store, self._boxes_saved, self.active_box = {}, {}, None
         self._box_actor = self._box_focus = None
+        self._above = {}
         self.classes = ClassList("indoor")
         self.active_class = self.classes.numbers()[0]
         self.hidden_classes, self.locked_classes = set(), set()
@@ -1030,63 +1035,69 @@ class Labelling(ClassHistory):
         self._boxes_changed()
         self.status(self.tr("status_class_boxes", name=self.classes.name(chosen), n=made), 10000)
 
-    def track_boxes(self):
-        """Follow the boxed objects of the first frame on screen that has any through the later frames on screen.
+    def _above_ground(self, key):
+        """Indices of a frame's points that stand above the ground (kept until other frames are shown)."""
+        if key not in self._above:
+            ids = self._key_ids(key)
+            tolerance = self.ground_height.value()
+            height = labels.height_above_ground(self._local(key, ids), self.ground_cell.value(),
+                                                self.ground_slope.value(), tolerance)
+            self._above[key] = ids[np.isfinite(height) & (height > tolerance)]
+        return self._above[key]
 
-        Frame by frame, each object is looked for near where it was (step 1: box overlap), its points are fitted
-        onto what is found there (step 2: alignment), and both give a score. Above the accept score the points
-        take the object's class and number at once; below it they arrive as suggestions to review; a very low
-        score ends the track. The box keeps its size and is stored for every frame it was followed into.
+    def track_boxes(self):
+        """Follow the boxed objects of the first frame on screen that has any through the other frames on screen.
+
+        Each object is followed forwards while its points are gathered into one model in its own frame, so the
+        box grows to the whole object as the view of it changes. Then every frame, the first included and any
+        frames before it, is fitted again against the finished model: one box size per object, and the points
+        an early, partial box missed are picked up. Objects of a class marked as changing shape get a box
+        fitted per frame instead. Per frame, box overlap (where the object was expected against where its
+        points put it) and alignment (how much of what is seen the model explains) make the score: above the
+        accept score labels are applied, below it they arrive as suggestions, far below the track ends.
         """
         if self.sequence is None or self.sequence.poses is None:
             return self.status(self.tr("frames_need_poses"), 8000)
         frames = list(self.frame_ids)
         start = next((key for key in frames if any(box.get("instance") for box in self._boxes_of(key))), None)
-        if start is None or start == frames[-1]:
+        if start is None or len(frames) < 2:
             return self.status(self.tr("track_none"), 10000)
         reach, gap, accept = self.track_reach.value(), self.object_gap.value(), self.track_accept.value()
         least = max(3, self.min_points.value() // 4)
-        tolerance = self.ground_height.value()
-        ground = {"cell": self.ground_cell.value(), "slope": self.ground_slope.value(), "tolerance": tolerance}
         cls, inst, pending = self.labels.cls, self.labels.inst, self.labels.pending
         origin = self._key_ids(start)
-        previous = {}
-        for box in self._boxes_of(start):
-            members = origin[inst[origin] == box.get("instance", 0)] if box.get("instance") else EMPTY
-            if len(members) >= 3:
-                previous[box["instance"]] = (self._box_world(start, box), self.cloud.xyz[members], None)
-        if not previous:
-            return self.status(self.tr("track_none"), 10000)
         QtWidgets.QApplication.setOverrideCursor(Qt.WaitCursor)
         depth, label_depth = len(self._order), self.labels.undo_depth()
         self._remember_boxes()
         followed = unsure = lost = 0
         try:
-            for key in frames[frames.index(start) + 1:]:
-                ids = self._key_ids(key)
-                height = labels.height_above_ground(self._local(key, ids), **ground)
-                above = ids[np.isfinite(height) & (height > tolerance)]
-                kept = [box for box in self._boxes_of(key) if box.get("instance") not in previous]
-                current = {}
-                for number, (box, points, shift) in previous.items():
+            for first in list(self._boxes_of(start)):
+                number = first.get("instance", 0)
+                members = origin[inst[origin] == number] if number else EMPTY
+                if len(members) < 3:
+                    continue
+                track = tracking.Track(self._box_world(start, first), self.cloud.xyz[members],
+                                       rigid=not self.classes.soft(first["class"]))
+
+                def scene_of(frame, number=number):
+                    above = self._above_ground(frame)
                     free = above[(cls[above] == UNLABELED) | pending[above] | (inst[above] == number)]
-                    found = tracking.follow(box, points, self.cloud.xyz[free], reach, gap, least, shift=shift)
-                    if found is None or found["score"] < LOST_SCORE:
-                        lost += 1
-                        continue
-                    members = free[found["members"]]
-                    sure = found["score"] >= accept
-                    self.labels.assign(members, box["class"], number, pending=not sure)
-                    stored = box_labels.moved(found["box"], np.linalg.inv(self._pose(key)))
-                    stored.update(points=int(len(members)), score=round(found["score"], 3))
-                    kept.append(stored)
-                    current[number] = (found["box"], self.cloud.xyz[members], found["shift"])
-                    followed += 1
-                    unsure += not sure
-                self.box_store[key] = kept
-                previous = current
-                if not previous:
-                    break
+                    return free, self.cloud.xyz[free]
+
+                track.run(frames, start, scene_of, reach=reach, gap=gap, least=least)
+                for frame, found in track.results.items():
+                    sure = found["score"] >= accept or frame == start
+                    ids = found["ids"]
+                    ids = ids[~((cls[ids] == track.cls) & (inst[ids] == number) & ~pending[ids])]
+                    self.labels.assign(ids, track.cls, number, pending=not sure)
+                    stored = box_labels.moved(track.box_in(frame), np.linalg.inv(self._pose(frame)))
+                    stored.update(points=int(len(found["ids"])), score=round(found["score"], 3), left=found["left"])
+                    self.box_store[frame] = [box for box in self._boxes_of(frame) if box.get("instance") != number]
+                    self.box_store[frame].append(stored)
+                    if frame != start:
+                        followed += 1
+                        unsure += not sure
+                lost += len(set(frames) - set(track.results) - {start}) > 0
         finally:
             QtWidgets.QApplication.restoreOverrideCursor()
         if self.labels.undo_depth() > label_depth:
@@ -1098,6 +1109,80 @@ class Labelling(ClassHistory):
         self._fill_instances()
         self._boxes_changed()
         self.status(self.tr("status_tracked", n=followed, u=unsure, l=lost), 12000)
+
+    def _leftovers(self, key, box):
+        """Unlabelled points of a frame that hang on to a boxed object but were left outside it."""
+        number = box.get("instance", 0)
+        mine = self._key_ids(key)
+        owned = mine[self.labels.inst[mine] == number] if number else EMPTY
+        if not len(owned):
+            return EMPTY
+        gap = self.object_gap.value()
+        world = self._box_world(key, box)
+        free = self._above_ground(key) if key is not None else mine
+        free = free[self.labels.cls[free] == UNLABELED]
+        free = free[box_labels.inside(dict(world, size=[v + 4 * gap for v in world["size"]]), self.cloud.xyz[free])]
+        grown = labels.with_feet(self.cloud.xyz, owned, free, gap)
+        return grown[len(owned):]
+
+    def select_leftovers(self):
+        """Select the points that belong with the boxed objects on screen but are still unlabelled."""
+        QtWidgets.QApplication.setOverrideCursor(Qt.WaitCursor)
+        try:
+            parts = [self._leftovers(key, box) for key in self._box_keys() for box in self._boxes_of(key)]
+        finally:
+            QtWidgets.QApplication.restoreOverrideCursor()
+        found = np.unique(np.concatenate(parts)) if parts else EMPTY
+        self.select(found, "replace", review=True)
+        self.status(self.tr("status_filter", n=int(self.selected.sum())), 10000)
+
+    def take_leftovers(self):
+        """Give those points to their objects and widen the boxes to hold them.
+
+        An object that keeps its shape gets the same widening in every frame on screen, so its box stays one
+        size; an object that changes shape is widened only in the frame concerned.
+        """
+        QtWidgets.QApplication.setOverrideCursor(Qt.WaitCursor)
+        depth, label_depth = len(self._order), self.labels.undo_depth()
+        growth, taken = {}, 0
+        try:
+            for key in self._box_keys():
+                for box in self._boxes_of(key):
+                    ids = self._leftovers(key, box)
+                    if not len(ids):
+                        continue
+                    taken += self.labels.assign(ids, box["class"], box.get("instance", 0))
+                    world = self._box_world(key, box)
+                    local = tracking.to_local(tracking.pose_of(world), self.cloud.xyz[ids])
+                    half = np.asarray(world["size"]) / 2.0
+                    wider = (np.minimum(local.min(axis=0) + half, 0.0), np.maximum(local.max(axis=0) - half, 0.0))
+                    scope = (box.get("instance", 0),) if not self.classes.soft(box["class"]) else (box.get("instance", 0), key)
+                    low, high = growth.get(scope, (np.zeros(3), np.zeros(3)))
+                    growth[scope] = (np.minimum(low, wider[0]), np.maximum(high, wider[1]))
+        finally:
+            QtWidgets.QApplication.restoreOverrideCursor()
+        if not taken:
+            return self.status(self.tr("status_no_change", what=self.tr("boxes_take_left")))
+        self.labels.squash(label_depth)
+        self._record_step("label")
+        self.labels.touched = np.flatnonzero(self.cloud.alive)
+        self._after_labels()
+        self._remember_boxes()
+        for key in self._box_keys():
+            for box in self._boxes_of(key):
+                scope = (box.get("instance", 0),) if not self.classes.soft(box["class"]) else (box.get("instance", 0), key)
+                if scope not in growth:
+                    continue
+                low, high = growth[scope]
+                c, s = np.cos(box["yaw"]), np.sin(box["yaw"])
+                middle = (low + high) / 2.0
+                box["center"] = [float(box["center"][0] + c * middle[0] - s * middle[1]),
+                                 float(box["center"][1] + s * middle[0] + c * middle[1]), float(box["center"][2] + middle[2])]
+                box["size"] = [float(v) for v in np.asarray(box["size"]) + (high - low)]
+                box["left"] = 0
+        self._group_since(depth)
+        self._boxes_changed()
+        self.status(self.tr("status_labelled", what=self.tr("boxes_take_left"), n=taken), 10000)
 
     def label_box_from_selection(self):
         """One box around the selected points of each frame, with their main class and instance."""
@@ -1176,6 +1261,8 @@ class Labelling(ClassHistory):
                 size = "×".join(f"{v:.2f}" for v in box["size"])
                 if "score" in box:
                     size += f"  ·  {box['score']:.2f}" + ("  ?" if box["score"] < self.track_accept.value() else "")
+                if box.get("left"):
+                    size += "  ·  " + self.tr("boxes_left", n=box["left"])
                 frame = "" if key is None else f"{self.sequence.names[key]}  "
                 item = QtWidgets.QTreeWidgetItem([f"{frame}{self.classes.name(box['class'])}", str(box.get("instance", 0)), size])
                 item.setData(0, Qt.UserRole, (key, index))
@@ -1869,6 +1956,8 @@ class Labelling(ClassHistory):
             form.addRow(t("track_reach"), self.track_reach)
             form.addRow(t("track_accept"), self.track_accept)
             form.addRow(add_button(t("track"), self.track_boxes, t("track_tip")))
+        form.addRow(select_button(t("boxes_select_left"), self.select_leftovers, t("boxes_left_tip")))
+        form.addRow(add_button(t("boxes_take_left"), self.take_leftovers, t("boxes_left_tip")))
         group.add_to(layout)
         self._fill_classes()
         self._fill_instances()

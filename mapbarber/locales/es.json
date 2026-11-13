@@ -402,8 +402,14 @@
  "track_reach": "Búsqueda alrededor de la caja [m]",
  "track_accept": "Puntuación de aceptación",
  "track_reach_tip": "Cuánto puede haberse movido un objeto entre dos fotogramas más allá de su propia velocidad.",
- "track_accept_tip": "Puntuación = mitad solapamiento de cajas (IoU) + mitad alineación de puntos (ajuste ICP). Con este valor o más se aplican las etiquetas; por debajo llegan como sugerencias marcadas con «?» para revisar; por debajo de 0,25 termina el seguimiento.",
- "track_tip": "Pon cajas a los objetos del primer fotograma (Caja para cada objeto de …), fija el rango en la línea de tiempo y sigue: cada objeto se busca en el fotograma siguiente por solapamiento de cajas, sus puntos se alinean (ICP) y su clase, número de objeto y caja continúan con una puntuación.",
+ "track_accept_tip": "Puntuación = mitad solapamiento de cajas (la caja donde se esperaba frente a donde la sitúan sus puntos) + mitad alineación (cuánto de lo que se ve explica el modelo del objeto). Con este valor o más se aplican las etiquetas; por debajo llegan como sugerencias marcadas con «?» para revisar; por debajo de 0,25 termina el seguimiento.",
+ "track_tip": "Pon cajas a los objetos de un fotograma (Caja para cada objeto de …), fija el rango en la línea de tiempo y sigue. Hacia delante los puntos de cada objeto se reúnen en un modelo, así la caja crece hasta el objeto entero al cambiar la vista; después cada fotograma, también los anteriores, se ajusta de nuevo al modelo terminado. Un tamaño de caja por objeto; las clases marcadas como de forma variable reciben una caja por fotograma.",
  "track_none": "Nada que seguir: el primer fotograma en pantalla necesita objetos con caja y los siguientes deben estar en pantalla (amplía el rango de la línea de tiempo).",
- "status_tracked": "{n} cajas seguidas  ·  {u} dudosas (revisa las «?»)  ·  {l} perdidas"
+ "status_tracked": "{n} cajas seguidas  ·  {u} dudosas (revisa las «?»)  ·  {l} perdidas",
+ "class_soft": "Cambia de forma al moverse",
+ "class_soft_tip": "Para personas y animales. Al seguir cajas, un objeto así recibe una caja reajustada en cada fotograma; los demás conservan un tamaño de caja mientras sus puntos se reúnen a lo largo de los fotogramas.",
+ "boxes_left": "{n} fuera",
+ "boxes_select_left": "Seleccionar puntos fuera de las cajas",
+ "boxes_take_left": "Darlos a sus objetos",
+ "boxes_left_tip": "Puntos sin etiqueta que cuelgan de un objeto con caja (dentro de la separación entre objetos) pero no se tomaron, por ejemplo donde apareció un lado nuevo. Selecciónalos para verlos o dáselos a sus objetos: la caja se ensancha para contenerlos, lo mismo en todos los fotogramas en pantalla si el objeto conserva su forma."
 }

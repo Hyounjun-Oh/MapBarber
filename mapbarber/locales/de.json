@@ -402,8 +402,14 @@
  "track_reach": "Suche um den Quader [m]",
  "track_accept": "Annahmewert",
  "track_reach_tip": "Wie weit sich ein Objekt zwischen zwei Frames über seine eigene Geschwindigkeit hinaus bewegt haben kann.",
- "track_accept_tip": "Wert = halb Quaderüberlappung (IoU) + halb Punktausrichtung (ICP-Fitness). Ab diesem Wert wird die Beschriftung angewendet; darunter kommt sie als Vorschlag mit „?“ zur Prüfung; unter 0,25 endet die Spur.",
- "track_tip": "Objekte im ersten Frame mit Quadern versehen (Quader für jedes Objekt …), den Frame-Bereich auf der Zeitleiste setzen, dann verfolgen: jedes Objekt wird im nächsten Frame über die Quaderüberlappung gefunden, seine Punkte werden ausgerichtet (ICP), und Klasse, Objektnummer und Quader wandern mit einem Wert mit.",
+ "track_accept_tip": "Wert = halb Quaderüberlappung (der Quader am erwarteten Ort gegen den, an den seine Punkte ihn setzen) + halb Ausrichtung (wie viel des Gesehenen das Modell des Objekts erklärt). Ab diesem Wert wird die Beschriftung angewendet; darunter kommt sie als Vorschlag mit „?“ zur Prüfung; unter 0,25 endet die Spur.",
+ "track_tip": "Objekte in einem Frame mit Quadern versehen (Quader für jedes Objekt …), den Frame-Bereich auf der Zeitleiste setzen, dann verfolgen. Vorwärts werden die Punkte jedes Objekts in einem Modell gesammelt, sodass der Quader mit wechselnder Ansicht zum ganzen Objekt wächst; danach wird jeder Frame, auch frühere, erneut an das fertige Modell angepasst. Eine Quadergröße je Objekt; als formverändernd markierte Klassen erhalten einen Quader je Frame.",
  "track_none": "Nichts zu verfolgen: der erste angezeigte Frame braucht Objekte mit Quadern, und spätere Frames müssen angezeigt sein (Bereich der Zeitleiste erweitern).",
- "status_tracked": "{n} Quader verfolgt  ·  {u} unsicher („?“ prüfen)  ·  {l} verloren"
+ "status_tracked": "{n} Quader verfolgt  ·  {u} unsicher („?“ prüfen)  ·  {l} verloren",
+ "class_soft": "Ändert beim Bewegen die Form",
+ "class_soft_tip": "Für Personen und Tiere. Beim Verfolgen erhält ein solches Objekt in jedem Frame einen neu angepassten Quader; alle anderen behalten eine Quadergröße, während ihre Punkte über die Frames gesammelt werden.",
+ "boxes_left": "{n} außerhalb",
+ "boxes_select_left": "Punkte außerhalb der Quader wählen",
+ "boxes_take_left": "Sie ihren Objekten geben",
+ "boxes_left_tip": "Unbeschriftete Punkte, die an einem Objekt mit Quader hängen (innerhalb des Objektabstands), aber nicht übernommen wurden, etwa wo eine neue Seite sichtbar wurde. Zum Ansehen auswählen oder den Objekten geben: der Quader wird entsprechend größer, bei formstabilen Objekten in allen angezeigten Frames um denselben Betrag."
 }

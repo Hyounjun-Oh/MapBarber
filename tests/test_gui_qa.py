@@ -714,3 +714,93 @@ def test_arrow_keys_slide_the_frame_range_by_its_width(session):
     assert editor.frame_store[0][0].tolist() == [40] * 50, "labels stay with their frame when the range moves on"
     press(QtCore.Qt.Key_Left)
     assert (editor.labels.cls[:50] == 40).all()
+
+
+def test_tracking_keeps_up_with_a_changing_view(session):
+    """A car drives past: first only its front is seen, then its side, then its back. The box must end up the
+    size of the whole car in every frame, and no frame may keep car points unlabelled."""
+    folder = session.folder / "passing"
+    (folder / "velodyne").mkdir(parents=True)
+    rng = np.random.default_rng(9)
+    side = rng.integers(0, 3, 4000)
+    sign = rng.choice([-1.0, 1.0], 4000)
+    local = rng.uniform([-2, -0.9, -0.75], [2, 0.9, 0.75], (4000, 3))
+    normals = np.zeros((4000, 3))
+    for axis, half in enumerate((2.0, 0.9, 0.75)):
+        local[side == axis, axis] = half * sign[side == axis]
+        normals[side == axis, axis] = sign[side == axis]
+    road = np.column_stack([rng.uniform(-25, 25, 9000), rng.uniform(0, 18, 9000), np.full(9000, -1.2)])
+    centres, counts = [], []
+    for index in range(13):
+        centre = np.array([-9.0 + 1.5 * index, 9.0, -1.2 + 0.35 + 0.75])
+        world = local + centre
+        away = -world / np.linalg.norm(world, axis=1, keepdims=True)
+        seen = world[np.einsum("ij,ij->i", normals, away) > 0.6]
+        scan = np.vstack([road, seen])
+        np.column_stack([scan, np.zeros(len(scan))]).astype("<f4").tofile(str(folder / "velodyne" / f"{index:06d}.bin"))
+        centres.append(centre)
+        counts.append(len(scan))
+    (folder / "poses.txt").write_text("1 0 0 0 0 1 0 0 0 0 1 0\n" * 13)
+    assert session.window.open(str(folder))
+    session.pump(0.3)
+    editor = session.editor
+    session.step("open", undoable=False)
+    editor.select(np.arange(9000, counts[0]), "replace")
+    editor.set_active(10)
+    session.step("label the car in the first frame", lambda: session.trigger("Return"))
+    session.step("box it", lambda: editor.class_boxes.click())
+    first = editor.box_store[0][0]
+    assert first["size"][0] * first["size"][1] < 0.75 * 4.0 * 1.8, "the first frame shows only part of the car"
+    number = first["instance"]
+
+    session.step("all frames", lambda: editor.timeline.slider.on_range(0, 12), undoable=False)
+    session.step("track", lambda: editor.track_boxes())
+    sizes = []
+    for index in range(13):
+        boxes = [box for box in editor.box_store[index] if box["instance"] == number]
+        assert len(boxes) == 1, f"frame {index}: {len(boxes)} boxes"
+        box = boxes[0]
+        sizes.append(box["size"])
+        assert np.allclose(box["size"], [4.0, 1.8, 1.5], atol=0.4), (index, box["size"])
+        assert abs(box["center"][0] - centres[index][0]) < 0.35, (index, box["center"], centres[index])
+        assert abs(box["center"][1] - centres[index][1]) < 0.6, "the far side is never seen, so the box sits nearer"
+        start = int(editor.frame_starts[index])
+        cls = editor.labels.cls[start:start + counts[index]]
+        inst = editor.labels.inst[start:start + counts[index]]
+        assert (cls[9000:] == 10).mean() > 0.97, f"frame {index}: {(cls[9000:] != 10).sum()} car points left unlabelled"
+        assert (inst[9000:] == number).mean() > 0.97 and not cls[:9000].any()
+    assert np.ptp(np.array(sizes), axis=0).max() < 1e-6, "one box size for the object in every frame"
+    session.step("look for points left outside", lambda: editor.select_leftovers(), undoable=False)
+    assert editor.selected.sum() < 40
+    editor.clear_selection()
+    final = session.snapshot()
+    session.walk_history()
+    assert session.same(final, session.snapshot()) is None
+
+
+def test_points_left_outside_a_box_can_be_taken_in(session):
+    from mapbarber.formats import CLOUD
+    rng = np.random.default_rng(10)
+    floor = np.column_stack([rng.uniform(-4, 4, 6000), rng.uniform(-4, 4, 6000), np.zeros(6000)])
+    crate = rng.uniform([-1.0, -0.4, 0.3], [1.0, 0.4, 1.1], (3000, 3))
+    editor = session.window.show_document(CLOUD, (np.vstack([floor, crate]), None))
+    session.pump(0.3)
+    session.trigger("Ctrl+L")
+    half = 6000 + np.flatnonzero(crate[:, 0] < 0.7)
+    rest = 6000 + np.flatnonzero(crate[:, 0] >= 0.7)
+    editor.select(half, "replace")
+    editor.set_active(5)
+    session.step("label most of the crate", lambda: session.trigger("Return"))
+    session.step("box it", lambda: editor.class_boxes.click())
+    assert max(editor.box_store[None][0]["size"]) < 1.8
+    session.step("select what is left outside", lambda: editor.select_leftovers(), undoable=False)
+    assert editor.selected[rest].mean() > 0.97 and not editor.selected[:6000].any()
+    editor.clear_selection()
+    session.step("take it in", lambda: editor.take_leftovers())
+    box = editor.box_store[None][0]
+    assert (editor.labels.cls[rest] == 5).mean() > 0.97 and (editor.labels.inst[rest] == box["instance"]).mean() > 0.97
+    assert np.allclose(sorted(box["size"]), [0.8, 0.8, 2.0], atol=0.08) and np.allclose(box["center"], [0, 0, 0.7], atol=0.06)
+    assert not editor.labels.cls[:6000].any()
+    final = session.snapshot()
+    session.walk_history()
+    assert session.same(final, session.snapshot()) is None

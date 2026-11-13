@@ -188,6 +188,7 @@ class CloudEditor(Labelling, Editor):
             self.data_bounds = (self.chunks.low.min(axis=0), self.chunks.high.max(axis=0))
         extent = float((self.data_bounds[1] - self.data_bounds[0]).max()) if len(self.chunks) else 1.0
         self.viewport.set_axes_length(max(0.08 * extent, 1e-3))
+        self._above = {}
         self._reset_labels(len(self.cloud.xyz), cls, inst, fresh)
         if fresh:
             self.clear_ruler()

@@ -24,6 +24,7 @@ _INDOOR = {1: ("floor", FREE_ROLE), 2: ("wall", OBSTACLE), 3: ("ceiling", IGNORE
            9: ("noise", IGNORE)}
 _ROLE_HINTS = {FREE_ROLE: ("ground", "road", "floor", "parking", "sidewalk", "terrain", "lane"),
                IGNORE: ("noise", "outlier", "moving", "person", "cyclist", "unassigned")}
+_SOFT_HINTS = ("person", "people", "pedestrian", "cyclist", "rider", "animal", "human")
 PRESETS = ("indoor", "semantickitti", "las", "blank")
 
 
@@ -60,12 +61,14 @@ class ClassList:
             name, role = entry if isinstance(entry, tuple) else (entry, guess_role(entry))
             self.set(number, name, role=role)
 
-    def set(self, number, name, rgb=None, role=OBSTACLE, wins=False):
+    def set(self, number, name, rgb=None, role=OBSTACLE, wins=False, soft=None):
+        """soft: the class changes shape while it moves (people); None decides from the name."""
         number = int(number)
         if not 0 < number < 65536:
             raise ValueError("class numbers run from 1 to 65535")
         self.items[number] = {"name": str(name), "rgb": tuple(int(v) for v in (rgb or shade(number))),
-                              "role": role if role in ROLES else OBSTACLE, "wins": bool(wins)}
+                              "role": role if role in ROLES else OBSTACLE, "wins": bool(wins),
+                              "soft": any(hint in str(name).lower() for hint in _SOFT_HINTS) if soft is None else bool(soft)}
 
     def remove(self, number):
         self.items.pop(int(number), None)
@@ -108,6 +111,9 @@ class ClassList:
     def with_role(self, role):
         return [number for number in self.numbers() if self.items[number]["role"] == role]
 
+    def soft(self, number):
+        return self.items[number]["soft"] if number in self.items else False
+
     def dominant(self):
         """Classes that take a voxel as soon as one of their points is in it (for things a map must never miss)."""
         return [number for number in self.numbers() if self.items[number]["wins"]]
@@ -122,7 +128,8 @@ class ClassList:
             item = self.items[number]
             name = item["name"].replace("\\", "\\\\").replace('"', '\\"')
             lines.append(f'  - {{id: {number}, name: "{name}", color: [{", ".join(map(str, item["rgb"]))}], '
-                         f'role: {item["role"]}' + (", wins: true" if item["wins"] else "") + "}")
+                         f'role: {item["role"]}' + (", wins: true" if item["wins"] else "")
+                         + f', soft: {"true" if item["soft"] else "false"}' + "}")
         return "\n".join(lines) + "\n"
 
     @classmethod
@@ -130,15 +137,15 @@ class ClassList:
         """Read a class file written by dumps(), or the `labels:` / `color_map:` sections of a SemanticKITTI config."""
         out = cls()
         entry = re.compile(r'id:\s*(\d+).*?name:\s*"((?:[^"\\]|\\.)*)"(?:.*?color:\s*\[([^\]]*)\])?(?:.*?role:\s*(\w+))?'
-                           r'(?:.*?wins:\s*(\w+))?')
+                           r'(?:.*?wins:\s*(\w+))?(?:.*?soft:\s*(\w+))?')
         section, colours = None, {}
         for line in text.splitlines():
             found = entry.search(line)
             if found:
-                number, name, colour, role, wins = found.groups()
+                number, name, colour, role, wins, soft = found.groups()
                 rgb = [int(float(v)) for v in colour.split(",")] if colour else None
                 out.set(int(number), name.replace('\\"', '"').replace("\\\\", "\\"), rgb, role or OBSTACLE,
-                        wins == "true")
+                        wins == "true", None if soft is None else soft == "true")
                 continue
             head = re.match(r"^(\w+):\s*(#.*)?$", line)
             if head:

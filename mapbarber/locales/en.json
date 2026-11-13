@@ -402,8 +402,14 @@
  "track_reach": "Search around the box [m]",
  "track_accept": "Accept score",
  "track_reach_tip": "How far an object may have moved between two frames beyond its own speed.",
- "track_accept_tip": "Score = half box overlap (IoU) + half point alignment (ICP fitness). At or above this the labels are applied; below it they arrive as suggestions marked '?' to review; below 0.25 the track ends.",
- "track_tip": "Box the objects in the first frame (Box every object of …), set the frame range on the timeline, then track: each object is found in the next frame by box overlap, its points are aligned to it (ICP), and its class, object number and box are carried along with a score.",
+ "track_accept_tip": "Score = half box overlap (the box where it was expected against where its points put it) + half alignment (how much of what is seen the object's model explains). At or above this the labels are applied; below it they arrive as suggestions marked '?' to review; below 0.25 the track ends.",
+ "track_tip": "Box the objects in one frame (Box every object of …), set the frame range on the timeline, then track. Going forwards each object's points are gathered into one model, so the box grows to the whole object as the view changes; then every frame, earlier ones too, is fitted again against the finished model. One box size per object; classes marked as changing shape get a box per frame.",
  "track_none": "Nothing to track: the first frame on screen needs boxed objects, and later frames must be on screen (widen the timeline range).",
- "status_tracked": "Tracked {n} boxes  ·  {u} uncertain (review the '?')  ·  {l} lost"
+ "status_tracked": "Tracked {n} boxes  ·  {u} uncertain (review the '?')  ·  {l} lost",
+ "class_soft": "Changes shape while it moves",
+ "class_soft_tip": "For people and animals. When boxes are tracked, such an object gets a box fitted again in every frame; all other objects keep one box size while their points are gathered over the frames.",
+ "boxes_left": "{n} outside",
+ "boxes_select_left": "Select points left outside the boxes",
+ "boxes_take_left": "Give them to their objects",
+ "boxes_left_tip": "Unlabelled points that hang on to a boxed object (within the gap between objects) but were not taken, for instance where a new side came into view. Select them to look, or give them to their objects: the box widens to hold them, by the same amount in every frame on screen for an object that keeps its shape."
 }
