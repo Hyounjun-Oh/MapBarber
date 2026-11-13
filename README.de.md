@@ -40,6 +40,8 @@ Lieber pip? `pip install .` installiert einen Befehl `mapbarber`, der dasselbe t
 |---|---|---|
 | Voxelkarte | OctoMap `.bt` (binär), `.ot` (`OcTree`, `OcTreeStamped`, `ColorOcTree`), Voxel-`.npz` | Voxel-Editor |
 | Punktwolke | `.pcd` (ascii, binary, organisiert), `.ply` (ascii, binary), `.xyz` / `.txt` / `.csv` (optional mit RGB-Spalten), `.npy`, `.npz` | Punktwolken-Editor |
+| Punktwolke (weitere) | `.las` / `.laz` (nach `pip install "laspy[lazrs]"`), LiDAR-`.bin`-Scans (x y z intensity) | Punktwolken-Editor |
+| Frame-Sequenz | ein **Ordner** mit Scans und Posen: KITTI odometry (`velodyne/` + `poses.txt`), KITTI raw (`velodyne_points/` + `oxts/`) oder ein beliebiger Ordner mit `.pcd` / `.ply` / `.las` / `.bin` und einer Posendatei (TUM, 3×4- oder 4×4-Matrizen, CSV mit Kopfzeile) | Punktwolken-Editor im Beschriftungsmodus |
 | 2D-Belegungsraster | map_server-`.yaml` mit `.pgm` / `.png` / `.bmp` oder nur das Bild | Raster-Editor |
 
 Erkannt wird zuerst an der Dateiendung, dann an der Dateisignatur, daher öffnet sich auch eine Sicherung wie `map.bt.bak_20240101` als Octree. Wird nur ein `.pgm` geöffnet, wird die danebenliegende `.yaml` mitgelesen, wenn sie auf dieses Bild verweist. Beschädigte oder fremde Dateien werden mit einer kurzen Begründung abgelehnt.
@@ -66,6 +68,22 @@ Erkannt wird zuerst an der Dateiendung, dann an der Dateisignatur, daher öffnet
 - **Färben nach** Höhe, gespeicherter RGB-Farbe oder einem beliebigen Zahlenfeld wie `intensity` oder `ring`.
 - **Lineal** misst den tatsächlichen Abstand zwischen zwei gewählten Punkten.
 - Punkte werden nur entfernt, daher bleiben beim Speichern als PCD alle Felder jedes übrigen Punkts erhalten, als PLY alle skalaren Felder.
+
+## Beschriften
+
+Im Punktwolken- oder Voxel-Editor den **Beschriftungsmodus** in der Werkzeugleiste einschalten (`Strg+L`). Werkzeuge und Panel wechseln zum Beschriften; Ausschalten kehrt genau so zum Bearbeiten zurück, wie es war. Alles läuft offline auf der CPU, und die ursprünglichen Punkte werden nie verschoben oder verworfen.
+
+- **Klassen:** eine Liste mit Nummer, Name, Farbe und der Bedeutung in einer Karte (Hindernis, befahrbare Fläche, ignorieren). Vorlagen für Innenraum-Roboter, SemanticKITTI und LAS-Codes; `labels.yaml` laden oder speichern. Das Auge blendet eine Klasse aus, das Schloss friert sie ein; ein Klick auf Auge oder Schloss im Kopf gilt für alle Klassen.
+- **Beschriften:** mit einem beliebigen Werkzeug auswählen und `Enter` (*Label-Mapping*) oder `Strg+1`…`Strg+9` drücken, oder mit dem Beschriftungspinsel `B` malen. `Strg`+Ziehen malt bei fester Ansicht, `Strg`+Rechtsziehen nimmt zurück.
+- **Beschriftete Punkte schützen** (Schalter oben rechts in der Ansicht oder `P`): beschriftete Punkte bleiben außerhalb der Auswahl und behalten ihre Beschriftung, sodass eine weite Auswahl einer Wand oder des Bodens zuvor beschriftete Objekte überspringt.
+- **Smart-Auswahl `W`:** ein Klick findet ein *zusammenhängendes Objekt*, eine *ebene Fläche* oder eine *glatte Fläche*. Ein zusammenhängendes Objekt endet am Boden (Bodenabstand) und bei dichten Daten an breiten Flächen anderer Richtung; `[` / `]` lockern oder verengen die letzte Auswahl. Der **Bodenfilter** wählt den Boden oder alles, was darauf steht.
+- **Prüfen:** Fortschrittsbalken, *Nächstes Unbeschriftetes* (`N`), zweifelhafte Beschriftungen, kleine Inseln und *Lücken vorschlagen*; Vorschläge erscheinen blass, bis sie bestätigt sind.
+- **Objekte und 3D-Quader:** eine Klasse wählen und *Quader für jedes Objekt …* drücken: ihre Punkte werden in einzelne Objekte geteilt, und jedes erhält einen aufrechten Quader, der sich bearbeiten, neu anpassen oder löschen lässt. *Nur Klasse behalten* macht aus Instanzen wieder einfache Klassen.
+- **Frames:** einen Ordner mit Scans öffnen. Die Zeitleiste unter der Ansicht legt den ersten und letzten angezeigten Frame fest; die Frames werden nach ihren Posen zusammengeführt, während jede Beschriftung bei ihrem Frame bleibt. Beschriftungen lassen sich als Vorschläge auf andere Frames übertragen und Konflikte zwischen Frames auflisten.
+- **Verfolgen:** Objekte im ersten Frame mit Quadern versehen, den Frame-Bereich setzen und *Quader verfolgen*: jedes Objekt wird im nächsten Frame über die Quaderüberlappung (IoU) gefunden, seine Punkte werden ausgerichtet (ICP), und Klasse, Objektnummer und Quader wandern mit einem Wert mit. Niedrige Werte kommen als Vorschläge mit `?`.
+- **Voxel:** Wird eine Wolke zu Voxeln, erhält jedes Voxel die Klasse der meisten seiner Punkte. Zurück zu Punkten erhält jeder Punkt wieder seine eigene Beschriftung; nur umbeschriftete Voxel geben ihre Klasse weiter.
+- **Dateien:** Beschriftungen liegen in der Datei, wo das Format es erlaubt (Felder `label` / `instance` in PCD und PLY, `classification` in LAS), als `.label`-Dateien bei `.bin`-Sequenzen oder neben der Datei (`name.labels.npz`). *In Standardformaten exportieren* schreibt eine SemanticKITTI-Sequenz, KITTI-Objektlabels und OpenPCDet-Quader.
+- `Strg+Z` umfasst Beschriftungen, Klassen, Quader und Verfolgung. `Entf` löscht im Beschriftungsmodus nie Punkte: es entfernt Beschriftungen oder löscht den zuletzt angeklickten Quader bzw. das Objekt.
 
 ## Raster-Editor
 
@@ -129,6 +147,12 @@ Die Kürzel folgen verbreiteten Desktop-Konventionen: Photoshop, Figma und Power
 | `1` `3` `7` / `0` oder `Pos1` | Ansicht vorne, Seite, oben / isometrisch (auch Ziffernblock) |
 | `Strg+=` / `Strg+-` / `Strg+0` | vergrößern / verkleinern / an Fenster anpassen (2D) |
 | `F11` / `F1` | Vollbild / Bedienung des aktuellen Editors |
+| `Strg+L` | Beschriftungsmodus an / aus |
+| `B` / `W` (Beschriftungsmodus) | Beschriftungspinsel / Smart-Auswahl |
+| `Enter` / `Strg+1`…`Strg+9` / `Strg+0` oder `Entf` | Auswahl mit der aktiven Klasse / der n-ten Klasse beschriften / Beschriftung entfernen |
+| `P` / `N` / `Alt`+Klick | beschriftete Punkte schützen / nächster unbeschrifteter Bereich / Klasse unter dem Mauszeiger übernehmen |
+| `Strg`+Rechtsziehen | mit dem Pinsel zurücknehmen (abwählen oder Beschriftung entfernen), die Ansicht bleibt stehen |
+| `,` / `.` | vorheriger / nächster Frame einer Sequenz |
 
 ## Sprachen
 
@@ -149,20 +173,6 @@ MapBarber ist eine eigenständige Implementierung auf Grundlage der veröffentli
 - Octree-Dateien werden als *linearer Octree* gelesen und geschrieben. Belegte Zellen bilden ein sortiertes Array von Morton-Codes, sodass jeder Baumknoten ein zusammenhängender Abschnitt dieses Arrays ist und per Binärsuche gefunden wird. Ein Zeigerbaum wird nicht aufgebaut.
 - Bearbeitet wird auf einem sortierten Array gepackter Zellschlüssel mit Mengenoperationen; Rückgängig und Wiederholen arbeiten ebenso.
 - Zusammenhangskomponenten (Inseln, Sprenkel) und Nachbarschaftsabfragen nutzen SciPy, die Darstellung VTK-Glyphen in einem Qt-Fenster.
-
-## Entwicklung
-
-```bash
-python -m venv .venv && .venv/bin/pip install -e ".[dev]"
-.venv/bin/pytest                                   # Kerntests, kein Bildschirm nötig
-MAPBARBER_GUI_TESTS=1 .venv/bin/pytest            # zusätzlich End-to-End-Tests in einem echten Fenster
-.venv/bin/python tools/make_examples.py            # examples/ neu erzeugen
-.venv/bin/python tools/make_demo.py                # demo/ neu erzeugen (--large für Leistungsdateien)
-.venv/bin/python tools/record_demo.py docs         # Animationen neu aufnehmen (benötigt ffmpeg)
-.venv/bin/python tools/make_logo.py                # Symbol und Logos neu erzeugen
-```
-
-Mit `MAPBARBER_QT` = `PySide6`, `PySide2` oder `PyQt5` lässt sich die Qt-Anbindung wählen.
 
 ## Lizenz
 

@@ -397,5 +397,13 @@
  "export_pcdet_boxes": "3D-Quader: OpenPCDet-Layout (x y z dx dy dz heading class)",
  "status_exported": "{f} Frames und {b} Quader nach {folder} exportiert",
  "instance_gap": "Abstand zwischen Objekten [m]",
- "instance_gap_tip": "Punkte, die näher beieinander liegen, gehören zum selben Objekt. Dünne LiDAR-Scans brauchen mehr (0,5 m), dichte weniger."
+ "instance_gap_tip": "Punkte, die näher beieinander liegen, gehören zum selben Objekt. Dünne LiDAR-Scans brauchen mehr (0,5 m), dichte weniger.",
+ "track": "Quader durch die angezeigten Frames verfolgen",
+ "track_reach": "Suche um den Quader [m]",
+ "track_accept": "Annahmewert",
+ "track_reach_tip": "Wie weit sich ein Objekt zwischen zwei Frames über seine eigene Geschwindigkeit hinaus bewegt haben kann.",
+ "track_accept_tip": "Wert = halb Quaderüberlappung (IoU) + halb Punktausrichtung (ICP-Fitness). Ab diesem Wert wird die Beschriftung angewendet; darunter kommt sie als Vorschlag mit „?“ zur Prüfung; unter 0,25 endet die Spur.",
+ "track_tip": "Objekte im ersten Frame mit Quadern versehen (Quader für jedes Objekt …), den Frame-Bereich auf der Zeitleiste setzen, dann verfolgen: jedes Objekt wird im nächsten Frame über die Quaderüberlappung gefunden, seine Punkte werden ausgerichtet (ICP), und Klasse, Objektnummer und Quader wandern mit einem Wert mit.",
+ "track_none": "Nichts zu verfolgen: der erste angezeigte Frame braucht Objekte mit Quadern, und spätere Frames müssen angezeigt sein (Bereich der Zeitleiste erweitern).",
+ "status_tracked": "{n} Quader verfolgt  ·  {u} unsicher („?“ prüfen)  ·  {l} verloren"
 }

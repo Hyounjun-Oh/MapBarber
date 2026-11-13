@@ -545,6 +545,7 @@ class VoxelEditor(VoxelLabelling, Editor):
         """
         if self._closed:
             return
+        self.viewport.fit_axes()
         chunks = [chunk for chunk in self.map.chunks if self._clip.get(chunk, IN) != OUT]
         wanted = self._levels(chunks)
         pending, finer = [], []

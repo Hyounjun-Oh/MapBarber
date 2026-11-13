@@ -40,6 +40,8 @@ Prefer pip? `pip install .` installs a `mapbarber` command that does the same th
 |---|---|---|
 | Voxel map | OctoMap `.bt` (binary), `.ot` (`OcTree`, `OcTreeStamped`, `ColorOcTree`), `.npz` voxel archives | voxel editor |
 | Point cloud | `.pcd` (ascii, binary, organized), `.ply` (ascii, binary), `.xyz` / `.txt` / `.csv` (optional RGB columns), `.npy`, `.npz` | point cloud editor |
+| Point cloud (more) | `.las` / `.laz` (after `pip install "laspy[lazrs]"`), LiDAR `.bin` scans (x y z intensity) | point cloud editor |
+| Frame sequence | a **folder** of scans with poses: KITTI odometry (`velodyne/` + `poses.txt`), KITTI raw (`velodyne_points/` + `oxts/`), or any folder of `.pcd` / `.ply` / `.las` / `.bin` with a pose file (TUM, 3×4 or 4×4 matrices, or CSV with a header) | point cloud editor in labelling mode |
 | 2D occupancy grid | map_server `.yaml` with `.pgm` / `.png` / `.bmp`, or the bare image | grid editor |
 
 Detection looks at the extension first and the file signature second, so a backup such as `map.bt.bak_20240101` still opens as an octree. Opening a bare `.pgm` picks up the `.yaml` next to it when that YAML points at the image. Damaged or unrelated files are refused with a short reason.
@@ -70,6 +72,22 @@ Detection looks at the extension first and the file signature second, so a backu
 - **Ruler** measures the real distance between two picked points.
 - Points are only ever removed, so saving to PCD keeps every field of every surviving point, and PLY every scalar field.
 - **Large clouds:** the cloud is split into spatial chunks; distant chunks are thinned on screen and edits redraw only the chunks they touch, so 30 million points stay interactive.
+
+## Labelling
+
+Press **Labelling mode** in the toolbar (`Ctrl+L`) in the point cloud or voxel editor. The tools and the panel change to labelling; switching it off returns to editing exactly as it was. Everything runs offline on the CPU, and the original points are never moved or dropped.
+
+- **Classes:** a list with number, name, colour and what the class means in a map (obstacle, free surface, ignore). Presets for indoor robots, SemanticKITTI and LAS codes; load or save `labels.yaml`. The eye hides a class and the lock freezes it; click the eye or lock in the header to switch it for every class.
+- **Label:** select with any tool and press `Enter` (*Label mapping*) or `Ctrl+1`…`Ctrl+9`, or paint with the label brush `B`. `Ctrl`+drag paints with the view fixed, `Ctrl`+right drag takes back.
+- **Protect labelled points** (the switch in the top-right corner of the view, or `P`): labelled points stay out of selections and keep their label, so a wide selection of a wall or floor skips the objects you labelled before.
+- **Smart pick `W`:** click to find a *connected object*, a *flat surface* or a *smooth surface*. A connected object stops at the ground (clearance) and, on dense data, at wide surfaces that face another way; `[` / `]` loosen or tighten the last pick. The **Ground filter** selects the ground or everything standing on it.
+- **Review:** progress bar, *Next unlabelled* (`N`), doubtful labels, small islands, and *Suggest for the gaps*; suggestions are shown pale until confirmed.
+- **Objects and 3D boxes:** pick a class and press *Box every object of …*: its points are split into separate objects and each gets an upright box you can edit, refit or delete. *Back to class only* turns instances back into plain classes.
+- **Frames:** open a folder of scans. The timeline under the view sets the first and last frame shown; the frames are merged by their poses while every label stays with its own frame. Labels can be carried to other frames as suggestions, and conflicts between frames can be listed.
+- **Tracking:** box the objects in the first frame, set the frame range, and *Track boxes*: each object is found in the next frame by box overlap (IoU), its points are aligned (ICP), and class, object number and box are carried on with a score. Low scores arrive as suggestions marked `?`.
+- **Voxels:** a cloud turned into voxels gives each voxel the class most of its points carry. Turning the map back gives every point its own label again; only voxels you relabelled pass their class on.
+- **Files:** labels are stored in the file where the format allows (`label` / `instance` fields in PCD and PLY, `classification` in LAS), as `.label` files for `.bin` sequences, or beside the file (`name.labels.npz`). *Export in standard formats* writes a SemanticKITTI sequence, KITTI object labels and OpenPCDet boxes.
+- `Ctrl+Z` covers labels, classes, boxes and tracking. `Delete` never removes points in labelling mode: it clears labels, or deletes the box or object clicked last.
 
 ## 2D occupancy grid editor
 
@@ -133,6 +151,12 @@ Shortcuts follow common desktop conventions (Photoshop, Figma and PowerPoint for
 | `1` `3` `7` / `0` or `Home` | front, side, top / isometric view (numpad too) |
 | `Ctrl+=` / `Ctrl+-` / `Ctrl+0` | zoom in / zoom out / fit (2D) |
 | `F11` / `F1` | full screen / controls for the current editor |
+| `Ctrl+L` | labelling mode on / off |
+| `B` / `W` (labelling mode) | label brush / smart pick |
+| `Enter` / `Ctrl+1`…`Ctrl+9` / `Ctrl+0` or `Delete` | label the selection with the active class / the n-th class / clear the label |
+| `P` / `N` / `Alt`+click | protect labelled points / next unlabelled patch / take the class under the cursor |
+| `Ctrl`+right drag | take back with the brush (deselect or clear labels) while the view stays still |
+| `,` / `.` | previous / next frame of a sequence |
 
 ## Languages
 
@@ -156,20 +180,6 @@ MapBarber is an independent implementation written from the published file layou
 - Octree files are read and written as a *linear octree*. Occupied cells form a sorted array of Morton codes, so every tree node is a contiguous slice of that array, found by binary search. No pointer tree is built.
 - Editing works on a sorted array of packed cell keys, with set operations for undo and redo.
 - Connected components (islands, speckles) and neighbour queries use SciPy. Rendering uses VTK glyphs inside a Qt window.
-
-## Development
-
-```bash
-python -m venv .venv && .venv/bin/pip install -e ".[dev]"
-.venv/bin/pytest                                   # core tests, no display needed
-MAPBARBER_GUI_TESTS=1 .venv/bin/pytest            # plus end-to-end tests in a real window
-.venv/bin/python tools/make_examples.py            # regenerate examples/
-.venv/bin/python tools/make_demo.py                # regenerate demo/ (add --large for performance files)
-.venv/bin/python tools/record_demo.py docs         # re-record the animations (needs ffmpeg)
-.venv/bin/python tools/make_logo.py                # regenerate the icon and logos
-```
-
-Set `MAPBARBER_QT` to `PySide6`, `PySide2` or `PyQt5` to choose a Qt binding.
 
 ## License
 

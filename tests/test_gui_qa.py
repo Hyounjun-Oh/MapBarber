@@ -568,3 +568,91 @@ def test_wheel_reaches_inner_lists_only_after_a_click(session):
         box.verticalScrollBar().setValue(0)
         wheel(box)
         assert box.verticalScrollBar().value() == 0, f"{name}: still scrolls after the pointer left"
+
+
+def test_tracking_session(session):
+    from mapbarber import formats
+    folder = session.folder / "moving"
+    (folder / "velodyne").mkdir(parents=True)
+    rng = np.random.default_rng(5)
+    road = np.column_stack([rng.uniform(-10, 40, 6000), rng.uniform(-6, 6, 6000), np.zeros(6000)])
+
+    def body(centre, count=700):
+        side = rng.integers(0, 3, count)
+        local = rng.uniform([-2, -0.9, -0.7], [2, 0.9, 0.7], (count, 3))
+        for axis, half in enumerate((2.0, 0.9, 0.7)):
+            local[side == axis, axis] = half * rng.choice([-1, 1], int((side == axis).sum()))
+        return local + centre
+
+    shape, parked = body([0, 0, 0]), body([20.0, -3.5, 0.95])
+    count = len(road) + len(shape) + len(parked)
+    for index in range(6):
+        mover = shape + [5.0 + 1.2 * index, 2.5, 0.95]
+        scan = np.vstack([road, mover, parked]) - [0.5 * index, 0, 0]
+        np.column_stack([scan, np.zeros(count)]).astype("<f4").tofile(str(folder / "velodyne" / f"{index:06d}.bin"))
+    (folder / "poses.txt").write_text("".join(f"1 0 0 {0.5 * i} 0 1 0 0 0 0 1 0\n" for i in range(6)))
+    assert session.window.open(str(folder))
+    session.pump(0.3)
+    editor = session.editor
+    session.step("open", undoable=False)
+    mover_ids, parked_ids = np.arange(6000, 6700), np.arange(6700, 7400)
+    editor.select(np.concatenate([mover_ids, parked_ids]), "replace")
+    editor.set_active(10)
+    session.step("label both cars in frame 0", lambda: session.trigger("Return"))
+    session.step("box them", lambda: editor.class_boxes.click())
+    assert len(editor.box_store[0]) == 2
+    numbers = {int(editor.labels.inst[mover_ids[0]]): "mover", int(editor.labels.inst[parked_ids[0]]): "parked"}
+    assert len(numbers) == 2
+
+    session.step("track with one frame on screen", lambda: editor.track_boxes(), undoable=False)
+    session.step("frames 0 to 5", lambda: editor.timeline.slider.on_range(0, 5), undoable=False)
+    session.step("track", lambda: editor.track_boxes())
+    for index in range(1, 6):
+        found = {box["instance"]: box for box in editor.box_store[index]}
+        assert set(found) == set(numbers), f"frame {index}: tracks {set(found)}"
+        for number, name in numbers.items():
+            box = found[number]
+            truth = [5.0 + 1.2 * index - 0.5 * index, 2.5] if name == "mover" else [20.0 - 0.5 * index, -3.5]
+            assert np.allclose(box["center"][:2], truth, atol=0.15), (index, name, box["center"])
+            assert box["class"] == 10 and box["score"] > 0.6 and np.allclose(box["size"], editor.box_store[0][0]["size"], atol=1.0)
+        start = int(editor.frame_starts[index])
+        cls, inst = editor.labels.cls[start:start + count], editor.labels.inst[start:start + count]
+        assert (cls[6000:] == 10).mean() > 0.97 and not cls[:6000].any(), f"frame {index}: wrong points labelled"
+        assert (inst[6000:6700] == editor.labels.inst[mover_ids[0]]).mean() > 0.97, "the object keeps its number"
+        assert (inst[6700:] == editor.labels.inst[parked_ids[0]]).mean() > 0.97
+    assert editor.box_list.topLevelItemCount() == 12 and not editor.labels.pending.any()
+    final = session.snapshot()
+    session.walk_history()
+    assert session.same(final, session.snapshot()) is None
+
+    assert session.window.save() and not editor.dirty
+    stored = json.load(open(folder / "boxes" / "000004.json"))["boxes"]
+    assert len(stored) == 2 and all("score" in box for box in stored)
+    packed = np.fromfile(str(folder / "labels" / "000004.label"), "<u4")
+    assert (packed[6000:6700] >> 16 == editor.labels.inst[mover_ids[0]]).mean() > 0.97
+    assert formats.read_label_file(str(folder / "labels" / "000004.label"), count)[0][6000:].mean() > 9.7
+
+
+def test_axes_and_markers_keep_their_size_on_screen(session):
+    """Outdoor scans reach far out (and hold stray points); nothing drawn as a helper may scale with that extent."""
+    from mapbarber.formats import CLOUD
+    rng = np.random.default_rng(8)
+    near = rng.uniform([-20, -20, -2], [20, 20, 2], (20000, 3))
+    stray = rng.uniform(-400, 400, (40, 3))
+    editor = session.window.show_document(CLOUD, (np.vstack([near, stray]), None))
+    session.pump(0.4)
+
+    def on_screen(length):
+        return length / editor.viewport.pixel_size()
+
+    for zoom in (1.0, 6.0, 0.2):
+        editor.viewport.zoom(zoom)
+        session.pump(0.2)
+        editor.update_levels()
+        axes = editor.viewport.axes.GetTotalLength()[0]
+        assert 40 <= on_screen(axes) <= 110, f"axes are {on_screen(axes):.0f} px long"
+        assert 2 <= on_screen(editor._marker_size()) <= 6
+    session.trigger("I")
+    session.click(tuple(near[0]))
+    assert 4 <= on_screen(editor.hover_source.GetRadius()) <= 16, "the measure marker must stay a few pixels wide"
+    assert 2 <= on_screen(editor.ruler.marker_size) <= 6

@@ -40,6 +40,8 @@ La primera ejecución crea un entorno virtual propio en `.venv/` e instala NumPy
 |---|---|---|
 | Mapa de vóxeles | OctoMap `.bt` (binario), `.ot` (`OcTree`, `OcTreeStamped`, `ColorOcTree`), archivos `.npz` de vóxeles | editor de vóxeles |
 | Nube de puntos | `.pcd` (ascii, binary, organizada), `.ply` (ascii, binary), `.xyz` / `.txt` / `.csv` (columnas RGB opcionales), `.npy`, `.npz` | editor de nubes de puntos |
+| Nube de puntos (más) | `.las` / `.laz` (tras `pip install "laspy[lazrs]"`), barridos LiDAR `.bin` (x y z intensity) | editor de nubes de puntos |
+| Secuencia de fotogramas | una **carpeta** de barridos con poses: KITTI odometry (`velodyne/` + `poses.txt`), KITTI raw (`velodyne_points/` + `oxts/`) o cualquier carpeta de `.pcd` / `.ply` / `.las` / `.bin` con un archivo de poses (TUM, matrices 3×4 o 4×4, o CSV con cabecera) | editor de nubes de puntos en modo de etiquetado |
 | Rejilla de ocupación 2D | `.yaml` de map_server con `.pgm` / `.png` / `.bmp`, o solo la imagen | editor de rejillas |
 
 La detección mira primero la extensión y después la firma del archivo, así que una copia como `map.bt.bak_20240101` también se abre como octree. Al abrir solo un `.pgm` se lee también el `.yaml` contiguo si apunta a esa imagen. Los archivos dañados o ajenos se rechazan con una breve explicación.
@@ -66,6 +68,22 @@ La detección mira primero la extensión y después la firma del archivo, así q
 - **Colorear por** altura, RGB guardado o cualquier campo numérico como `intensity` o `ring`.
 - **Regla** mide la distancia real entre dos puntos elegidos.
 - Los puntos solo se eliminan, así que al guardar en PCD se conservan todos los campos de cada punto restante, y en PLY todos los campos escalares.
+
+## Etiquetado
+
+Activa el **Modo de etiquetado** en la barra de herramientas (`Ctrl+L`) en el editor de nubes de puntos o de vóxeles. Las herramientas y el panel cambian al etiquetado; al desactivarlo vuelves a la edición tal como estaba. Todo funciona sin conexión en la CPU, y los puntos originales nunca se mueven ni se descartan.
+
+- **Clases:** una lista con número, nombre, color y lo que la clase significa en un mapa (obstáculo, superficie transitable, ignorar). Hay preajustes para robots de interior, SemanticKITTI y códigos LAS; carga o guarda `labels.yaml`. El ojo oculta una clase y el candado la bloquea; un clic en el ojo o el candado de la cabecera se aplica a todas las clases.
+- **Etiquetar:** selecciona con cualquier herramienta y pulsa `Enter` (*Mapeo de etiquetas*) o `Ctrl+1`…`Ctrl+9`, o pinta con el pincel de etiqueta `B`. `Ctrl`+arrastrar pinta con la vista fija, `Ctrl`+arrastrar con el botón derecho deshace.
+- **Proteger puntos etiquetados** (el interruptor de la esquina superior derecha de la vista, o `P`): los puntos ya etiquetados quedan fuera de la selección y conservan su etiqueta, así una selección amplia de una pared o del suelo salta los objetos etiquetados antes.
+- **Selección inteligente `W`:** un clic encuentra un *objeto conectado*, una *superficie plana* o una *superficie suave*. Un objeto conectado se detiene en el suelo (separación) y, con datos densos, en superficies amplias con otra orientación; `[` / `]` aflojan o ajustan la última selección. El **filtro de suelo** selecciona el suelo o todo lo que hay encima.
+- **Revisión:** barra de progreso, *Siguiente sin etiqueta* (`N`), etiquetas dudosas, islas pequeñas y *Sugerir para los huecos*; las sugerencias se muestran pálidas hasta confirmarlas.
+- **Objetos y cajas 3D:** elige una clase y pulsa *Caja para cada objeto de …*: sus puntos se dividen en objetos separados y cada uno recibe una caja vertical que puedes editar, reajustar o borrar. *Dejar solo la clase* convierte las instancias de nuevo en clases simples.
+- **Fotogramas:** abre una carpeta de barridos. La línea de tiempo bajo la vista fija el primer y el último fotograma mostrados; los fotogramas se combinan según sus poses mientras cada etiqueta permanece en su fotograma. Las etiquetas pueden llevarse a otros fotogramas como sugerencias y pueden listarse los conflictos entre fotogramas.
+- **Seguimiento:** pon cajas a los objetos del primer fotograma, fija el rango y pulsa *Seguir las cajas*: cada objeto se busca en el fotograma siguiente por solapamiento de cajas (IoU), sus puntos se alinean (ICP) y su clase, número de objeto y caja continúan con una puntuación. Las puntuaciones bajas llegan como sugerencias marcadas con `?`.
+- **Vóxeles:** al convertir una nube en vóxeles, cada vóxel toma la clase de la mayoría de sus puntos. Al volver a puntos, cada punto recupera su propia etiqueta; solo los vóxeles que reetiquetaste transmiten su clase.
+- **Archivos:** las etiquetas se guardan dentro del archivo cuando el formato lo permite (campos `label` / `instance` en PCD y PLY, `classification` en LAS), como archivos `.label` para secuencias `.bin`, o junto al archivo (`name.labels.npz`). *Exportar en formatos estándar* escribe una secuencia SemanticKITTI, etiquetas de objetos KITTI y cajas OpenPCDet.
+- `Ctrl+Z` abarca etiquetas, clases, cajas y seguimiento. `Supr` nunca borra puntos en modo de etiquetado: quita etiquetas o borra la caja u objeto en que se hizo clic por último.
 
 ## Editor de rejillas de ocupación 2D
 
@@ -129,6 +147,12 @@ Los atajos siguen las convenciones habituales de escritorio: Photoshop, Figma y 
 | `1` `3` `7` / `0` o `Inicio` | vista frontal, lateral, superior / isométrica (también teclado numérico) |
 | `Ctrl+=` / `Ctrl+-` / `Ctrl+0` | acercar / alejar / ajustar a la ventana (2D) |
 | `F11` / `F1` | pantalla completa / controles del editor actual |
+| `Ctrl+L` | activar / desactivar el modo de etiquetado |
+| `B` / `W` (modo de etiquetado) | pincel de etiqueta / selección inteligente |
+| `Enter` / `Ctrl+1`…`Ctrl+9` / `Ctrl+0` o `Supr` | etiquetar la selección con la clase activa / la clase n / quitar la etiqueta |
+| `P` / `N` / `Alt`+clic | proteger puntos etiquetados / siguiente zona sin etiqueta / tomar la clase bajo el cursor |
+| `Ctrl`+arrastrar con el botón derecho | deshacer con el pincel (deseleccionar o quitar etiquetas) con la vista fija |
+| `,` / `.` | fotograma anterior / siguiente de una secuencia |
 
 ## Idiomas
 
@@ -149,20 +173,6 @@ MapBarber es una implementación independiente escrita a partir de los formatos 
 - Los archivos octree se leen y escriben como un *octree lineal*. Las celdas ocupadas forman un array ordenado de códigos Morton, de modo que cada nodo del árbol es un tramo contiguo de ese array y se localiza por búsqueda binaria. No se construye ningún árbol de punteros.
 - La edición trabaja sobre un array ordenado de claves de celda empaquetadas mediante operaciones de conjuntos; deshacer y rehacer funcionan igual.
 - Las componentes conexas (islas, motas) y las consultas de vecinos usan SciPy; la visualización usa glifos de VTK dentro de una ventana Qt.
-
-## Desarrollo
-
-```bash
-python -m venv .venv && .venv/bin/pip install -e ".[dev]"
-.venv/bin/pytest                                   # pruebas principales, sin pantalla
-MAPBARBER_GUI_TESTS=1 .venv/bin/pytest            # además, pruebas de extremo a extremo en una ventana real
-.venv/bin/python tools/make_examples.py            # regenerar examples/
-.venv/bin/python tools/make_demo.py                # regenerar demo/ (--large para archivos de rendimiento)
-.venv/bin/python tools/record_demo.py docs         # volver a grabar las animaciones (requiere ffmpeg)
-.venv/bin/python tools/make_logo.py                # regenerar el icono y los logotipos
-```
-
-Define `MAPBARBER_QT` como `PySide6`, `PySide2` o `PyQt5` para elegir el enlace de Qt.
 
 ## Licencia
 

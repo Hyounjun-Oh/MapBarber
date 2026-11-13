@@ -7,7 +7,7 @@ import os
 import numpy as np
 
 from . import boxes as box_labels
-from . import export, formats, labels
+from . import export, formats, labels, tracking
 from .labels import ClassList, LabelLayer, UNLABELED
 from .qt import QtCore, QtGui, QtWidgets, run
 from .voxels import pack
@@ -16,7 +16,8 @@ from .widgets import (add_button, ask_numbers, button, danger_button, int_spin, 
 
 Qt = QtCore.Qt
 FRAME_POINT_LIMIT = 40_000_000
-LABEL_DEFAULTS = {"object_gap": 0.2, "min_points": 20, "show_boxes": True, "clearance": 0.15, "stop_bends": True, "rule": "unlabeled", "rule_class": 1, "smart": "object", "reach": 5.0, "flatness": 0.03, "bend": 30.0, "gap": 0.10,
+LOST_SCORE = 0.25
+LABEL_DEFAULTS = {"track_reach": 1.5, "track_accept": 0.6, "object_gap": 0.2, "min_points": 20, "show_boxes": True, "clearance": 0.15, "stop_bends": True, "rule": "unlabeled", "rule_class": 1, "smart": "object", "reach": 5.0, "flatness": 0.03, "bend": 30.0, "gap": 0.10,
                   "at_once": False, "own_instance": False, "fill_radius": 0.15, "island": 20, "frame_radius": 0.10,
                   "paint_frame": -1}
 SMART_MODES = ("object", "plane", "surface")
@@ -109,6 +110,7 @@ class Labelling(ClassHistory):
     def _init_labels(self):
         self.label_mode = False
         self._edit_tool = "view"
+        self._wrote_recovery = False
         self._delete_target = None
         self._colour_before = None
         self.labels = LabelLayer(0)
@@ -393,13 +395,16 @@ class Labelling(ClassHistory):
             with open(path + ".part", "wb") as f:
                 np.savez_compressed(f, **arrays)
             os.replace(path + ".part", path)
+            self._wrote_recovery = True
         except OSError:
             pass
 
-    def clear_recovery(self):
+    def clear_recovery(self, only_own=False):
+        """Remove the recovery copy; on closing, only the one this window wrote (another window may own it)."""
         path = self._recovery_path()
-        if path and os.path.isfile(path):
+        if path and os.path.isfile(path) and (self._wrote_recovery or not only_own):
             os.remove(path)
+        self._wrote_recovery = False
 
     def offer_recovery(self):
         """After opening: bring back labels a previous session did not get to save."""
@@ -1025,6 +1030,75 @@ class Labelling(ClassHistory):
         self._boxes_changed()
         self.status(self.tr("status_class_boxes", name=self.classes.name(chosen), n=made), 10000)
 
+    def track_boxes(self):
+        """Follow the boxed objects of the first frame on screen that has any through the later frames on screen.
+
+        Frame by frame, each object is looked for near where it was (step 1: box overlap), its points are fitted
+        onto what is found there (step 2: alignment), and both give a score. Above the accept score the points
+        take the object's class and number at once; below it they arrive as suggestions to review; a very low
+        score ends the track. The box keeps its size and is stored for every frame it was followed into.
+        """
+        if self.sequence is None or self.sequence.poses is None:
+            return self.status(self.tr("frames_need_poses"), 8000)
+        frames = list(self.frame_ids)
+        start = next((key for key in frames if any(box.get("instance") for box in self._boxes_of(key))), None)
+        if start is None or start == frames[-1]:
+            return self.status(self.tr("track_none"), 10000)
+        reach, gap, accept = self.track_reach.value(), self.object_gap.value(), self.track_accept.value()
+        least = max(3, self.min_points.value() // 4)
+        tolerance = self.ground_height.value()
+        ground = {"cell": self.ground_cell.value(), "slope": self.ground_slope.value(), "tolerance": tolerance}
+        cls, inst, pending = self.labels.cls, self.labels.inst, self.labels.pending
+        origin = self._key_ids(start)
+        previous = {}
+        for box in self._boxes_of(start):
+            members = origin[inst[origin] == box.get("instance", 0)] if box.get("instance") else EMPTY
+            if len(members) >= 3:
+                previous[box["instance"]] = (self._box_world(start, box), self.cloud.xyz[members], None)
+        if not previous:
+            return self.status(self.tr("track_none"), 10000)
+        QtWidgets.QApplication.setOverrideCursor(Qt.WaitCursor)
+        depth, label_depth = len(self._order), self.labels.undo_depth()
+        self._remember_boxes()
+        followed = unsure = lost = 0
+        try:
+            for key in frames[frames.index(start) + 1:]:
+                ids = self._key_ids(key)
+                height = labels.height_above_ground(self._local(key, ids), **ground)
+                above = ids[np.isfinite(height) & (height > tolerance)]
+                kept = [box for box in self._boxes_of(key) if box.get("instance") not in previous]
+                current = {}
+                for number, (box, points, shift) in previous.items():
+                    free = above[(cls[above] == UNLABELED) | pending[above] | (inst[above] == number)]
+                    found = tracking.follow(box, points, self.cloud.xyz[free], reach, gap, least, shift=shift)
+                    if found is None or found["score"] < LOST_SCORE:
+                        lost += 1
+                        continue
+                    members = free[found["members"]]
+                    sure = found["score"] >= accept
+                    self.labels.assign(members, box["class"], number, pending=not sure)
+                    stored = box_labels.moved(found["box"], np.linalg.inv(self._pose(key)))
+                    stored.update(points=int(len(members)), score=round(found["score"], 3))
+                    kept.append(stored)
+                    current[number] = (found["box"], self.cloud.xyz[members], found["shift"])
+                    followed += 1
+                    unsure += not sure
+                self.box_store[key] = kept
+                previous = current
+                if not previous:
+                    break
+        finally:
+            QtWidgets.QApplication.restoreOverrideCursor()
+        if self.labels.undo_depth() > label_depth:
+            self.labels.squash(label_depth)
+            self._record_step("label")
+            self.labels.touched = np.flatnonzero(self.cloud.alive)
+            self._after_labels()
+        self._group_since(depth)
+        self._fill_instances()
+        self._boxes_changed()
+        self.status(self.tr("status_tracked", n=followed, u=unsure, l=lost), 12000)
+
     def label_box_from_selection(self):
         """One box around the selected points of each frame, with their main class and instance."""
         if not self.selected.any():
@@ -1100,6 +1174,8 @@ class Labelling(ClassHistory):
         for key in self._box_keys():
             for index, box in enumerate(self._boxes_of(key)):
                 size = "×".join(f"{v:.2f}" for v in box["size"])
+                if "score" in box:
+                    size += f"  ·  {box['score']:.2f}" + ("  ?" if box["score"] < self.track_accept.value() else "")
                 frame = "" if key is None else f"{self.sequence.names[key]}  "
                 item = QtWidgets.QTreeWidgetItem([f"{frame}{self.classes.name(box['class'])}", str(box.get("instance", 0)), size])
                 item.setData(0, Qt.UserRole, (key, index))
@@ -1498,7 +1574,7 @@ class Labelling(ClassHistory):
         self.timeline.show()
 
     def _show_pose_source(self):
-        if self.label_panel and self.sequence is not None:
+        if self.sequence is not None and hasattr(self, "pose_label"):
             source = self.sequence.pose_source
             self.pose_label.setText(self.tr("frames_poses", source=source or self.tr("frames_poses_none")))
 
@@ -1780,6 +1856,14 @@ class Labelling(ClassHistory):
         form.addRow(row)
         form.addRow(select_button(t("boxes_select_points"), self.select_in_box))
         form.addRow(button(t("boxes_export"), self.export_boxes))
+        self.track_reach = spin(0.1, 50.0, values["track_reach"], 0.1)
+        self.track_reach.setToolTip(t("track_reach_tip"))
+        self.track_accept = spin(0.0, 1.0, values["track_accept"], 0.05, decimals=2)
+        self.track_accept.setToolTip(t("track_accept_tip"))
+        if self.sequence is not None:
+            form.addRow(t("track_reach"), self.track_reach)
+            form.addRow(t("track_accept"), self.track_accept)
+            form.addRow(add_button(t("track"), self.track_boxes, t("track_tip")))
         group.add_to(layout)
         self._fill_classes()
         self._fill_instances()
@@ -1787,7 +1871,8 @@ class Labelling(ClassHistory):
         self._draw_boxes()
 
     def label_panel_values(self):
-        return {"object_gap": self.object_gap.value(), "min_points": self.min_points.value(), "show_boxes": self.show_boxes.isChecked(),
+        return {"track_reach": self.track_reach.value(), "track_accept": self.track_accept.value(),
+                "object_gap": self.object_gap.value(), "min_points": self.min_points.value(), "show_boxes": self.show_boxes.isChecked(),
                 "clearance": self.clearance.value(), "stop_bends": self.stop_bends.isChecked(), "rule": self.rule_box.currentData(), "rule_class": self.rule_class.currentData(), "smart": self.smart_box.currentData(), "reach": self.reach.value(),
                 "flatness": self.flatness.value(), "bend": self.bend.value(), "gap": self.gap.value(),
                 "at_once": self.at_once.isChecked(), "own_instance": self.own_instance.isChecked(),

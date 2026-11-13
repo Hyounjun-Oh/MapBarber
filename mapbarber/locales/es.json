@@ -397,5 +397,13 @@
  "export_pcdet_boxes": "Cajas 3D: formato OpenPCDet (x y z dx dy dz heading class)",
  "status_exported": "{f} fotogramas y {b} cajas exportados a {folder}",
  "instance_gap": "Separación entre objetos [m]",
- "instance_gap_tip": "Los puntos más cercanos que esto pertenecen al mismo objeto. Los barridos LiDAR dispersos necesitan más (0,5 m); los densos, menos."
+ "instance_gap_tip": "Los puntos más cercanos que esto pertenecen al mismo objeto. Los barridos LiDAR dispersos necesitan más (0,5 m); los densos, menos.",
+ "track": "Seguir las cajas por los fotogramas en pantalla",
+ "track_reach": "Búsqueda alrededor de la caja [m]",
+ "track_accept": "Puntuación de aceptación",
+ "track_reach_tip": "Cuánto puede haberse movido un objeto entre dos fotogramas más allá de su propia velocidad.",
+ "track_accept_tip": "Puntuación = mitad solapamiento de cajas (IoU) + mitad alineación de puntos (ajuste ICP). Con este valor o más se aplican las etiquetas; por debajo llegan como sugerencias marcadas con «?» para revisar; por debajo de 0,25 termina el seguimiento.",
+ "track_tip": "Pon cajas a los objetos del primer fotograma (Caja para cada objeto de …), fija el rango en la línea de tiempo y sigue: cada objeto se busca en el fotograma siguiente por solapamiento de cajas, sus puntos se alinean (ICP) y su clase, número de objeto y caja continúan con una puntuación.",
+ "track_none": "Nada que seguir: el primer fotograma en pantalla necesita objetos con caja y los siguientes deben estar en pantalla (amplía el rango de la línea de tiempo).",
+ "status_tracked": "{n} cajas seguidas  ·  {u} dudosas (revisa las «?»)  ·  {l} perdidas"
 }

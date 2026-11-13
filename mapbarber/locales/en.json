@@ -397,5 +397,13 @@
  "export_pcdet_boxes": "3D boxes: OpenPCDet layout",
  "status_exported": "Exported {f} frames and {b} boxes to {folder}",
  "instance_gap": "Gap between objects [m]",
- "instance_gap_tip": "Points closer than this belong to the same object. Sparse LiDAR scans need more (0.5 m), dense scans less."
+ "instance_gap_tip": "Points closer than this belong to the same object. Sparse LiDAR scans need more (0.5 m), dense scans less.",
+ "track": "Track boxes through the frames on screen",
+ "track_reach": "Search around the box [m]",
+ "track_accept": "Accept score",
+ "track_reach_tip": "How far an object may have moved between two frames beyond its own speed.",
+ "track_accept_tip": "Score = half box overlap (IoU) + half point alignment (ICP fitness). At or above this the labels are applied; below it they arrive as suggestions marked '?' to review; below 0.25 the track ends.",
+ "track_tip": "Box the objects in the first frame (Box every object of …), set the frame range on the timeline, then track: each object is found in the next frame by box overlap, its points are aligned to it (ICP), and its class, object number and box are carried along with a score.",
+ "track_none": "Nothing to track: the first frame on screen needs boxed objects, and later frames must be on screen (widen the timeline range).",
+ "status_tracked": "Tracked {n} boxes  ·  {u} uncertain (review the '?')  ·  {l} lost"
 }

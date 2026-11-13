@@ -532,7 +532,7 @@ class CloudEditor(Labelling, Editor):
     def shutdown(self):
         self._closed = True
         self._pending = []
-        self.clear_recovery()
+        self.clear_recovery(only_own=True)
         for timer in (self._refresh_timer, self._level_timer, self._slice_timer, self._stats_timer, self._autosave):
             timer.stop()
         self.viewport.renderer.GetActiveCamera().RemoveObserver(self._camera_watch)
@@ -628,7 +628,10 @@ class CloudEditor(Labelling, Editor):
 
     def update_levels(self):
         """Move chunks to the thinning level that suits the camera: cached levels at once, the rest in small slices."""
-        if self._closed or not len(self.chunks):
+        if self._closed:
+            return
+        self.viewport.fit_axes()
+        if not len(self.chunks):
             return
         chunks = list(range(len(self.chunks)))
         wanted = self._levels(chunks)
@@ -1071,8 +1074,8 @@ class CloudEditor(Labelling, Editor):
         return point
 
     def _marker_size(self):
-        low, high = self.data_bounds
-        return max(float(np.max(high - low)) * 0.006, 1e-3)
+        """Radius for ruler and hover markers: a few pixels at the current zoom, not a share of the data extent."""
+        return max(self.viewport.pixel_size() * 3.0, 1e-4)
 
     def _hover(self, x, y):
         if self.tool == "view":

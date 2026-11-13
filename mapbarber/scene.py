@@ -180,6 +180,18 @@ class Viewport:
         through = near - eye
         return eye, through / np.linalg.norm(through)
 
+    def pixel_size(self):
+        """World length that one screen pixel covers at the point the camera looks at."""
+        camera = self.renderer.GetActiveCamera()
+        height = max(self.renderer.GetSize()[1], 1)
+        if camera.GetParallelProjection():
+            return 2.0 * camera.GetParallelScale() / height
+        return camera.GetDistance() * 2.0 * np.tan(np.radians(camera.GetViewAngle()) / 2.0) / height
+
+    def fit_axes(self, pixels=70):
+        """Keep the origin axes a fixed size on screen, whatever the extent of the data."""
+        self.set_axes_length(max(self.pixel_size() * pixels, 1e-6))
+
     def pixel_angle(self):
         """Angle in radians covered by one screen pixel at the centre of the view."""
         height = max(self.renderer.GetSize()[1], 1)
