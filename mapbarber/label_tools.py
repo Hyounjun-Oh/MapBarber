@@ -297,10 +297,13 @@ class Labelling(ClassHistory):
                                                                       os.path.dirname(self.path or "") or os.getcwd())
         if not folder:
             return
-        QtWidgets.QApplication.setOverrideCursor(Qt.WaitCursor)
-        try:
+        if self.sequence is not None:
+            self._store_frames()
+            for key in range(len(self.sequence)):
+                self._boxes_of(key)
+
+        def write_all():
             if self.sequence is not None:
-                self._store_frames()
                 keys, names = list(range(len(self.sequence))), self.sequence.names
                 poses, link = self.sequence.poses, self.sequence.to_camera()
             else:
@@ -314,7 +317,8 @@ class Labelling(ClassHistory):
                         cls, inst = self.labels.cls[alive], self.labels.inst[alive]
                     else:
                         xyz, table = self.sequence.load(key)
-                        cls, inst, _ = self._frame_labels(key)
+                        stored = self.frame_store.get(key)
+                        cls, inst = stored[:2] if stored is not None else self.sequence.labels(key)
                     has = table is not None and "intensity" in table.dtype.names
                     yield name, xyz, table["intensity"] if has else None, cls, inst
 
@@ -330,12 +334,13 @@ class Labelling(ClassHistory):
                     if on:
                         os.makedirs(os.path.join(folder, sub), exist_ok=True)
                         write(os.path.join(folder, sub, name + ".txt"))
+            return written, boxes
+
+        try:
+            written, boxes = self.compute(t("label_export") + " …", write_all)
         except (OSError, ValueError) as error:
-            QtWidgets.QApplication.restoreOverrideCursor()
             QtWidgets.QMessageBox.critical(self.window, t("label_export"), str(error))
             return
-        finally:
-            QtWidgets.QApplication.restoreOverrideCursor()
         self.status(t("status_exported", f=written, b=boxes, folder=folder), 12000)
 
     def load_frame_labels(self, folder=None):
@@ -663,18 +668,27 @@ class Labelling(ClassHistory):
         if not usable[seed]:
             self.status(self.tr("status_protected", n=1), 6000)
             return EMPTY
+        text = self.tr("smart") + " …"
         if mode == "object":
-            return ids[self._connected(local, seed, ids, usable)]
+            settings = self._connected_settings()
+            return ids[self.compute(text, lambda: self._connected(local, seed, ids, usable, settings))]
         open_ids = np.flatnonzero(usable)
         start = int(np.searchsorted(open_ids, seed))
         if mode == "plane":
-            found = labels.plane_at(local[open_ids], start, max(self.radius.value(), 3 * self.flatness.value()),
-                                    self.flatness.value())
+            radius, flatness = max(self.radius.value(), 3 * self.flatness.value()), self.flatness.value()
+            found = self.compute(text, lambda: labels.plane_at(local[open_ids], start, radius, flatness))
         else:
-            found = labels.grow(local[open_ids], start, self.gap.value(), self.bend.value())
+            gap, bend = self.gap.value(), self.bend.value()
+            found = self.compute(text, lambda: labels.grow(local[open_ids], start, gap, bend))
         return ids[open_ids[found]]
 
-    def _connected(self, local, seed, ids, usable):
+    def _connected_settings(self):
+        """What the connected-object pick needs from the panel, read before it runs."""
+        return {"clearance": self.clearance.value(), "cell": self.ground_cell.value(), "slope": self.ground_slope.value(),
+                "bend": self.bend.value() if self.stop_bends.isChecked() else None, "gap": self.gap.value(),
+                "reach": self.reach.value(), "frames": self.cloud.table["frame"] if self.sequence is not None else None}
+
+    def _connected(self, local, seed, ids, usable, settings=None):
         """Connected points around the seed, kept from running into what the object merely touches.
 
         Two things stop the search: a wide surface that faces another way (when 'stop at sharp bends' is on),
@@ -682,33 +696,29 @@ class Labelling(ClassHistory):
         LiDAR scans, whose points lie on scan lines and give no usable surface directions. An object found
         above the ground then takes back its own lowest points, down to a third of the clearance.
         """
-        clearance, part, low = self.clearance.value(), np.flatnonzero(usable), EMPTY
+        values = settings or self._connected_settings()
+        clearance, part, low = values["clearance"], np.flatnonzero(usable), EMPTY
         if clearance > 0:
-            settings = {"cell": self.ground_cell.value(), "slope": self.ground_slope.value(), "tolerance": clearance}
+            ground = {"cell": values["cell"], "slope": values["slope"], "tolerance": clearance}
             try:
-                height = (labels.by_group(local, self.cloud.table["frame"][ids],
-                                          lambda points: labels.height_above_ground(points, **settings))
-                          if self.sequence is not None else labels.height_above_ground(local, **settings))
+                height = (labels.by_group(local, values["frames"][ids],
+                                          lambda points: labels.height_above_ground(points, **ground))
+                          if values["frames"] is not None else labels.height_above_ground(local, **ground))
                 flat = np.isfinite(height) & (height <= clearance)
                 part = np.flatnonzero((flat == flat[seed]) & usable)
                 if not flat[seed]:
                     low = np.flatnonzero(flat & usable & (height > clearance / 3.0))
             except ValueError:
                 pass
-        bend = self.bend.value() if self.stop_bends.isChecked() else None
-        found = part[labels.connected(local[part], int(np.searchsorted(part, seed)), self.gap.value(), bend,
-                                      self.reach.value() / 3.0)]
-        return labels.with_feet(local, found, low, self.gap.value())
+        found = part[labels.connected(local[part], int(np.searchsorted(part, seed)), values["gap"], values["bend"],
+                                      values["reach"] / 3.0)]
+        return labels.with_feet(local, found, low, values["gap"])
 
     def _smart_click(self, x, y, ctrl):
         point = self._pick(x, y)
         if point is None:
             return
-        QtWidgets.QApplication.setOverrideCursor(Qt.WaitCursor)
-        try:
-            ids = self.smart_ids(point)
-        finally:
-            QtWidgets.QApplication.restoreOverrideCursor()
+        ids = self.smart_ids(point)
         self._last_smart = None
         if not len(ids):
             return
@@ -777,39 +787,35 @@ class Labelling(ClassHistory):
         low, high = low - pad, high + pad
         self.viewport.look_from(direction, camera.GetViewUp(), (low[0], high[0], low[1], high[1], low[2], high[2]))
 
-    def _busy_select(self, find):
-        QtWidgets.QApplication.setOverrideCursor(Qt.WaitCursor)
-        try:
-            ids = self._sample(self.visible_ids)
-            found = ids[find(ids)]
-        finally:
-            QtWidgets.QApplication.restoreOverrideCursor()
+    def _busy_select(self, what, find):
+        """Select what `find(xyz, cls, ids)` returns (positions into ids), worked out behind the busy dialog."""
+        ids = self._sample(self.visible_ids)
+        xyz, cls = self.cloud.xyz[ids], self.labels.cls[ids].copy()
+        found = ids[self.compute(self.tr(what) + " …", lambda: find(xyz, cls, ids))]
         self._select_filtered(found)
 
     def select_disagreeing(self):
         """Select labelled points that most of their neighbours contradict: slips of the brush and ragged borders."""
-        self._busy_select(lambda ids: labels.disagreeing(self.cloud.xyz[ids], self.labels.cls[ids]))
+        self._busy_select("review_disagree", lambda xyz, cls, ids: labels.disagreeing(xyz, cls))
 
     def select_label_islands(self):
         """Select small detached patches of each class."""
-        def find(ids):
+        gap, size = self.gap.value(), self.island.value()
+
+        def find(xyz, cls, ids):
             parts = []
-            for number in np.unique(self.labels.cls[ids]).tolist():
+            for number in np.unique(cls).tolist():
                 if number != UNLABELED:
-                    members = np.flatnonzero(self.labels.cls[ids] == number)
-                    parts.append(members[labels.small_groups(self.cloud.xyz[ids[members]], self.gap.value(),
-                                                             self.island.value())])
+                    members = np.flatnonzero(cls == number)
+                    parts.append(members[labels.small_groups(xyz[members], gap, size)])
             return np.concatenate(parts) if parts else EMPTY
-        self._busy_select(find)
+        self._busy_select("review_islands", find)
 
     def fill_gaps(self):
         """Suggest a class for unlabelled points from the labelled points around them; suggestions wait for review."""
-        QtWidgets.QApplication.setOverrideCursor(Qt.WaitCursor)
-        try:
-            ids = self._sample(self.visible_ids)
-            local, guess = labels.suggest(self.cloud.xyz[ids], self.labels.cls[ids], self.fill_radius.value())
-        finally:
-            QtWidgets.QApplication.restoreOverrideCursor()
+        ids = self._sample(self.visible_ids)
+        xyz, cls, radius = self.cloud.xyz[ids], self.labels.cls[ids].copy(), self.fill_radius.value()
+        local, guess = self.compute(self.tr("review_fill") + " …", lambda: labels.suggest(xyz, cls, radius))
         ids = ids[local]
         keep = np.isin(ids, self._writable(ids))
         self._commit(self.labels.assign(ids[keep], guess[keep], pending=True), "review_fill")
@@ -838,19 +844,23 @@ class Labelling(ClassHistory):
         ids = self._instance_scope()
         if not len(ids):
             return
-        number, small = self._object_numbers(ids)
+        with self.working(self.tr("instance_split") + " …") as report:
+            number, small = self._object_numbers(ids, report)
         self._commit(self.labels.assign(ids, inst=number), "instance_split")
         self.status(self.tr("status_instances", n=len(np.unique(number[number > 0])), s=small), 10000)
         self._fill_instances()
 
-    def _object_numbers(self, ids):
+    def _object_numbers(self, ids, report=None):
         """New instance numbers for points, one per connected group: (number per point, points left without one)."""
         key = self.labels.cls[ids].astype(np.int64)
         if self.sequence is not None:
             key = key * len(self.sequence) + self.cloud.table["frame"][ids]
         number = np.zeros(len(ids), np.uint32)
         start, small = self.labels.next_instance(), 0
-        for value in np.unique(key):
+        values = np.unique(key)
+        for done, value in enumerate(values):
+            if report:
+                report(done, len(values))
             members = np.flatnonzero(key == value)
             group = labels.components(self.cloud.xyz[ids[members]], self.object_gap.value())
             sizes = np.bincount(group)
@@ -1005,21 +1015,23 @@ class Labelling(ClassHistory):
         """A box around every instance on screen (instances must exist: split a class into objects first)."""
         self._remember_boxes()
         made = strays = 0
-        for key in self._box_keys():
-            ids = self._key_ids(key)
-            ids = ids[self.labels.inst[ids] > 0]
-            kept = [box for box in self._boxes_of(key) if not box.get("instance")]
-            local = self._local(key, ids)
-            inst = self.labels.inst[ids]
-            for number in np.unique(inst):
-                members = inst == number
-                cls = int(np.bincount(self.labels.cls[ids[members]]).argmax())
-                box, left_out = self._fit(local[members], cls, int(number))
-                box["key"] = True
-                kept.append(box)
-                made += 1
-                strays += left_out
-            self.box_store[key] = kept
+        keys = self._box_keys()
+        with self.working(self.tr("boxes_fit") + " …") as report:
+            for done, key in enumerate(keys):
+                report(done, len(keys))
+                ids = self._key_ids(key)
+                ids = ids[self.labels.inst[ids] > 0]
+                kept = [box for box in self._boxes_of(key) if not box.get("instance")]
+                local, inst = self._local(key, ids), self.labels.inst[ids]
+                for number in np.unique(inst):
+                    members = inst == number
+                    cls = int(np.bincount(self.labels.cls[ids[members]]).argmax())
+                    box, left_out = self._fit(local[members], cls, int(number))
+                    box["key"] = True
+                    kept.append(box)
+                    made += 1
+                    strays += left_out
+                self.box_store[key] = kept
         if not made:
             self._box_undo.pop()
             self._order.pop()
@@ -1041,26 +1053,29 @@ class Labelling(ClassHistory):
             return self.status(self.tr("boxes_no_class", name=self.classes.name(chosen)), 8000)
         depth = len(self._order)
         fresh = ids[self.labels.inst[ids] == 0]
-        if len(fresh):
-            number, _ = self._object_numbers(fresh)
-            changed = self.labels.assign(fresh, inst=number)
-            if changed:
-                self._record_step("label")
-                self._after_labels()
-        self._remember_boxes()
-        made = strays = 0
-        for key in self._box_keys():
-            mine = self._key_ids(key)
-            mine = mine[(self.labels.cls[mine] == chosen) & (self.labels.inst[mine] > 0)]
-            kept = [box for box in self._boxes_of(key) if not (box["class"] == chosen and box.get("instance"))]
-            local, inst = self._local(key, mine), self.labels.inst[mine]
-            for number in np.unique(inst):
-                box, left_out = self._fit(local[inst == number], chosen, int(number))
-                box["key"] = True
-                kept.append(box)
-                made += 1
-                strays += left_out
-            self.box_store[key] = kept
+        keys = self._box_keys()
+        with self.working(self.tr("boxes_class", name=self.classes.name(chosen)) + " …") as report:
+            if len(fresh):
+                number, _ = self._object_numbers(fresh, lambda done, total: report(done, total + len(keys)))
+                changed = self.labels.assign(fresh, inst=number)
+                if changed:
+                    self._record_step("label")
+                    self._after_labels()
+            self._remember_boxes()
+            made = strays = 0
+            for done, key in enumerate(keys):
+                report(len(keys) // 2 + done, len(keys) + len(keys) // 2)
+                mine = self._key_ids(key)
+                mine = mine[(self.labels.cls[mine] == chosen) & (self.labels.inst[mine] > 0)]
+                kept = [box for box in self._boxes_of(key) if not (box["class"] == chosen and box.get("instance"))]
+                local, inst = self._local(key, mine), self.labels.inst[mine]
+                for number in np.unique(inst):
+                    box, left_out = self._fit(local[inst == number], chosen, int(number))
+                    box["key"] = True
+                    kept.append(box)
+                    made += 1
+                    strays += left_out
+                self.box_store[key] = kept
         self._group_since(depth)
         self._fill_instances()
         self._boxes_changed()
@@ -1285,11 +1300,12 @@ class Labelling(ClassHistory):
 
     def select_leftovers(self):
         """Select the points that belong with the boxed objects on screen but are still unlabelled."""
-        QtWidgets.QApplication.setOverrideCursor(Qt.WaitCursor)
-        try:
-            parts = [self._leftovers(key, box) for key in self._box_keys() for box in self._boxes_of(key)]
-        finally:
-            QtWidgets.QApplication.restoreOverrideCursor()
+        pairs = [(key, box) for key in self._box_keys() for box in self._boxes_of(key)]
+        parts = []
+        with self.working(self.tr("boxes_select_left") + " …") as report:
+            for done, (key, box) in enumerate(pairs):
+                report(done, len(pairs))
+                parts.append(self._leftovers(key, box))
         found = np.unique(np.concatenate(parts)) if parts else EMPTY
         self.select(found, "replace", review=True)
         self.status(self.tr("status_filter", n=int(self.selected.sum())), 10000)
@@ -1300,25 +1316,23 @@ class Labelling(ClassHistory):
         An object that keeps its shape gets the same widening in every frame on screen, so its box stays one
         size; an object that changes shape is widened only in the frame concerned.
         """
-        QtWidgets.QApplication.setOverrideCursor(Qt.WaitCursor)
         depth, label_depth = len(self._order), self.labels.undo_depth()
         growth, taken = {}, 0
-        try:
-            for key in self._box_keys():
-                for box in self._boxes_of(key):
-                    ids = self._leftovers(key, box)
-                    if not len(ids):
-                        continue
-                    taken += self.labels.assign(ids, box["class"], box.get("instance", 0))
-                    world = self._box_world(key, box)
-                    local = tracking.to_local(tracking.pose_of(world), self.cloud.xyz[ids])
-                    half = np.asarray(world["size"]) / 2.0
-                    wider = (np.minimum(local.min(axis=0) + half, 0.0), np.maximum(local.max(axis=0) - half, 0.0))
-                    scope = (box.get("instance", 0),) if not self.classes.soft(box["class"]) else (box.get("instance", 0), key)
-                    low, high = growth.get(scope, (np.zeros(3), np.zeros(3)))
-                    growth[scope] = (np.minimum(low, wider[0]), np.maximum(high, wider[1]))
-        finally:
-            QtWidgets.QApplication.restoreOverrideCursor()
+        pairs = [(key, box) for key in self._box_keys() for box in self._boxes_of(key)]
+        with self.working(self.tr("boxes_take_left") + " …") as report:
+            for done, (key, box) in enumerate(pairs):
+                report(done, len(pairs))
+                ids = self._leftovers(key, box)
+                if not len(ids):
+                    continue
+                taken += self.labels.assign(ids, box["class"], box.get("instance", 0))
+                world = self._box_world(key, box)
+                local = tracking.to_local(tracking.pose_of(world), self.cloud.xyz[ids])
+                half = np.asarray(world["size"]) / 2.0
+                wider = (np.minimum(local.min(axis=0) + half, 0.0), np.maximum(local.max(axis=0) - half, 0.0))
+                scope = (box.get("instance", 0),) if not self.classes.soft(box["class"]) else (box.get("instance", 0), key)
+                low, high = growth.get(scope, (np.zeros(3), np.zeros(3)))
+                growth[scope] = (np.minimum(low, wider[0]), np.maximum(high, wider[1]))
         if not taken:
             return self.status(self.tr("status_no_change", what=self.tr("boxes_take_left")))
         self.labels.squash(label_depth)
@@ -1797,7 +1811,11 @@ class Labelling(ClassHistory):
         if store:
             self._store_frames()
         before = None if fresh else self._anchor_pose()
-        xyz, table, starts = self.sequence.merge(indices, progress)
+        if progress is None:
+            with self.working(self.tr("frames_loading", n=len(indices))) as report:
+                xyz, table, starts = self.sequence.merge(indices, report)
+        else:
+            xyz, table, starts = self.sequence.merge(indices, progress)
         cls, inst = np.zeros(len(xyz), np.uint16), np.zeros(len(xyz), np.uint32)
         pending = np.zeros(len(xyz), bool)
         for index, start, end in zip(indices, starts[:-1], starts[1:]):
@@ -1963,8 +1981,8 @@ class Labelling(ClassHistory):
         """Select points whose label differs from a nearby point of another frame."""
         if self.sequence is None:
             return
-        self._busy_select(lambda ids: labels.conflicts(self.cloud.xyz[ids], self.labels.cls[ids],
-                                                       self.cloud.table["frame"][ids], self.frame_radius.value()))
+        frames, radius = self.cloud.table["frame"], self.frame_radius.value()
+        self._busy_select("frames_conflicts", lambda xyz, cls, ids: labels.conflicts(xyz, cls, frames[ids], radius))
 
     # ---- panel
 
@@ -1981,7 +1999,7 @@ class Labelling(ClassHistory):
             form.addRow(self.frame_list)
             row = W.QHBoxLayout()
             row.addWidget(button("◀", lambda: self.step_frame(-1), t("frames_previous")))
-            row.addWidget(select_button(t("frames_show"), self.show_selected_frames, t("frames_tip")))
+            row.addWidget(select_button(t("frames_show"), self.show_selected_frames, t("frames_tip"), icon="frames_show"))
             row.addWidget(button("▶", lambda: self.step_frame(1), t("frames_next")))
             form.addRow(row)
             self.paint_frame = W.QComboBox()
@@ -1991,13 +2009,13 @@ class Labelling(ClassHistory):
             self.pose_label.setWordWrap(True)
             form.addRow(self.pose_label)
             row = W.QHBoxLayout()
-            row.addWidget(button(t("frames_choose_poses"), self.choose_poses, t("frames_poses_tip")))
-            row.addWidget(button(t("frames_no_poses"), self.no_poses, t("frames_no_poses_tip")))
+            row.addWidget(button(t("frames_choose_poses"), self.choose_poses, t("frames_poses_tip"), icon="poses"))
+            row.addWidget(button(t("frames_no_poses"), self.no_poses, t("frames_no_poses_tip"), icon="poses_off"))
             form.addRow(row)
             self.frame_radius = spin(0.001, RANGE_LIMIT, values["frame_radius"], 0.01)
             form.addRow(t("frames_radius"), self.frame_radius)
-            form.addRow(add_button(t("frames_propagate"), self.propagate_frames, t("frames_propagate_tip")))
-            form.addRow(select_button(t("frames_conflicts"), self.select_conflicts, t("frames_conflicts_tip")))
+            form.addRow(add_button(t("frames_propagate"), self.propagate_frames, t("frames_propagate_tip"), icon="propagate"))
+            form.addRow(select_button(t("frames_conflicts"), self.select_conflicts, t("frames_conflicts_tip"), icon="conflict"))
             group.add_to(layout)
             self._fill_frames()
             self._show_pose_source()
@@ -2025,8 +2043,8 @@ class Labelling(ClassHistory):
         form.addRow(self.class_list)
         row = W.QHBoxLayout()
         row.addWidget(add_button(t("class_add"), self.add_class))
-        row.addWidget(button(t("class_edit"), self.edit_class))
-        row.addWidget(danger_button(t("class_remove"), self.remove_class, t("class_remove_tip")))
+        row.addWidget(button(t("class_edit"), self.edit_class, icon="class_edit"))
+        row.addWidget(danger_button(t("class_remove"), self.remove_class, t("class_remove_tip"), icon="class_remove"))
         form.addRow(row)
         self.preset_box = W.QComboBox()
         self.preset_box.addItem(t("classes_preset"), "")
@@ -2036,7 +2054,7 @@ class Labelling(ClassHistory):
         self.preset_box.activated.connect(self.load_preset)
         row = W.QHBoxLayout()
         row.addWidget(self.preset_box, 1)
-        row.addWidget(button(t("classes_save"), self.save_classes))
+        row.addWidget(button(t("classes_save"), self.save_classes, icon="list_save"))
         form.addRow(row)
         self.rule_box = W.QComboBox()
         for rule in ("unlabeled", "all", "only"):
@@ -2055,13 +2073,13 @@ class Labelling(ClassHistory):
         self.apply_button.setMinimumHeight(32)
         form.addRow(self.apply_button)
         row = W.QHBoxLayout()
-        row.addWidget(button(t("label_clear"), lambda: self.assign_selection(UNLABELED)))
-        row.addWidget(button(t("label_solo"), self.solo_class, t("label_solo_tip")))
+        row.addWidget(button(t("label_clear"), lambda: self.assign_selection(UNLABELED), icon="tag_clear"))
+        row.addWidget(button(t("label_solo"), self.solo_class, t("label_solo_tip"), icon="solo"))
         form.addRow(row)
-        form.addRow(select_button(t("label_select_class"), self.select_class))
-        form.addRow(button(t("labels_load"), self.load_labels, t("labels_load_tip")))
-        form.addRow(button(t("labels_only"), self.save_labels_only, t("labels_only_tip")))
-        form.addRow(button(t("label_export"), lambda: self.export_standard(), t("label_export_tip")))
+        form.addRow(select_button(t("label_select_class"), self.select_class, icon="select_class"))
+        form.addRow(button(t("labels_load"), self.load_labels, t("labels_load_tip"), icon="labels_open"))
+        form.addRow(button(t("labels_only"), self.save_labels_only, t("labels_only_tip"), icon="labels_save"))
+        form.addRow(button(t("label_export"), lambda: self.export_standard(), t("label_export_tip"), icon="export"))
         group.add_to(layout)
 
         group = Section(t("smart"), "smart")
@@ -2096,17 +2114,17 @@ class Labelling(ClassHistory):
         form = W.QFormLayout(group)
         self.progress_bar = W.QProgressBar()
         form.addRow(self.progress_bar)
-        form.addRow(select_button(t("review_next"), self.next_unlabeled, t("review_next_tip")))
-        form.addRow(select_button(t("review_disagree"), self.select_disagreeing, t("review_disagree_tip")))
+        form.addRow(select_button(t("review_next"), self.next_unlabeled, t("review_next_tip"), icon="next_area"))
+        form.addRow(select_button(t("review_disagree"), self.select_disagreeing, t("review_disagree_tip"), icon="doubt"))
         self.island = int_spin(1, 1_000_000, values["island"])
         form.addRow(t("review_island_size"), self.island)
-        form.addRow(select_button(t("review_islands"), self.select_label_islands, t("review_islands_tip")))
+        form.addRow(select_button(t("review_islands"), self.select_label_islands, t("review_islands_tip"), icon="label_islands"))
         self.fill_radius = spin(0.001, RANGE_LIMIT, values["fill_radius"], 0.01)
         form.addRow(t("review_fill_radius"), self.fill_radius)
-        form.addRow(add_button(t("review_fill"), self.fill_gaps, t("review_fill_tip")))
+        form.addRow(add_button(t("review_fill"), self.fill_gaps, t("review_fill_tip"), icon="fill_gaps"))
         row = W.QHBoxLayout()
-        row.addWidget(add_button(t("review_confirm"), self.confirm_pending))
-        row.addWidget(danger_button(t("review_reject"), self.reject_pending))
+        row.addWidget(add_button(t("review_confirm"), self.confirm_pending, icon="accept_all"))
+        row.addWidget(danger_button(t("review_reject"), self.reject_pending, icon="reject_all"))
         form.addRow(row)
         group.add_to(layout)
 
@@ -2122,9 +2140,9 @@ class Labelling(ClassHistory):
         self.min_points = int_spin(1, 1_000_000, values["min_points"])
         self.min_points.setToolTip(t("instance_min_tip"))
         form.addRow(t("instance_min"), self.min_points)
-        form.addRow(button(t("instance_split"), self.split_instances, t("instance_split_tip")))
-        form.addRow(button(t("instance_merge"), self.merge_instance))
-        form.addRow(button(t("instance_clear"), self.clear_instances, t("instance_clear_tip")))
+        form.addRow(button(t("instance_split"), self.split_instances, t("instance_split_tip"), icon="split"))
+        form.addRow(button(t("instance_merge"), self.merge_instance, icon="merge"))
+        form.addRow(button(t("instance_clear"), self.clear_instances, t("instance_clear_tip"), icon="unsplit"))
         self.instance_list = W.QTreeWidget()
         self.instance_list.setRootIsDecorated(False)
         self.instance_list.setHeaderLabels([t("instance_number"), t("class_name"), t("class_points")])
@@ -2145,10 +2163,10 @@ class Labelling(ClassHistory):
         self.robust_boxes.setChecked(values["robust_boxes"])
         self.robust_boxes.setToolTip(t("boxes_robust_tip"))
         form.addRow(self.robust_boxes)
-        self.class_boxes = add_button(t("boxes_class", name=""), self.boxes_for_class, t("boxes_class_tip"))
+        self.class_boxes = add_button(t("boxes_class", name=""), self.boxes_for_class, t("boxes_class_tip"), icon="auto_box")
         form.addRow(self.class_boxes)
-        form.addRow(button(t("boxes_from_selection"), self.label_box_from_selection))
-        form.addRow(button(t("boxes_fit"), self.fit_boxes, t("boxes_fit_tip")))
+        form.addRow(button(t("boxes_from_selection"), self.label_box_from_selection, icon="box_around_selection"))
+        form.addRow(button(t("boxes_fit"), self.fit_boxes, t("boxes_fit_tip"), icon="boxes_all"))
         self.box_list = W.QTreeWidget()
         self.box_list.setRootIsDecorated(False)
         self.box_list.setHeaderLabels([t("class_name"), t("instance_number"), t("boxes_size_short")])
@@ -2169,11 +2187,11 @@ class Labelling(ClassHistory):
             spin_box.valueChanged.connect(self._box_field_changed)
         form.addRow(grid)
         row = W.QHBoxLayout()
-        row.addWidget(button(t("boxes_refit"), self.refit_box, t("boxes_refit_tip")))
-        row.addWidget(danger_button(t("boxes_delete"), self.delete_box))
+        row.addWidget(button(t("boxes_refit"), self.refit_box, t("boxes_refit_tip"), icon="refit"))
+        row.addWidget(danger_button(t("boxes_delete"), self.delete_box, icon="box_delete"))
         form.addRow(row)
-        form.addRow(select_button(t("boxes_select_points"), self.select_in_box))
-        form.addRow(button(t("boxes_export"), self.export_boxes))
+        form.addRow(select_button(t("boxes_select_points"), self.select_in_box, icon="box_select"))
+        form.addRow(button(t("boxes_export"), self.export_boxes, icon="export_boxes"))
         self.track_reach = spin(0.1, 50.0, values["track_reach"], 0.1)
         self.track_reach.setToolTip(t("track_reach_tip"))
         self.track_accept = spin(0.0, 1.0, values["track_accept"], 0.05, decimals=2)
@@ -2181,11 +2199,11 @@ class Labelling(ClassHistory):
         if self.sequence is not None:
             form.addRow(t("track_reach"), self.track_reach)
             form.addRow(t("track_accept"), self.track_accept)
-            form.addRow(add_button(t("track"), self.track_boxes, t("track_tip")))
-            form.addRow(button(t("track_again"), self.track_again, t("track_again_tip")))
-        form.addRow(select_button(t("boxes_select_stray"), self.select_strays, t("boxes_stray_tip")))
-        form.addRow(select_button(t("boxes_select_left"), self.select_leftovers, t("boxes_left_tip")))
-        form.addRow(add_button(t("boxes_take_left"), self.take_leftovers, t("boxes_left_tip")))
+            form.addRow(add_button(t("track"), self.track_boxes, t("track_tip"), icon="track_forward"))
+            form.addRow(button(t("track_again"), self.track_again, t("track_again_tip"), icon="retrack"))
+        form.addRow(select_button(t("boxes_select_stray"), self.select_strays, t("boxes_stray_tip"), icon="strays"))
+        form.addRow(select_button(t("boxes_select_left"), self.select_leftovers, t("boxes_left_tip"), icon="leftovers"))
+        form.addRow(add_button(t("boxes_take_left"), self.take_leftovers, t("boxes_left_tip"), icon="absorb"))
         group.add_to(layout)
         self._fill_classes()
         self._fill_instances()
@@ -2403,15 +2421,22 @@ class VoxelLabelling(ClassHistory):
             self.status(self.tr("status_protected", n=1), 6000)
             return EMPTY
         mode = mode or self.smart_box.currentData()
+        flatness, bend, clearance = self.flatness.value(), self.bend.value(), self.clearance.value()
+        stop_bends = self.stop_bends.isChecked()
+        return self.compute(self.tr("smart") + " …", lambda: self._smart_cells(cells, points, usable, seed, mode, flatness,
+                                                                               bend, stop_bends, clearance, reach))
+
+    def _smart_cells(self, cells, points, usable, seed, mode, flatness, bend, stop_bends, clearance, reach):
+        size = self.map.resolution
         step = 1.8 * size
         open_ids = np.flatnonzero(usable)
         start = int(np.searchsorted(open_ids, seed))
         if mode == "plane":
-            found = open_ids[labels.plane_at(points[open_ids], start, 4 * size, self.flatness.value())]
+            found = open_ids[labels.plane_at(points[open_ids], start, 4 * size, flatness)]
         elif mode == "surface":
-            found = open_ids[labels.grow(points[open_ids], start, step, self.bend.value())]
+            found = open_ids[labels.grow(points[open_ids], start, step, bend)]
         else:
-            part, low, clearance = open_ids, EMPTY, self.clearance.value()
+            part, low = open_ids, EMPTY
             if clearance > 0:
                 try:
                     height = labels.height_above_ground(points, max(4 * size, 0.5), 15.0, clearance)
@@ -2421,9 +2446,8 @@ class VoxelLabelling(ClassHistory):
                         low = np.flatnonzero(flat & usable & (height > min(clearance / 3.0, size / 2.0)))
                 except ValueError:
                     pass
-            bend = self.bend.value() if self.stop_bends.isChecked() else None
-            found = part[labels.connected(points[part], int(np.searchsorted(part, seed)), step, bend, reach / 3.0,
-                                          cells=cells[part])]
+            found = part[labels.connected(points[part], int(np.searchsorted(part, seed)), step,
+                                          bend if stop_bends else None, reach / 3.0, cells=cells[part])]
             found = labels.with_feet(points, found, low, step)
         return pack(cells[found])
 
@@ -2431,11 +2455,7 @@ class VoxelLabelling(ClassHistory):
         hit = self.pick(*self.viewport.ray(x, y))
         if hit is None:
             return
-        QtWidgets.QApplication.setOverrideCursor(Qt.WaitCursor)
-        try:
-            keys = self.smart_keys(hit[0])
-        finally:
-            QtWidgets.QApplication.restoreOverrideCursor()
+        keys = self.smart_keys(hit[0])
         if not len(keys):
             return
         if self.at_once.isChecked() and not ctrl:
@@ -2547,19 +2567,19 @@ class VoxelLabelling(ClassHistory):
         form.addRow(self.class_list)
         row = W.QHBoxLayout()
         row.addWidget(add_button(t("class_add"), self.add_voxel_class))
-        row.addWidget(button(t("class_edit"), self.edit_voxel_class))
+        row.addWidget(button(t("class_edit"), self.edit_voxel_class, icon="class_edit"))
         form.addRow(row)
         self.apply_button = button(t("label_assign"), lambda: self.assign_selection(), t("label_assign_tip"))
         self.apply_button.setMinimumHeight(32)
         form.addRow(self.apply_button)
         row = W.QHBoxLayout()
-        row.addWidget(button(t("label_clear"), lambda: self.assign_selection(UNLABELED)))
-        row.addWidget(select_button(t("label_select_class"), self.select_voxel_class))
+        row.addWidget(button(t("label_clear"), lambda: self.assign_selection(UNLABELED), icon="tag_clear"))
+        row.addWidget(select_button(t("label_select_class"), self.select_voxel_class, icon="select_class"))
         form.addRow(row)
         self.purity = spin(0.05, 1.0, values["purity"], 0.05, decimals=2)
         self.purity.setToolTip(t("purity_tip"))
         form.addRow(t("purity"), self.purity)
-        form.addRow(select_button(t("select_mixed"), self.select_mixed, t("purity_tip")))
+        form.addRow(select_button(t("select_mixed"), self.select_mixed, t("purity_tip"), icon="mixed"))
         group.add_to(layout)
         self._fill_voxel_classes()
 

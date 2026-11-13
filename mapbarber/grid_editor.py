@@ -260,7 +260,7 @@ class GridEditor(Editor):
         form = W.QFormLayout(group)
         self.speckle = int_spin(1, 1_000_000, values["speckle"], t("cells"))
         form.addRow(t("island_size"), self.speckle)
-        form.addRow(danger_button(t("clear_speckles"), self.clear_speckles, t("speckles_tip")))
+        form.addRow(danger_button(t("clear_speckles"), self.clear_speckles, t("speckles_tip"), icon="speckles_clear"))
         group.add_to(layout)
 
         group = Section(t("map_info"), "map_info")
@@ -273,8 +273,8 @@ class GridEditor(Editor):
         form.addRow(t("origin_x"), self.origin_x)
         form.addRow(t("origin_y"), self.origin_y)
         form.addRow(t("origin_yaw"), self.origin_yaw)
-        form.addRow(button(t("apply"), self.apply_info))
-        form.addRow(danger_button(t("trim"), self.trim, t("trim_tip")))
+        form.addRow(button(t("apply"), self.apply_info, icon="apply"))
+        form.addRow(danger_button(t("trim"), self.trim, t("trim_tip"), icon="trim"))
         group.add_to(layout)
 
         group = Section(t("ruler"), "ruler")
@@ -284,7 +284,7 @@ class GridEditor(Editor):
         self.ruler_label.setWordWrap(True)
         self.ruler_label.setTextInteractionFlags(Qt.TextSelectableByMouse)
         form.addRow(self.ruler_label)
-        form.addRow(button(t("ruler_clear"), self.clear_ruler))
+        form.addRow(button(t("ruler_clear"), self.clear_ruler, icon="ruler_clear"))
         group.add_to(layout)
 
         layout.addStretch(1)

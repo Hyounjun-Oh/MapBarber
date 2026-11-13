@@ -428,6 +428,20 @@ class Workbench(QtWidgets.QMainWindow):
             raise outcome["error"]
         return outcome["result"], dialog
 
+    def compute(self, text, work):
+        """Run `work()` on a worker thread behind the busy dialog and return its result.
+
+        `work` must not touch widgets or the 3D view: what it needs is read before, the result shown after.
+        """
+        result, dialog = self.busy(text, work)
+        dialog.finish()
+        return result
+
+    def working(self, text):
+        """Busy dialog for long work done step by step in this thread (see widgets.Working)."""
+        from .widgets import Working
+        return Working(self, text)
+
     def _stage(self, dialog, text):
         """Returns a progress callback (done, total) that updates the dialog for one stage of work."""
         def step(done, total):

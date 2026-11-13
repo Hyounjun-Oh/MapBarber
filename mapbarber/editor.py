@@ -25,6 +25,14 @@ class Editor:
     def status(self, text, timeout=5000):
         self.window.statusBar().showMessage(text, timeout)
 
+    def compute(self, text, work):
+        """Run pure computation behind the busy dialog (see Workbench.compute)."""
+        return self.window.compute(text, work)
+
+    def working(self, text):
+        """Busy dialog for long step-by-step work: `with self.working(text) as report:`."""
+        return self.window.working(text)
+
     def changed(self):
         self.window.document_changed(self)
 

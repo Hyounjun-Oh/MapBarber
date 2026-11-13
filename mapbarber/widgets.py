@@ -1,4 +1,6 @@
 """Small widget helpers shared by the editors."""
+import time
+
 from .qt import QtCore, QtGui, QtWidgets
 
 RANGE_LIMIT = 1000.0
@@ -117,17 +119,21 @@ ROLE_STYLE = ("QPushButton {{ border: 1px solid {c}; border-radius: 4px; padding
               "QPushButton:pressed {{ background-color: rgba({r}, {g}, {b}, 0.5); }}")
 
 
-def button(text, slot, tip=None, role=None):
-    """Push button; role 'danger', 'add' or 'select' tints it and adds a matching icon."""
+def button(text, slot, tip=None, role=None, icon=None):
+    """Push button; role 'danger', 'add' or 'select' tints it, `icon` names the drawing that shows what it does
+    (one of icons._BUTTONS; without it the role's own icon is used)."""
     widget = QtWidgets.QPushButton(text)
     widget.clicked.connect(slot)
     if tip:
         widget.setToolTip(tip)
+    from . import icons
     if role:
-        from . import icons
         colour = icons.accent(f"role_{role}")
         r, g, b = (int(colour[i:i + 2], 16) for i in (1, 3, 5))
         widget.setStyleSheet(ROLE_STYLE.format(c=colour, r=r, g=g, b=b))
+    if icon:
+        widget.setIcon(icons.icon(f"button_{icon}", 16))
+    elif role:
         widget.setIcon(icons.icon(f"role_{role}", 14))
     return widget
 
@@ -141,16 +147,16 @@ def tint(widget, rgb, icon_name=None):
         widget.setIcon(icons.icon(icon_name, 14))
 
 
-def danger_button(text, slot, tip=None):
-    return button(text, slot, tip, "danger")
+def danger_button(text, slot, tip=None, icon=None):
+    return button(text, slot, tip, "danger", icon)
 
 
-def add_button(text, slot, tip=None):
-    return button(text, slot, tip, "add")
+def add_button(text, slot, tip=None, icon=None):
+    return button(text, slot, tip, "add", icon)
 
 
-def select_button(text, slot, tip=None):
-    return button(text, slot, tip, "select")
+def select_button(text, slot, tip=None, icon=None):
+    return button(text, slot, tip, "select", icon)
 
 
 class Section(QtWidgets.QFrame):
@@ -339,3 +345,34 @@ class BusyDialog(QtWidgets.QDialog):
 
     def reject(self):
         """Ignore Escape: the work cannot be cancelled half-way."""
+
+
+class Working:
+    """Long work done step by step in the window's own thread.
+
+    Used as `with Working(window, text) as report:`, calling report(done, total) after each step. Once the work
+    has taken longer than a moment the busy dialog appears, and from then on its bar follows the reports; quick
+    work shows nothing.
+    """
+
+    def __init__(self, parent, text):
+        self.parent, self.text, self.dialog, self.start = parent, text, None, time.monotonic()
+
+    def __enter__(self):
+        self.start = time.monotonic()
+        return self
+
+    def __call__(self, done=0, total=0, text=None):
+        if self.dialog is None:
+            if time.monotonic() - self.start < BusyDialog.DELAY_MS / 1000.0:
+                return
+            self.dialog = BusyDialog(self.parent, self.text)
+            self.dialog.show()
+        if total:
+            self.dialog.set_progress(done, total, text)
+        QtWidgets.QApplication.processEvents()
+
+    def __exit__(self, *_):
+        if self.dialog is not None:
+            self.dialog.finish()
+        return False

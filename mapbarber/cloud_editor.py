@@ -380,7 +380,7 @@ class CloudEditor(Labelling, Editor):
         form.addRow(t("depth_tolerance"), self.tolerance)
         row = W.QHBoxLayout()
         row.addWidget(danger_button(t("delete_selection"), self.delete_selection))
-        row.addWidget(button(t("clear_selection"), self.clear_selection))
+        row.addWidget(button(t("clear_selection"), self.clear_selection, icon="clear_selection"))
         form.addRow(row)
         group.add_to(layout)
 
@@ -396,11 +396,11 @@ class CloudEditor(Labelling, Editor):
         self.show_box.setChecked(values["show_box"])
         self.show_box.toggled.connect(self._box_changed)
         grid.addWidget(self.show_box, 3, 0, 1, 2)
-        grid.addWidget(button(t("box_from_selection"), self.box_from_selection), 3, 2)
-        grid.addWidget(select_button(t("box_select"), self.box_select), 4, 0, 1, 3)
+        grid.addWidget(button(t("box_from_selection"), self.box_from_selection, icon="box_fit"), 3, 2)
+        grid.addWidget(select_button(t("box_select"), self.box_select, icon="box_select"), 4, 0, 1, 3)
         if not self.label_mode:
-            grid.addWidget(danger_button(t("box_delete"), self.box_delete), 5, 0, 1, 3)
-            grid.addWidget(danger_button(t("box_delete_outside"), self.box_delete_outside, t("crop_tip")), 6, 0, 1, 3)
+            grid.addWidget(danger_button(t("box_delete"), self.box_delete, icon="box_erase_in"), 5, 0, 1, 3)
+            grid.addWidget(danger_button(t("box_delete_outside"), self.box_delete_outside, t("crop_tip"), icon="box_erase_out"), 6, 0, 1, 3)
         group.add_to(layout)
 
         group = Section(t("ruler"), "ruler")
@@ -410,7 +410,7 @@ class CloudEditor(Labelling, Editor):
         self.ruler_label.setWordWrap(True)
         self.ruler_label.setTextInteractionFlags(Qt.TextSelectableByMouse)
         form.addRow(self.ruler_label)
-        form.addRow(button(t("ruler_clear"), self.clear_ruler))
+        form.addRow(button(t("ruler_clear"), self.clear_ruler, icon="ruler_clear"))
         group.add_to(layout)
 
         self.slice = SliceControls(t, values["slice"], 0.01, self._slice_changed, self.restore_view)
@@ -420,7 +420,7 @@ class CloudEditor(Labelling, Editor):
         group.setToolTip(t("range_tip"))
         grid = W.QGridLayout(group)
         self.ranges = AxisRanges(grid, 0, values["range"], 0.05, lambda *_: self.refresh())
-        grid.addWidget(button(t("show_all"), self.reset_range), 3, 0, 1, 3)
+        grid.addWidget(button(t("show_all"), self.reset_range, icon="show_all"), 3, 0, 1, 3)
         group.add_to(layout)
 
         layout.addStretch(1)
@@ -447,31 +447,24 @@ class CloudEditor(Labelling, Editor):
         form.addRow(t("ground_slope"), self.ground_slope)
         form.addRow(t("ground_height"), self.ground_height)
         row = W.QHBoxLayout()
-        row.addWidget(select_button(t("ground_select"), lambda: self.select_ground(True)))
-        row.addWidget(select_button(t("ground_others"), lambda: self.select_ground(False)))
+        row.addWidget(select_button(t("ground_select"), lambda: self.select_ground(True), icon="ground_select"))
+        row.addWidget(select_button(t("ground_others"), lambda: self.select_ground(False), icon="ground_others"))
         form.addRow(row)
         group.add_to(layout)
 
     def select_ground(self, wanted=True):
         """Select the ground under the visible points (wanted=True) or everything standing on it."""
-        QtWidgets.QApplication.setOverrideCursor(Qt.WaitCursor)
+        ids = self.visible_ids
+        settings = {"cell": self.ground_cell.value(), "slope": self.ground_slope.value(),
+                    "tolerance": self.ground_height.value()}
+        table, xyz = self.cloud.table, self.cloud.xyz[ids]
+        frames = table["frame"][ids] if table is not None and "frame" in table.dtype.names else None
         try:
-            ids = self.visible_ids
-            settings = {"cell": self.ground_cell.value(), "slope": self.ground_slope.value(),
-                        "tolerance": self.ground_height.value()}
-            table = self.cloud.table
-            try:
-                if table is not None and "frame" in table.dtype.names:
-                    mask = labels.ground_by_group(self.cloud.xyz[ids], table["frame"][ids], **settings)
-                else:
-                    mask = labels.ground(self.cloud.xyz[ids], **settings)
-            except ValueError as error:
-                QtWidgets.QApplication.restoreOverrideCursor()
-                QtWidgets.QMessageBox.warning(self.window, self.tr("ground"), str(error))
-                QtWidgets.QApplication.setOverrideCursor(Qt.WaitCursor)
-                return
-        finally:
-            QtWidgets.QApplication.restoreOverrideCursor()
+            mask = self.compute(self.tr("ground") + " …", lambda: labels.ground_by_group(xyz, frames, **settings)
+                                if frames is not None else labels.ground(xyz, **settings))
+        except ValueError as error:
+            QtWidgets.QMessageBox.warning(self.window, self.tr("ground"), str(error))
+            return
         self.select(ids[mask if wanted else ~mask], "replace")
         self.status(self.tr("status_filter", n=int(self.selected.sum())) +
                     ("   ·   " + self.tr("label_mode_on").split(":")[0] + ": Enter" if self.label_mode else ""), 10000)
@@ -485,19 +478,19 @@ class CloudEditor(Labelling, Editor):
         self.ratio = spin(0.1, 10.0, values["ratio"], 0.1, decimals=2)
         form.addRow(t("neighbours"), self.neighbours)
         form.addRow(t("std_ratio"), self.ratio)
-        form.addRow(select_button(t("select_outliers"), self.select_outliers, t("outliers_tip")))
+        form.addRow(select_button(t("select_outliers"), self.select_outliers, t("outliers_tip"), icon="outliers"))
         self.sparse_radius = spin(0.001, RANGE_LIMIT, values["sparse_radius"], 0.01)
         self.sparse_min = int_spin(1, 1000, values["sparse_min"])
         form.addRow(t("search_radius"), self.sparse_radius)
         form.addRow(t("min_neighbours"), self.sparse_min)
-        form.addRow(select_button(t("select_sparse"), self.select_sparse, t("sparse_tip")))
+        form.addRow(select_button(t("select_sparse"), self.select_sparse, t("sparse_tip"), icon="sparse"))
         group.add_to(layout)
 
         group = Section(t("downsample"), "downsample")
         form = W.QFormLayout(group)
         self.leaf = spin(0.001, RANGE_LIMIT, values["leaf"], 0.01)
         form.addRow(t("cell_size"), self.leaf)
-        form.addRow(danger_button(t("thin_out"), self.thin_out, t("thin_tip")))
+        form.addRow(danger_button(t("thin_out"), self.thin_out, t("thin_tip"), icon="thin_out"))
         group.add_to(layout)
 
     def store_panel(self):
@@ -782,26 +775,22 @@ class CloudEditor(Labelling, Editor):
         self.status(self.tr("status_filter", n=int(self.selected.sum())), 10000)
 
     def select_outliers(self):
-        QtWidgets.QApplication.setOverrideCursor(Qt.WaitCursor)
-        try:
-            ids = self.visible_ids
-            local = cloud.statistical_outliers(self.cloud.xyz[ids], self.neighbours.value(), self.ratio.value())
-        finally:
-            QtWidgets.QApplication.restoreOverrideCursor()
+        ids = self.visible_ids
+        xyz, neighbours, ratio = self.cloud.xyz[ids], self.neighbours.value(), self.ratio.value()
+        local = self.compute(self.tr("select_outliers") + " …", lambda: cloud.statistical_outliers(xyz, neighbours, ratio))
         self._select_filtered(ids[local])
 
     def select_sparse(self):
-        QtWidgets.QApplication.setOverrideCursor(Qt.WaitCursor)
-        try:
-            ids = self.visible_ids
-            local = cloud.sparse_points(self.cloud.xyz[ids], self.sparse_radius.value(), self.sparse_min.value())
-        finally:
-            QtWidgets.QApplication.restoreOverrideCursor()
+        ids = self.visible_ids
+        xyz, radius, least = self.cloud.xyz[ids], self.sparse_radius.value(), self.sparse_min.value()
+        local = self.compute(self.tr("select_sparse") + " …", lambda: cloud.sparse_points(xyz, radius, least))
         self._select_filtered(ids[local])
 
     def thin_out(self):
         ids = self.visible_ids
-        self.remove(ids[cloud.downsample_surplus(self.cloud.xyz[ids], self.leaf.value())], self.tr("thin_out"))
+        xyz, leaf = self.cloud.xyz[ids], self.leaf.value()
+        surplus = self.compute(self.tr("thin_out") + " …", lambda: cloud.downsample_surplus(xyz, leaf))
+        self.remove(ids[surplus], self.tr("thin_out"))
 
     def _box_changed(self, *_):
         low, high = self.box.bounds()

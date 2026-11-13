@@ -241,7 +241,7 @@ class VoxelEditor(VoxelLabelling, Editor):
         form.addRow(t("depth_tolerance"), self.tolerance)
         row = W.QHBoxLayout()
         row.addWidget(danger_button(t("delete_selection"), self.delete_selection))
-        row.addWidget(button(t("clear_selection"), self.clear_selection))
+        row.addWidget(button(t("clear_selection"), self.clear_selection, icon="clear_selection"))
         form.addRow(row)
         group.add_to(layout)
 
@@ -249,7 +249,7 @@ class VoxelEditor(VoxelLabelling, Editor):
         form = W.QFormLayout(group)
         self.island_size = int_spin(1, 1_000_000, values["island"], t("voxels_suffix"))
         form.addRow(t("island_size"), self.island_size)
-        form.addRow(select_button(t("select_islands"), self.select_islands, t("islands_tip")))
+        form.addRow(select_button(t("select_islands"), self.select_islands, t("islands_tip"), icon="islands_pick"))
         group.add_to(layout)
 
         group = Section(t("box"), "box")
@@ -260,10 +260,10 @@ class VoxelEditor(VoxelLabelling, Editor):
         self.show_box.setChecked(values["show_box"])
         self.show_box.toggled.connect(self._box_changed)
         grid.addWidget(self.show_box, 3, 0, 1, 2)
-        grid.addWidget(button(t("box_from_selection"), self.box_from_selection), 3, 2)
-        grid.addWidget(select_button(t("box_select"), self.box_select), 4, 0, 1, 3)
-        grid.addWidget(danger_button(t("box_delete"), self.box_delete), 5, 0, 1, 3)
-        grid.addWidget(add_button(t("box_fill"), self.box_fill, t("box_fill_tip")), 6, 0, 1, 3)
+        grid.addWidget(button(t("box_from_selection"), self.box_from_selection, icon="box_fit"), 3, 2)
+        grid.addWidget(select_button(t("box_select"), self.box_select, icon="box_select"), 4, 0, 1, 3)
+        grid.addWidget(danger_button(t("box_delete"), self.box_delete, icon="box_erase_in"), 5, 0, 1, 3)
+        grid.addWidget(add_button(t("box_fill"), self.box_fill, t("box_fill_tip"), icon="box_fill"), 6, 0, 1, 3)
         group.add_to(layout)
 
         group = Section(t("ruler"), "ruler")
@@ -276,7 +276,7 @@ class VoxelEditor(VoxelLabelling, Editor):
         self.ruler_label.setWordWrap(True)
         self.ruler_label.setTextInteractionFlags(Qt.TextSelectableByMouse)
         form.addRow(self.ruler_label)
-        form.addRow(button(t("ruler_clear"), self.clear_ruler))
+        form.addRow(button(t("ruler_clear"), self.clear_ruler, icon="ruler_clear"))
         group.add_to(layout)
 
         self.slice = SliceControls(t, values["slice"], step, self._slice_changed, self.restore_view)
@@ -286,7 +286,7 @@ class VoxelEditor(VoxelLabelling, Editor):
         group.setToolTip(t("range_tip"))
         grid = W.QGridLayout(group)
         self.ranges = AxisRanges(grid, 0, values["range"], step, lambda *_: self.filters_changed())
-        grid.addWidget(button(t("show_all"), self.reset_range), 3, 0, 1, 3)
+        grid.addWidget(button(t("show_all"), self.reset_range, icon="show_all"), 3, 0, 1, 3)
         group.add_to(layout)
 
         layout.addStretch(1)

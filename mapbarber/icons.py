@@ -315,6 +315,472 @@ def _cells(p, c, a):
                 p.drawRect(R(3 + 6 * i, 3 + 6 * j, 6, 6))
 
 
+def _cube(p, x, y, size, pen=None, fill=None):
+    """A small box drawn in perspective with its front face at (x, y)."""
+    d = size * 0.4
+    if pen is not None:
+        p.setPen(pen)
+    if fill is not None:
+        p.save()
+        p.setBrush(fill)
+        p.drawRect(R(x, y + d, size, size))
+        p.restore()
+    p.drawRect(R(x, y + d, size, size))
+    p.drawPolyline(_poly([(x, y + d), (x + d, y), (x + size + d, y), (x + size + d, y + size), (x + size, y + size + d)]))
+    p.drawLine(L(x + size, y + d, x + size + d, y))
+
+
+def _dot(p, colour, x, y, r=1.6, hollow=False):
+    p.save()
+    if hollow:
+        p.setPen(QtGui.QPen(colour, 1.2))
+        p.setBrush(Qt.NoBrush)
+    else:
+        p.setPen(Qt.NoPen)
+        p.setBrush(colour)
+    p.drawEllipse(P(x, y), r, r)
+    p.restore()
+
+
+def _cross(p, colour, x, y, r=3.5, width=2.2):
+    p.save()
+    p.setPen(QtGui.QPen(colour, width, Qt.SolidLine, Qt.RoundCap))
+    p.drawLine(L(x - r, y - r, x + r, y + r))
+    p.drawLine(L(x - r, y + r, x + r, y - r))
+    p.restore()
+
+
+def _arrow(p, colour, x0, y0, x1, y1, head=3.5, width=2.0):
+    import math
+    p.save()
+    p.setPen(QtGui.QPen(colour, width, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin))
+    p.drawLine(L(x0, y0, x1, y1))
+    angle = math.atan2(y1 - y0, x1 - x0)
+    for side in (2.5, -2.5):
+        p.drawLine(L(x1, y1, x1 - head * math.cos(angle + side / 4 * math.pi / 2.2),
+                     y1 - head * math.sin(angle + side / 4 * math.pi / 2.2)))
+    p.restore()
+
+
+def _small_tag(p, x, y, s=1.0):
+    p.drawPolygon(_poly([(x, y), (x + 7 * s, y), (x + 12 * s, y + 5 * s), (x + 7 * s, y + 10 * s), (x, y + 10 * s)]))
+
+
+def _i_clear_selection(p, c, a):
+    p.setPen(QtGui.QPen(a, 2, Qt.DashLine))
+    p.drawRect(R(3, 4, 15, 13))
+    _cross(p, c, 17, 17, 3.5)
+
+
+def _i_box_fit(p, c, a):
+    for x, y in ((8, 10), (12, 8), (15, 13), (10, 15), (13, 16)):
+        _dot(p, a, x, y, 1.5)
+    for (x, y), (dx, dy) in (((3, 3), (1, 1)), ((21, 3), (-1, 1)), ((3, 21), (1, -1)), ((21, 21), (-1, -1))):
+        p.drawLine(L(x, y, x + 5 * dx, y))
+        p.drawLine(L(x, y, x, y + 5 * dy))
+
+
+def _i_box_select(p, c, a):
+    _cube(p, 3, 4, 13)
+    for x, y in ((7, 13), (10, 16), (12, 12), (8, 18)):
+        _dot(p, a, x, y, 1.6)
+
+
+def _i_box_erase_in(p, c, a):
+    _cube(p, 3, 4, 13)
+    _cross(p, a, 9.5, 15, 3)
+
+
+def _i_box_erase_out(p, c, a):
+    _cube(p, 6, 6, 10)
+    for x, y in ((3, 3), (21, 3), (3, 21), (21, 21)):
+        _cross(p, a, x, y, 1.8, 1.6)
+
+
+def _i_box_fill(p, c, a):
+    _cube(p, 3, 4, 13, fill=a)
+
+
+def _i_ruler_clear(p, c, a):
+    p.save()
+    p.translate(10, 12)
+    p.rotate(-35)
+    p.drawRect(R(-8, -3, 16, 6))
+    p.restore()
+    _cross(p, a, 18, 18, 3.2)
+
+
+def _i_show_all(p, c, a):
+    p.drawRect(R(9, 9, 6, 6))
+    for x0, y0, x1, y1 in ((8, 8, 3, 3), (16, 8, 21, 3), (8, 16, 3, 21), (16, 16, 21, 21)):
+        _arrow(p, a, x0, y0, x1, y1, 3)
+
+
+def _i_ground_select(p, c, a):
+    p.drawRect(R(9, 4, 6, 8))
+    p.setPen(Qt.NoPen)
+    p.setBrush(a)
+    p.drawRect(R(2, 15, 20, 6))
+
+
+def _i_ground_others(p, c, a):
+    p.setPen(Qt.NoPen)
+    p.setBrush(a)
+    p.drawRect(R(8, 3, 8, 11))
+    p.setPen(QtGui.QPen(c, 2))
+    p.drawLine(L(2, 18, 22, 18))
+    for x in (5, 10, 15, 20):
+        p.drawLine(L(x, 18, x - 3, 22))
+
+
+def _i_outliers(p, c, a):
+    for x, y in ((5, 15), (8, 12), (9, 17), (12, 14), (7, 19), (11, 10)):
+        _dot(p, c, x, y, 1.4)
+    _dot(p, a, 19, 5, 2.2)
+    p.setPen(QtGui.QPen(a, 1.4))
+    p.drawEllipse(P(19, 5), 4, 4)
+
+
+def _i_sparse(p, c, a):
+    p.setPen(QtGui.QPen(a, 1.4, Qt.DashLine))
+    p.drawEllipse(P(12, 12), 9, 9)
+    for x, y in ((8, 9), (15, 14), (10, 16)):
+        _dot(p, a, x, y, 1.8)
+
+
+def _i_thin_out(p, c, a):
+    for i in range(3):
+        for j in range(3):
+            x, y = 5 + 7 * i, 5 + 7 * j
+            _dot(p, a if (i + j) % 2 == 0 else c, x, y, 2.0, hollow=(i + j) % 2 == 1)
+
+
+def _i_islands_pick(p, c, a):
+    p.drawRect(R(3, 10, 9, 10))
+    p.setPen(Qt.NoPen)
+    p.setBrush(a)
+    for x, y, size in ((16, 4, 3), (19, 12, 3), (14, 17, 3)):
+        p.drawRect(R(x, y, size, size))
+    p.setPen(QtGui.QPen(a, 1.4, Qt.DashLine))
+    p.setBrush(Qt.NoBrush)
+    p.drawEllipse(P(17.5, 10.5), 6, 8)
+
+
+def _i_speckles_clear(p, c, a):
+    for x, y in ((4, 5), (9, 3), (6, 10), (13, 7), (3, 15)):
+        p.drawRect(R(x, y, 2, 2))
+    p.save()
+    p.translate(15, 15)
+    p.rotate(-40)
+    p.setPen(QtGui.QPen(a, 2))
+    p.drawRect(R(-6, -3, 12, 6))
+    p.restore()
+
+
+def _i_apply(p, c, a):
+    p.setPen(QtGui.QPen(a, 2.6))
+    p.drawPolyline(_poly([(4, 13), (10, 19), (20, 6)]))
+
+
+def _i_trim(p, c, a):
+    p.drawPolyline(_poly([(6, 2), (6, 18), (22, 18)]))
+    p.drawPolyline(_poly([(2, 6), (18, 6), (18, 22)]))
+    p.setPen(QtGui.QPen(a, 2))
+    p.drawRect(R(9, 9, 6, 6))
+
+
+def _i_class_edit(p, c, a):
+    _small_tag(p, 2, 4, 1.0)
+    p.setPen(QtGui.QPen(a, 2.2))
+    p.drawLine(L(10, 21, 21, 10))
+    p.drawLine(L(10, 21, 9, 22))
+
+
+def _i_class_remove(p, c, a):
+    _small_tag(p, 2, 3, 1.1)
+    p.setPen(QtGui.QPen(a, 2.6))
+    p.drawLine(L(13, 19, 22, 19))
+
+
+def _i_list_save(p, c, a):
+    for y in (5, 10, 15):
+        p.drawLine(L(3, y, 12, y))
+    p.drawPolyline(_poly([(14, 15), (14, 21), (22, 21), (22, 15)]))
+    _arrow(p, a, 18, 3, 18, 15, 3)
+
+
+def _i_tag_clear(p, c, a):
+    _small_tag(p, 2, 3, 1.1)
+    _cross(p, a, 18, 18, 3.2)
+
+
+def _i_solo(p, c, a):
+    p.drawPath(_eye_path())
+    _dot(p, a, 12, 12, 3.2)
+
+
+def _eye_path():
+    path = QtGui.QPainterPath()
+    path.moveTo(2, 12)
+    path.quadTo(12, 2, 22, 12)
+    path.quadTo(12, 22, 2, 12)
+    return path
+
+
+def _i_select_class(p, c, a):
+    p.setPen(QtGui.QPen(a, 2, Qt.DashLine))
+    p.drawRect(R(2, 2, 20, 20))
+    p.setPen(QtGui.QPen(c, 2))
+    _small_tag(p, 6, 7, 0.9)
+
+
+def _i_labels_open(p, c, a):
+    p.drawPolyline(_poly([(2, 19), (2, 6), (8, 6), (10, 8), (20, 8), (20, 19), (2, 19)]))
+    p.setPen(QtGui.QPen(a, 2))
+    _small_tag(p, 8, 11, 0.6)
+
+
+def _i_labels_save(p, c, a):
+    p.drawPolyline(_poly([(3, 14), (3, 21), (21, 21), (21, 14)]))
+    _arrow(p, a, 12, 3, 12, 16, 3.5)
+    _dot(p, a, 17, 6, 1.8)
+
+
+def _i_export(p, c, a):
+    p.drawPolyline(_poly([(3, 12), (3, 21), (21, 21), (21, 12)]))
+    _arrow(p, a, 12, 17, 12, 3, 3.5)
+
+
+def _i_export_boxes(p, c, a):
+    _cube(p, 2, 9, 10)
+    _arrow(p, a, 13, 13, 21, 4, 3.5)
+
+
+def _i_frames_show(p, c, a):
+    for x in (2, 16):
+        p.drawRect(R(x, 7, 6, 10))
+    p.save()
+    p.setPen(QtGui.QPen(a, 2))
+    p.setBrush(QtGui.QColor(a.red(), a.green(), a.blue(), 90))
+    p.drawRect(R(9, 5, 6, 14))
+    p.restore()
+
+
+def _i_poses(p, c, a):
+    path = QtGui.QPainterPath()
+    path.moveTo(3, 19)
+    path.cubicTo(8, 4, 14, 22, 20, 6)
+    p.save()
+    p.setPen(QtGui.QPen(a, 2))
+    p.drawPath(path)
+    p.restore()
+    for x, y in ((3, 19), (11.5, 13), (20, 6)):
+        _dot(p, c, x, y, 2.0)
+
+
+def _i_poses_off(p, c, a):
+    path = QtGui.QPainterPath()
+    path.moveTo(3, 19)
+    path.cubicTo(8, 4, 14, 22, 20, 6)
+    p.drawPath(path)
+    p.setPen(QtGui.QPen(a, 2.4))
+    p.drawLine(L(4, 4, 20, 20))
+
+
+def _i_propagate(p, c, a):
+    p.drawRect(R(2, 6, 7, 12))
+    _dot(p, a, 5.5, 12, 2)
+    _arrow(p, a, 10, 12, 15, 12, 3)
+    p.drawRect(R(16, 4, 5, 7))
+    p.drawRect(R(16, 13, 5, 7))
+
+
+def _i_conflict(p, c, a):
+    p.drawRect(R(2, 3, 11, 14))
+    p.drawRect(R(7, 7, 11, 14))
+    p.setPen(QtGui.QPen(a, 2.6))
+    p.drawLine(L(20, 3, 20, 12))
+    p.drawPoint(P(20, 17))
+
+
+def _i_next_area(p, c, a):
+    p.setPen(QtGui.QPen(c, 2, Qt.DashLine))
+    p.drawRect(R(12, 5, 9, 14))
+    _arrow(p, a, 2, 12, 10, 12, 3.5)
+
+
+def _i_doubt(p, c, a):
+    _small_tag(p, 2, 7, 1.0)
+    p.setPen(QtGui.QPen(a, 2.2))
+    path = QtGui.QPainterPath()
+    path.moveTo(15, 6)
+    path.cubicTo(15, 2, 22, 2, 22, 6)
+    path.cubicTo(22, 9, 18.5, 9, 18.5, 12)
+    p.drawPath(path)
+    p.drawPoint(P(18.5, 16))
+
+
+def _i_label_islands(p, c, a):
+    _small_tag(p, 2, 8, 1.0)
+    p.setPen(Qt.NoPen)
+    p.setBrush(a)
+    for x, y in ((17, 3), (20, 10), (16, 18)):
+        p.drawEllipse(P(x, y), 2, 2)
+
+
+def _i_fill_gaps(p, c, a):
+    for i in range(3):
+        for j in range(3):
+            x, y = 5 + 7 * i, 5 + 7 * j
+            gap = (i, j) in ((1, 1), (2, 1), (1, 2))
+            _dot(p, a if gap else c, x, y, 2.0, hollow=gap)
+
+
+def _i_accept_all(p, c, a):
+    p.setPen(QtGui.QPen(a, 2.4))
+    p.drawPolyline(_poly([(2, 13), (6, 17), (13, 8)]))
+    p.drawPolyline(_poly([(9, 15), (11, 17), (21, 6)]))
+
+
+def _i_reject_all(p, c, a):
+    p.drawEllipse(P(12, 12), 9, 9)
+    _cross(p, a, 12, 12, 4)
+
+
+def _i_split(p, c, a):
+    p.drawRect(R(2, 7, 8, 10))
+    p.drawRect(R(14, 7, 8, 10))
+    _arrow(p, a, 10, 3, 4, 3, 2.5, 1.6)
+    _arrow(p, a, 14, 3, 20, 3, 2.5, 1.6)
+    p.setPen(QtGui.QPen(a, 1.6, Qt.DashLine))
+    p.drawLine(L(12, 6, 12, 21))
+
+
+def _i_merge(p, c, a):
+    p.drawRect(R(2, 4, 7, 7))
+    p.drawRect(R(2, 13, 7, 7))
+    _arrow(p, a, 10, 7.5, 15, 11, 2.5, 1.6)
+    _arrow(p, a, 10, 16.5, 15, 13, 2.5, 1.6)
+    p.save()
+    p.setBrush(a)
+    p.drawRect(R(16, 8, 6, 8))
+    p.restore()
+
+
+def _i_unsplit(p, c, a):
+    p.drawRect(R(2, 3, 7, 7))
+    p.drawRect(R(2, 13, 7, 7))
+    _arrow(p, a, 10, 12, 13, 12, 2.5, 1.6)
+    p.setPen(QtGui.QPen(a, 2))
+    _small_tag(p, 13, 7, 0.75)
+
+
+def _i_auto_box(p, c, a):
+    _cube(p, 2, 8, 11)
+    p.setPen(QtGui.QPen(a, 2))
+    for x0, y0, x1, y1 in ((18, 2, 18, 8), (15, 5, 21, 5), (21, 11, 21, 15), (19, 13, 23, 13)):
+        p.drawLine(L(x0, y0, x1, y1))
+
+
+def _i_box_around_selection(p, c, a):
+    _cube(p, 2, 3, 15)
+    p.setPen(QtGui.QPen(a, 1.6, Qt.DashLine))
+    p.drawRect(R(5, 12, 8, 7))
+
+
+def _i_boxes_all(p, c, a):
+    _cube(p, 2, 12, 7)
+    _cube(p, 12, 12, 7)
+    _cube(p, 7, 2, 7, pen=QtGui.QPen(a, 2))
+
+
+def _i_refit(p, c, a):
+    _cube(p, 6, 7, 9)
+    for x0, y0, x1, y1 in ((1, 15, 5, 15), (23, 12, 18.5, 12), (10, 1, 10, 5)):
+        _arrow(p, a, x0, y0, x1, y1, 2.5, 1.6)
+
+
+def _i_box_delete(p, c, a):
+    _cube(p, 2, 3, 12)
+    _cross(p, a, 18, 18, 3.5)
+
+
+def _track(p, c, a, flip):
+    p.save()
+    if flip:
+        p.translate(24, 0)
+        p.scale(-1, 1)
+    _cube(p, 11, 6, 9)
+    p.setPen(QtGui.QPen(a, 2))
+    for y in (11, 15, 19):
+        p.drawLine(L(2, y, 8, y))
+    p.restore()
+
+
+def _i_track_forward(p, c, a):
+    _track(p, c, a, False)
+
+
+def _i_track_backward(p, c, a):
+    _track(p, c, a, True)
+
+
+def _i_retrack(p, c, a):
+    _cube(p, 7, 8, 8)
+    p.setPen(QtGui.QPen(a, 2))
+    p.drawArc(R(2, 2, 20, 20), 40 * 16, 260 * 16)
+    _arrow(p, a, 19.8, 6.0, 20.5, 2.0, 2.5, 1.8)
+
+
+def _i_strays(p, c, a):
+    _cube(p, 5, 6, 10)
+    for x, y in ((3, 3), (21, 5), (21, 21), (2, 20)):
+        _dot(p, a, x, y, 1.8)
+
+
+def _i_leftovers(p, c, a):
+    _cube(p, 2, 6, 11)
+    for x, y in ((18, 11), (20, 15), (18, 19)):
+        _dot(p, a, x, y, 1.9, hollow=True)
+
+
+def _i_absorb(p, c, a):
+    _cube(p, 2, 6, 11)
+    _dot(p, a, 21, 9, 2.0)
+    _arrow(p, a, 21, 13, 15, 16, 2.5, 1.6)
+
+
+def _i_mixed(p, c, a):
+    _cube(p, 3, 4, 13)
+    p.save()
+    p.setPen(Qt.NoPen)
+    p.setBrush(a)
+    p.drawPolygon(_poly([(3, 9.2), (16, 9.2), (3, 22.2)]))
+    p.restore()
+
+
+_BUTTONS = {
+    "clear_selection": (_i_clear_selection, PINK), "box_fit": (_i_box_fit, AMBER), "box_select": (_i_box_select, PINK),
+    "box_erase_in": (_i_box_erase_in, RED), "box_erase_out": (_i_box_erase_out, RED), "box_fill": (_i_box_fill, GREEN),
+    "ruler_clear": (_i_ruler_clear, GOLD), "show_all": (_i_show_all, TEAL), "ground_select": (_i_ground_select, PINK),
+    "ground_others": (_i_ground_others, PINK), "outliers": (_i_outliers, PINK), "sparse": (_i_sparse, PINK),
+    "thin_out": (_i_thin_out, RED), "islands_pick": (_i_islands_pick, PINK), "speckles_clear": (_i_speckles_clear, RED),
+    "apply": (_i_apply, GREEN), "trim": (_i_trim, RED), "class_edit": (_i_class_edit, BLUE),
+    "class_remove": (_i_class_remove, RED), "list_save": (_i_list_save, BLUE), "tag_clear": (_i_tag_clear, RED),
+    "solo": (_i_solo, TEAL), "select_class": (_i_select_class, PINK), "labels_open": (_i_labels_open, AMBER),
+    "labels_save": (_i_labels_save, BLUE), "export": (_i_export, BLUE), "export_boxes": (_i_export_boxes, BLUE),
+    "frames_show": (_i_frames_show, PINK), "poses": (_i_poses, BLUE), "poses_off": (_i_poses_off, RED),
+    "propagate": (_i_propagate, GREEN), "conflict": (_i_conflict, PINK), "next_area": (_i_next_area, PINK),
+    "doubt": (_i_doubt, PINK), "label_islands": (_i_label_islands, PINK), "fill_gaps": (_i_fill_gaps, GREEN),
+    "accept_all": (_i_accept_all, GREEN), "reject_all": (_i_reject_all, RED), "split": (_i_split, AMBER),
+    "merge": (_i_merge, AMBER), "unsplit": (_i_unsplit, AMBER), "auto_box": (_i_auto_box, GREEN),
+    "box_around_selection": (_i_box_around_selection, AMBER), "boxes_all": (_i_boxes_all, AMBER),
+    "refit": (_i_refit, AMBER), "box_delete": (_i_box_delete, RED), "track_forward": (_i_track_forward, GREEN),
+    "track_backward": (_i_track_backward, GREEN), "retrack": (_i_retrack, AMBER), "strays": (_i_strays, PINK),
+    "leftovers": (_i_leftovers, PINK), "absorb": (_i_absorb, GREEN), "mixed": (_i_mixed, PINK),
+}
+
+
 _DRAW = {
     "ground": _ground, "bbox": _bbox, "kind_voxel": _voxels, "kind_cloud": _dots, "kind_grid": _cells,
     "labels": _tag, "smart": _wand, "review": _check, "instances": _cubes, "frames": _film,
@@ -327,6 +793,11 @@ _DRAW = {
     "open": _folder, "save": _floppy, "undo": _undo, "redo": _redo,
     "role_danger": _trash, "role_add": _plus_bare, "role_select": _cursor,
 }
+
+
+for _name, (_draw, _colour) in _BUTTONS.items():
+    _DRAW["button_" + _name] = _draw
+    ACCENTS["button_" + _name] = _colour
 
 
 def accent(name):

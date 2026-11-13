@@ -992,7 +992,7 @@ def test_a_corrected_box_is_tracked_again_up_to_the_corrected_boxes(session):
     editor.box_list.setCurrentItem(item)
     session.step("move the box onto the right car", lambda: editor.box_fields[1].setValue(13.0))
     assert box_of(8)["key"] and "score" not in box_of(8)
-    assert "Track again" in session.window.statusBar().currentMessage()
+    assert "Re-track" in session.window.statusBar().currentMessage()
     assert "corrected" in editor.box_list.currentItem().text(2)
     session.step("track again from it", lambda: editor.track_again())
     assert "Followed again" in session.window.statusBar().currentMessage()
