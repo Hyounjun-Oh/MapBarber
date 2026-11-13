@@ -403,7 +403,7 @@
  "track_accept": "Accept score",
  "track_reach_tip": "How far an object may have moved between two frames beyond its own speed.",
  "track_accept_tip": "Score = half box overlap (the box where it was expected against where its points put it) + half alignment (how much of what is seen the object's model explains). At or above this the labels are applied; below it they arrive as suggestions marked '?' to review; below 0.25 the track ends.",
- "track_tip": "Box the objects in one frame (Box every object of …), set the frame range on the timeline, then track. Going forwards each object's points are gathered into one model, so the box grows to the whole object as the view changes; then every frame, earlier ones too, is fitted again against the finished model. One box size per object; classes marked as changing shape get a box per frame.",
+ "track_tip": "Box the objects in one frame (Box every object of …), set the frame range on the timeline, then track. Going forwards each object's points are gathered into one model, so the box grows to the whole object as the view changes; then every frame, earlier ones too, is fitted again against the finished model. One box size per object; classes marked as changing shape get a box per frame. Boxes you corrected in other frames stay as they are.",
  "track_none": "Nothing to track: the first frame on screen needs boxed objects, and later frames must be on screen (widen the timeline range).",
  "status_tracked": "Tracked {n} boxes  ·  {u} uncertain (review the '?')  ·  {l} lost",
  "class_soft": "Changes shape while it moves",
@@ -423,5 +423,12 @@
  "boxes_select_stray": "Select stray points of the boxes",
  "boxes_stray_tip": "Points labelled as a boxed object that lie more than half the gap between objects outside its box. Look at them, then press Delete to clear their labels, or switch off 'Keep stray points out of boxes' and refit to take them in.",
  "boxes_refit_tip": "Fits the box again to its object's points as they are labelled now. A box without an object is fitted to the points inside it.",
- "status_stray": "{n} stray points left out"
+ "status_stray": "{n} stray points left out",
+ "track_again": "Track again from this box",
+ "track_again_tip": "After correcting a tracked box (move, turn, resize or refit it in the middle of the sequence), this follows its object again from that frame, forwards and backwards through the frames on screen, up to the nearest boxes of the object made or corrected by hand, which stay as they are. The corrected box keeps its size in every frame. In the frames it is found again the object takes the new track's points, and points it had before but no longer gets lose their label; frames where it is not found keep what they had.",
+ "track_again_none": "Choose a box of an object in the box list first (a tracked box you corrected).",
+ "track_again_empty": "The chosen box holds no free points above the ground in its frame.",
+ "boxes_key": "corrected",
+ "status_corrected": "Box corrected. Press 'Track again from this box' to carry the correction to the frames before and after it.",
+ "status_tracked_again": "Followed again in {n} frames ({first} – {last})  ·  {u} uncertain (review the '?')  ·  {r} points no longer belong to it"
 }

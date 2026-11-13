@@ -148,9 +148,14 @@ class Track:
     previous frame, and its box is fitted again in every frame.
     """
 
-    def __init__(self, box, points, rigid=True, cell=0.05, margin=None):
-        """`margin`: points further than this outside the box are strays and stay out of the model."""
+    def __init__(self, box, points, rigid=True, cell=0.05, margin=None, fixed=False):
+        """`margin`: points further than this outside the box are strays and stay out of the model.
+
+        `fixed`: the box has the right size already (one corrected by hand); a rigid object then keeps it in
+        every frame, and what the frames show only helps to find the object.
+        """
         self.cls, self.instance, self.rigid, self.cell = int(box.get("class", 0)), int(box.get("instance", 0)), rigid, cell
+        self.fixed = fixed and rigid
         pose = pose_of(box)
         local = to_local(pose, points)
         half = np.asarray(box["size"], np.float64) / 2.0
@@ -159,6 +164,8 @@ class Track:
             if near.sum() >= 3:
                 local = local[near]
         self.low, self.high = np.minimum(-half, local.min(axis=0)), np.maximum(half, local.max(axis=0))
+        if self.fixed:
+            self.low, self.high = -half, half
         self.model = thin(local, cell)
         self.first = pose
         self.poses, self.results, self.extents = {}, {}, {}
@@ -177,6 +184,8 @@ class Track:
         """
         low, high = (self.low, self.high) if self.rigid else self.extents[frame]
         box = self.box(self.poses[frame], low, high)
+        if self.fixed:
+            return box
         if box["size"][1] > box["size"][0]:
             box["size"] = [box["size"][1], box["size"][0], box["size"][2]]
             box["yaw"] += np.pi / 2.0
@@ -270,7 +279,8 @@ class Track:
             mine = mine[box_labels.body(mine, gap)]
             if self.rigid:
                 self.model = thin(np.vstack([self.model, mine]), self.cell)
-                self.low, self.high = np.minimum(self.low, mine.min(axis=0)), np.maximum(self.high, mine.max(axis=0))
+                if not self.fixed:
+                    self.low, self.high = np.minimum(self.low, mine.min(axis=0)), np.maximum(self.high, mine.max(axis=0))
             else:
                 self.model = thin(mine, self.cell)
                 self.low, self.high = mine.min(axis=0), mine.max(axis=0)

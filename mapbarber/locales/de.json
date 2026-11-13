@@ -403,7 +403,7 @@
  "track_accept": "Annahmewert",
  "track_reach_tip": "Wie weit sich ein Objekt zwischen zwei Frames über seine eigene Geschwindigkeit hinaus bewegt haben kann.",
  "track_accept_tip": "Wert = halb Quaderüberlappung (der Quader am erwarteten Ort gegen den, an den seine Punkte ihn setzen) + halb Ausrichtung (wie viel des Gesehenen das Modell des Objekts erklärt). Ab diesem Wert wird die Beschriftung angewendet; darunter kommt sie als Vorschlag mit „?“ zur Prüfung; unter 0,25 endet die Spur.",
- "track_tip": "Objekte in einem Frame mit Quadern versehen (Quader für jedes Objekt …), den Frame-Bereich auf der Zeitleiste setzen, dann verfolgen. Vorwärts werden die Punkte jedes Objekts in einem Modell gesammelt, sodass der Quader mit wechselnder Ansicht zum ganzen Objekt wächst; danach wird jeder Frame, auch frühere, erneut an das fertige Modell angepasst. Eine Quadergröße je Objekt; als formverändernd markierte Klassen erhalten einen Quader je Frame.",
+ "track_tip": "Objekte in einem Frame mit Quadern versehen (Quader für jedes Objekt …), den Frame-Bereich auf der Zeitleiste setzen, dann verfolgen. Vorwärts werden die Punkte jedes Objekts in einem Modell gesammelt, sodass der Quader mit wechselnder Ansicht zum ganzen Objekt wächst; danach wird jeder Frame, auch frühere, erneut an das fertige Modell angepasst. Eine Quadergröße je Objekt; als formverändernd markierte Klassen erhalten einen Quader je Frame. In anderen Frames korrigierte Quader bleiben unverändert.",
  "track_none": "Nichts zu verfolgen: der erste angezeigte Frame braucht Objekte mit Quadern, und spätere Frames müssen angezeigt sein (Bereich der Zeitleiste erweitern).",
  "status_tracked": "{n} Quader verfolgt  ·  {u} unsicher („?“ prüfen)  ·  {l} verloren",
  "class_soft": "Ändert beim Bewegen die Form",
@@ -423,5 +423,12 @@
  "boxes_select_stray": "Ausreißer der Boxen auswählen",
  "boxes_stray_tip": "Punkte, die als Objekt mit Box beschriftet sind, aber mehr als den halben Abstand zwischen Objekten außerhalb der Box liegen. Ansehen, dann mit Entf die Labels löschen, oder „Ausreißer aus Boxen heraushalten“ ausschalten und neu anpassen, um sie aufzunehmen.",
  "boxes_refit_tip": "Passt die Box erneut an die Punkte ihres Objekts an, wie sie jetzt beschriftet sind. Eine Box ohne Objekt wird an die Punkte in ihr angepasst.",
- "status_stray": "{n} Ausreißer ausgelassen"
+ "status_stray": "{n} Ausreißer ausgelassen",
+ "track_again": "Ab diesem Quader neu verfolgen",
+ "track_again_tip": "Nachdem ein verfolgter Quader korrigiert wurde (mitten in der Sequenz verschoben, gedreht, in der Größe geändert oder neu angepasst), wird sein Objekt ab diesem Frame vorwärts und rückwärts durch die angezeigten Frames neu verfolgt, bis zu den nächsten von Hand erstellten oder korrigierten Quadern desselben Objekts, die unverändert bleiben. Der korrigierte Quader behält in jedem Frame seine Größe. In den Frames, in denen es wiedergefunden wird, erhält das Objekt die Punkte der neuen Verfolgung, und Punkte, die es vorher hatte, jetzt aber nicht mehr bekommt, verlieren ihr Label; Frames, in denen es nicht gefunden wird, bleiben unverändert.",
+ "track_again_none": "Zuerst in der Quaderliste den Quader eines Objekts wählen (einen korrigierten verfolgten Quader).",
+ "track_again_empty": "Der gewählte Quader enthält in seinem Frame keine freien Punkte über dem Boden.",
+ "boxes_key": "korrigiert",
+ "status_corrected": "Quader korrigiert. „Ab diesem Quader neu verfolgen“ überträgt die Korrektur auf die Frames davor und danach.",
+ "status_tracked_again": "In {n} Frames neu verfolgt ({first} – {last})  ·  {u} unsicher ('?' prüfen)  ·  {r} Punkte gehören nicht mehr dazu"
 }

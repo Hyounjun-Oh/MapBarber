@@ -1015,6 +1015,7 @@ class Labelling(ClassHistory):
                 members = inst == number
                 cls = int(np.bincount(self.labels.cls[ids[members]]).argmax())
                 box, left_out = self._fit(local[members], cls, int(number))
+                box["key"] = True
                 kept.append(box)
                 made += 1
                 strays += left_out
@@ -1055,6 +1056,7 @@ class Labelling(ClassHistory):
             local, inst = self._local(key, mine), self.labels.inst[mine]
             for number in np.unique(inst):
                 box, left_out = self._fit(local[inst == number], chosen, int(number))
+                box["key"] = True
                 kept.append(box)
                 made += 1
                 strays += left_out
@@ -1115,12 +1117,16 @@ class Labelling(ClassHistory):
 
                 track.run(frames, start, scene_of, reach=reach, gap=gap, least=least)
                 for frame, found in track.results.items():
+                    if frame != start and any(box.get("key") and box.get("instance") == number for box in self._boxes_of(frame)):
+                        continue
                     sure = found["score"] >= accept or frame == start
                     ids = found["ids"]
                     ids = ids[~((cls[ids] == track.cls) & (inst[ids] == number) & ~pending[ids])]
                     self.labels.assign(ids, track.cls, number, pending=not sure)
                     stored = box_labels.moved(track.box_in(frame), np.linalg.inv(self._pose(frame)))
                     stored.update(points=int(len(found["ids"])), score=round(found["score"], 3), left=found["left"])
+                    if frame == start:
+                        stored["key"] = True
                     self.box_store[frame] = [box for box in self._boxes_of(frame) if box.get("instance") != number]
                     self.box_store[frame].append(stored)
                     if frame != start:
@@ -1138,6 +1144,84 @@ class Labelling(ClassHistory):
         self._fill_instances()
         self._boxes_changed()
         self.status(self.tr("status_tracked", n=followed, u=unsure, l=lost), 12000)
+
+    def track_again(self):
+        """Follow the chosen box's object again from its frame, keeping the box as it is now.
+
+        Meant for a tracked box corrected by hand (moved, turned, resized or refitted) in the middle of a
+        sequence: the correction is carried forwards and backwards through the frames on screen, up to the
+        nearest box of the same object made or corrected by hand on either side, which stay as they are. In its
+        own frame the box decides which points are the object. In the frames the object is found in again, it
+        takes the points the new track gives it, and those it had before but no longer gets lose their label
+        (they were a wrong track's). Frames where it is not found again keep what they had.
+        """
+        if self.sequence is None or self.sequence.poses is None:
+            return self.status(self.tr("frames_need_poses"), 8000)
+        world = self._active_box_world()
+        if world is None or not world.get("instance"):
+            return self.status(self.tr("track_again_none"), 10000)
+        key, index = self.active_box
+        chosen = self.box_store[key][index]
+        number, cls, inst, pending = chosen["instance"], self.labels.cls, self.labels.inst, self.labels.pending
+        frames = list(self.frame_ids)
+        corrected = [frame for frame in frames if frame != key and any(
+            box.get("key") and box.get("instance") == number for box in self._boxes_of(frame))]
+        before = max((frame for frame in corrected if frame < key), default=-1)
+        after = min((frame for frame in corrected if frame > key), default=len(self.sequence))
+        segment = [frame for frame in frames if before < frame < after]
+        gap, accept = self.object_gap.value(), self.track_accept.value()
+        above = self._above_ground(key)
+        free = above[(cls[above] == UNLABELED) | pending[above] | (inst[above] == number)]
+        members = free[box_labels.inside(dict(world, size=[v + 0.05 for v in world["size"]]), self.cloud.xyz[free])]
+        if len(members) < 3:
+            return self.status(self.tr("track_again_empty"), 10000)
+        QtWidgets.QApplication.setOverrideCursor(Qt.WaitCursor)
+        depth, label_depth = len(self._order), self.labels.undo_depth()
+        self._remember_boxes()
+        released = followed = unsure = 0
+        try:
+            track = tracking.Track(world, self.cloud.xyz[members], rigid=not self.classes.soft(chosen["class"]),
+                                   margin=gap / 2.0, fixed=True)
+
+            def scene_of(frame):
+                ids = self._above_ground(frame)
+                ids = ids[(cls[ids] == UNLABELED) | pending[ids] | (inst[ids] == number)]
+                return ids, self.cloud.xyz[ids]
+
+            least = max(3, self.min_points.value() // 4)
+            track.run(segment, key, scene_of, reach=self.track_reach.value(), gap=gap, least=least)
+            found_in = {frame: found["ids"] for frame, found in track.results.items() if frame != key}
+            found_in[key] = members
+            for frame, ids in found_in.items():
+                sure = frame == key or track.results[frame]["score"] >= accept
+                mine = self._key_ids(frame)
+                old = mine[(inst[mine] == number) & ~np.isin(mine, ids)]
+                released += self.labels.assign(old, UNLABELED, 0)
+                ids = ids[~((cls[ids] == chosen["class"]) & (inst[ids] == number) & ~pending[ids])]
+                self.labels.assign(ids, chosen["class"], number, pending=not sure)
+                if frame == key:
+                    continue
+                found = track.results[frame]
+                stored = box_labels.moved(track.box_in(frame), np.linalg.inv(self._pose(frame)))
+                stored.update(points=int(len(found["ids"])), score=round(found["score"], 3), left=found["left"])
+                self.box_store[frame] = [box for box in self._boxes_of(frame) if box.get("instance") != number] + [stored]
+                followed += 1
+                unsure += not sure
+        finally:
+            QtWidgets.QApplication.restoreOverrideCursor()
+        chosen["key"] = True
+        if self.labels.undo_depth() > label_depth:
+            self.labels.squash(label_depth)
+            self._record_step("label")
+            self.labels.touched = np.flatnonzero(self.cloud.alive)
+            self._after_labels()
+        self._group_since(depth)
+        self.active_box = (key, self.box_store[key].index(chosen))
+        self._fill_instances()
+        self._boxes_changed()
+        names = self.sequence.names
+        self.status(self.tr("status_tracked_again", n=followed, first=names[segment[0]], last=names[segment[-1]],
+                            u=unsure, r=released), 12000)
 
     def _leftovers(self, key, box):
         """Unlabelled points of a frame that hang on to a boxed object but were left outside it."""
@@ -1270,7 +1354,7 @@ class Labelling(ClassHistory):
                 continue
             cls = int(np.bincount(self.labels.cls[mine]).argmax())
             inst = int(np.bincount(self.labels.inst[mine]).argmax())
-            self._boxes_of(key).append(self._fit(self._local(key, mine), cls, inst)[0])
+            self._boxes_of(key).append(dict(self._fit(self._local(key, mine), cls, inst)[0], key=True))
             self.active_box = (key, len(self.box_store[key]) - 1)
         self._boxes_changed()
 
@@ -1333,15 +1417,9 @@ class Labelling(ClassHistory):
         tree.clear()
         for key in self._box_keys():
             for index, box in enumerate(self._boxes_of(key)):
-                size = "×".join(f"{v:.2f}" for v in box["size"])
-                if "score" in box:
-                    size += f"  ·  {box['score']:.2f}" + ("  ?" if box["score"] < self.track_accept.value() else "")
-                if box.get("left"):
-                    size += "  ·  " + self.tr("boxes_left", n=box["left"])
-                if self._stray_counts.get((key, index)):
-                    size += "  ·  " + self.tr("boxes_stray", n=self._stray_counts[(key, index)])
                 frame = "" if key is None else f"{self.sequence.names[key]}  "
-                item = QtWidgets.QTreeWidgetItem([f"{frame}{self.classes.name(box['class'])}", str(box.get("instance", 0)), size])
+                item = QtWidgets.QTreeWidgetItem([f"{frame}{self.classes.name(box['class'])}", str(box.get("instance", 0)),
+                                                  self._box_text(key, index)])
                 item.setData(0, Qt.UserRole, (key, index))
                 item.setIcon(0, swatch(self.classes.rgb(box["class"])))
                 tree.addTopLevelItem(item)
@@ -1349,6 +1427,25 @@ class Labelling(ClassHistory):
                     tree.setCurrentItem(item)
         tree.blockSignals(False)
         self._show_box_fields()
+
+    def _box_text(self, key, index):
+        """What the box list says about a box: size, then score, points left beside it, strays, corrected."""
+        box = self.box_store[key][index]
+        text = "×".join(f"{v:.2f}" for v in box["size"])
+        if "score" in box:
+            text += f"  ·  {box['score']:.2f}" + ("  ?" if box["score"] < self.track_accept.value() else "")
+        if box.get("left"):
+            text += "  ·  " + self.tr("boxes_left", n=box["left"])
+        if self._stray_counts.get((key, index)):
+            text += "  ·  " + self.tr("boxes_stray", n=self._stray_counts[(key, index)])
+        if box.get("key") and self.sequence is not None:
+            text += "  ·  " + self.tr("boxes_key")
+        return text
+
+    def _hint_track_again(self, before):
+        """After a tracked box was corrected, say how to carry the correction to the other frames."""
+        if self.sequence is not None and "score" in before and before.get("instance"):
+            self.status(self.tr("status_corrected"), 12000)
 
     def _box_chosen(self, item, *_):
         self.active_box = None if item is None else tuple(item.data(0, Qt.UserRole))
@@ -1389,13 +1486,19 @@ class Labelling(ClassHistory):
         world.update(center=values[:3], size=[max(v, 1e-3) for v in values[3:6]], yaw=float(np.radians(values[6])))
         key, index = self.active_box
         self._remember_boxes()
-        self.box_store[key][index] = box_labels.moved(world, np.linalg.inv(self._pose(key)))
+        old = self.box_store[key][index]
+        corrected = box_labels.moved(world, np.linalg.inv(self._pose(key)))
+        for name in ("score", "left"):
+            corrected.pop(name, None)
+        corrected["key"] = True
+        self.box_store[key][index] = corrected
         self._draw_boxes()
         item = self.box_list.currentItem()
         if item is not None:
-            item.setText(2, "×".join(f"{v:.2f}" for v in self.box_store[key][index]["size"]))
+            item.setText(2, self._box_text(key, index))
         self.changed()
         self._stats_timer.start()
+        self._hint_track_again(old)
 
     def refit_box(self):
         """Fit the chosen box again: to its object's points as labelled now, or else to the points it holds."""
@@ -1412,8 +1515,9 @@ class Labelling(ClassHistory):
         if len(ids) < 3:
             return
         self._remember_boxes()
-        self.box_store[key][index] = self._fit(self._local(key, ids), old["class"], old.get("instance", 0))[0]
+        self.box_store[key][index] = dict(self._fit(self._local(key, ids), old["class"], old.get("instance", 0))[0], key=True)
         self._boxes_changed()
+        self._hint_track_again(old)
 
     def delete_box(self):
         if self.active_box is None:
@@ -2078,6 +2182,7 @@ class Labelling(ClassHistory):
             form.addRow(t("track_reach"), self.track_reach)
             form.addRow(t("track_accept"), self.track_accept)
             form.addRow(add_button(t("track"), self.track_boxes, t("track_tip")))
+            form.addRow(button(t("track_again"), self.track_again, t("track_again_tip")))
         form.addRow(select_button(t("boxes_select_stray"), self.select_strays, t("boxes_stray_tip")))
         form.addRow(select_button(t("boxes_select_left"), self.select_leftovers, t("boxes_left_tip")))
         form.addRow(add_button(t("boxes_take_left"), self.take_leftovers, t("boxes_left_tip")))

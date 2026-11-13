@@ -403,7 +403,7 @@
  "track_accept": "Puntuación de aceptación",
  "track_reach_tip": "Cuánto puede haberse movido un objeto entre dos fotogramas más allá de su propia velocidad.",
  "track_accept_tip": "Puntuación = mitad solapamiento de cajas (la caja donde se esperaba frente a donde la sitúan sus puntos) + mitad alineación (cuánto de lo que se ve explica el modelo del objeto). Con este valor o más se aplican las etiquetas; por debajo llegan como sugerencias marcadas con «?» para revisar; por debajo de 0,25 termina el seguimiento.",
- "track_tip": "Pon cajas a los objetos de un fotograma (Caja para cada objeto de …), fija el rango en la línea de tiempo y sigue. Hacia delante los puntos de cada objeto se reúnen en un modelo, así la caja crece hasta el objeto entero al cambiar la vista; después cada fotograma, también los anteriores, se ajusta de nuevo al modelo terminado. Un tamaño de caja por objeto; las clases marcadas como de forma variable reciben una caja por fotograma.",
+ "track_tip": "Pon cajas a los objetos de un fotograma (Caja para cada objeto de …), fija el rango en la línea de tiempo y sigue. Hacia delante los puntos de cada objeto se reúnen en un modelo, así la caja crece hasta el objeto entero al cambiar la vista; después cada fotograma, también los anteriores, se ajusta de nuevo al modelo terminado. Un tamaño de caja por objeto; las clases marcadas como de forma variable reciben una caja por fotograma. Las cajas que corregiste en otros fotogramas se quedan como están.",
  "track_none": "Nada que seguir: el primer fotograma en pantalla necesita objetos con caja y los siguientes deben estar en pantalla (amplía el rango de la línea de tiempo).",
  "status_tracked": "{n} cajas seguidas  ·  {u} dudosas (revisa las «?»)  ·  {l} perdidas",
  "class_soft": "Cambia de forma al moverse",
@@ -423,5 +423,12 @@
  "boxes_select_stray": "Seleccionar puntos sueltos de las cajas",
  "boxes_stray_tip": "Puntos etiquetados como un objeto con caja que quedan a más de media separación entre objetos fuera de ella. Revíselos y pulse Supr para borrar sus etiquetas, o desactive «Dejar los puntos sueltos fuera de las cajas» y reajuste para incluirlos.",
  "boxes_refit_tip": "Vuelve a ajustar la caja a los puntos de su objeto tal como están etiquetados ahora. Una caja sin objeto se ajusta a los puntos que contiene.",
- "status_stray": "{n} puntos sueltos excluidos"
+ "status_stray": "{n} puntos sueltos excluidos",
+ "track_again": "Volver a seguir desde esta caja",
+ "track_again_tip": "Tras corregir una caja seguida (moverla, girarla, cambiar su tamaño o reajustarla en mitad de la secuencia), vuelve a seguir su objeto desde ese fotograma, hacia delante y hacia atrás por los fotogramas en pantalla, hasta las cajas más cercanas del objeto hechas o corregidas a mano, que se quedan como están. La caja corregida conserva su tamaño en todos los fotogramas. En los fotogramas donde se vuelve a encontrar, el objeto toma los puntos del nuevo seguimiento, y los que tenía antes pero ya no recibe pierden su etiqueta; los fotogramas donde no se encuentra conservan lo que tenían.",
+ "track_again_none": "Elige primero en la lista de cajas la caja de un objeto (una caja seguida que hayas corregido).",
+ "track_again_empty": "La caja elegida no contiene puntos libres sobre el suelo en su fotograma.",
+ "boxes_key": "corregida",
+ "status_corrected": "Caja corregida. Pulsa «Volver a seguir desde esta caja» para llevar la corrección a los fotogramas anteriores y posteriores.",
+ "status_tracked_again": "Seguido de nuevo en {n} fotogramas ({first} – {last})  ·  {u} dudosos (revisa los '?')  ·  {r} puntos ya no le pertenecen"
 }

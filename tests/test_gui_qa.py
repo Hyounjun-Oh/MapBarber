@@ -914,3 +914,81 @@ def test_a_few_mislabelled_points_do_not_spoil_a_box(session):
     final = session.snapshot()
     session.walk_history()
     assert session.same(final, session.snapshot()) is None
+
+
+def test_a_corrected_box_is_tracked_again_up_to_the_corrected_boxes(session):
+    """The track jumps onto a look-alike halfway; the box is moved back onto the right car in one frame and
+    tracked again from there: the frames after it follow the right car, the frames before the jump stay as
+    they were, the look-alike loses the labels, and the corrected box is left alone by a later full track."""
+    folder = session.folder / "swap"
+    (folder / "velodyne").mkdir(parents=True)
+    rng = np.random.default_rng(15)
+    side = rng.integers(0, 3, 1500)
+    local = rng.uniform([-2, -0.9, -0.75], [2, 0.9, 0.75], (1500, 3))
+    for axis, half in enumerate((2.0, 0.9, 0.75)):
+        local[side == axis, axis] = half * rng.choice([-1.0, 1.0], (side == axis).sum())
+    road = np.column_stack([rng.uniform(-25, 25, 9000), rng.uniform(0, 20, 9000), np.full(9000, -1.2)])
+    height = -1.2 + 0.35 + 0.75
+    layout = []
+    for index in range(12):
+        car = np.array([-9.0 + 1.5 * index, 9.0 if index < 6 else 13.0, height])
+        parts = [road, local + car]
+        if index >= 6:
+            parts.append(local + [-9.0 + 1.5 * index, 9.0, height])
+        scan = np.vstack(parts)
+        np.column_stack([scan, np.zeros(len(scan))]).astype("<f4").tofile(str(folder / "velodyne" / f"{index:06d}.bin"))
+        layout.append((car, len(scan)))
+    (folder / "poses.txt").write_text("1 0 0 0 0 1 0 0 0 0 1 0\n" * 12)
+    assert session.window.open(str(folder))
+    session.pump(0.3)
+    editor = session.editor
+    session.step("open", undoable=False)
+    editor.select(np.arange(9000, 10500), "replace")
+    editor.set_active(10)
+    session.step("label the car in the first frame", lambda: session.trigger("Return"))
+    session.step("box it", lambda: editor.class_boxes.click())
+    number = editor.box_store[0][0]["instance"]
+    session.step("all frames", lambda: editor.timeline.slider.on_range(0, 11), undoable=False)
+    session.step("track", lambda: editor.track_boxes())
+
+    def box_of(frame):
+        found = [box for box in editor.box_store[frame] if box.get("instance") == number]
+        return found[0] if found else None
+
+    assert all(abs(box_of(frame)["center"][1] - 9.0) < 0.3 for frame in range(12)), "the track follows the look-alike"
+    before = {frame: copy.deepcopy(box_of(frame)) for frame in range(1, 6)}
+    size = list(box_of(0)["size"])
+
+    from mapbarber.qt import QtCore
+    rows = [editor.box_list.topLevelItem(row) for row in range(editor.box_list.topLevelItemCount())]
+    wanted = (8, editor.box_store[8].index(box_of(8)))
+    item = next(row for row in rows if tuple(row.data(0, QtCore.Qt.UserRole)) == wanted)
+    editor.box_list.setCurrentItem(item)
+    session.step("move the box onto the right car", lambda: editor.box_fields[1].setValue(13.0))
+    assert box_of(8)["key"] and "score" not in box_of(8)
+    assert "Track again" in session.window.statusBar().currentMessage()
+    assert "corrected" in editor.box_list.currentItem().text(2)
+    session.step("track again from it", lambda: editor.track_again())
+    assert "Followed again" in session.window.statusBar().currentMessage()
+
+    for frame in range(12):
+        car, count = layout[frame]
+        start = int(editor.frame_starts[frame])
+        cls = editor.labels.cls[start:start + count]
+        inst = editor.labels.inst[start:start + count]
+        if frame >= 6:
+            box = box_of(frame)
+            assert abs(box["center"][1] - 13.0) < 0.3 and abs(box["center"][0] - car[0]) < 0.3, (frame, box["center"])
+            assert np.allclose(box["size"], size, atol=1e-6), "the corrected box keeps its size"
+            assert (inst[9000:10500] == number).mean() > 0.97 and (cls[9000:10500] == 10).mean() > 0.97, frame
+            assert not (inst[10500:] == number).any() and not cls[10500:].any(), f"frame {frame}: the look-alike keeps labels"
+        elif frame > 0:
+            assert box_of(frame) == before[frame], f"frame {frame} before the jump changed"
+        assert not cls[:9000].any()
+
+    corrected = copy.deepcopy(box_of(8))
+    session.step("track everything again", lambda: editor.track_boxes())
+    assert box_of(8) == corrected, "a full track leaves corrected boxes alone"
+    final = session.snapshot()
+    session.walk_history()
+    assert session.same(final, session.snapshot()) is None
