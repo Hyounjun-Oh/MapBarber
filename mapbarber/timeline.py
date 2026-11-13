@@ -136,7 +136,9 @@ class TimelineBar(QtWidgets.QFrame):
     IDLE = "QFrame#timeline { border-top: 1px solid rgba(128, 128, 128, 0.35); }"
     ACTIVE = "QFrame#timeline { border: 1px solid #4f9cf7; background-color: rgba(79, 156, 247, 0.10); }"
 
-    def __init__(self, on_range, on_step, translate, on_keys=None):
+    ANCHORS = ("world", "lidar", "object")
+
+    def __init__(self, on_range, on_step, translate, on_keys=None, on_anchor=None):
         super().__init__()
         self.translate = translate
         self.setObjectName("timeline")
@@ -154,10 +156,19 @@ class TimelineBar(QtWidgets.QFrame):
         self.slider.on_focus = lambda on: self.setStyleSheet(self.ACTIVE if on else self.IDLE)
         self.caption = QtWidgets.QLabel()
         self.caption.setMinimumWidth(260)
+        self.anchor_label = QtWidgets.QLabel()
+        self.anchor = QtWidgets.QComboBox()
+        self.anchor.setFocusPolicy(Qt.NoFocus)
+        for name in self.ANCHORS:
+            self.anchor.addItem(name, name)
+        if on_anchor:
+            self.anchor.currentIndexChanged.connect(lambda *_: on_anchor(self.anchor.currentData()))
         row.addWidget(self.back)
         row.addWidget(self.slider, 1)
         row.addWidget(self.forward)
         row.addWidget(self.caption)
+        row.addWidget(self.anchor_label)
+        row.addWidget(self.anchor)
 
     def mousePressEvent(self, event):
         self.slider.setFocus(Qt.MouseFocusReason)
@@ -172,6 +183,10 @@ class TimelineBar(QtWidgets.QFrame):
         self.slider.setToolTip(t("timeline_tip"))
         self.caption.setText(t("timeline_caption", first=names[first], last=names[last], n=last - first + 1,
                                total=len(names)))
+        self.anchor_label.setText(t("anchor"))
+        self.anchor.setToolTip(t("anchor_tip"))
+        for index, name in enumerate(self.ANCHORS):
+            self.anchor.setItemText(index, t(f"anchor_{name}"))
 
 
 class LabelBar(QtWidgets.QFrame):

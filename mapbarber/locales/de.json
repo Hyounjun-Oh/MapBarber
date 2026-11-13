@@ -411,5 +411,10 @@
  "boxes_left": "{n} außerhalb",
  "boxes_select_left": "Punkte außerhalb der Quader wählen",
  "boxes_take_left": "Sie ihren Objekten geben",
- "boxes_left_tip": "Unbeschriftete Punkte, die an einem Objekt mit Quader hängen (innerhalb des Objektabstands), aber nicht übernommen wurden, etwa wo eine neue Seite sichtbar wurde. Zum Ansehen auswählen oder den Objekten geben: der Quader wird entsprechend größer, bei formstabilen Objekten in allen angezeigten Frames um denselben Betrag."
+ "boxes_left_tip": "Unbeschriftete Punkte, die an einem Objekt mit Quader hängen (innerhalb des Objektabstands), aber nicht übernommen wurden, etwa wo eine neue Seite sichtbar wurde. Zum Ansehen auswählen oder den Objekten geben: der Quader wird entsprechend größer, bei formstabilen Objekten in allen angezeigten Frames um denselben Betrag.",
+ "anchor": "Ansicht fest an",
+ "anchor_world": "Welt",
+ "anchor_lidar": "LiDAR",
+ "anchor_object": "gewählter Quader",
+ "anchor_tip": "Was beim Wechsel der Frames auf dem Bildschirm stehen bleibt. Welt: die Ansicht bewegt sich nicht, die Szene zieht vorbei. LiDAR: die Ansicht fährt mit dem Sensor des ersten angezeigten Frames. Gewählter Quader: die Ansicht folgt dem Objekt des in der Quaderliste gewählten Quaders. Die Achsen werden dort gezeichnet, woran die Ansicht fest ist."
 }

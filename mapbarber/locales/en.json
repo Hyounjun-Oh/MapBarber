@@ -411,5 +411,10 @@
  "boxes_left": "{n} outside",
  "boxes_select_left": "Select points left outside the boxes",
  "boxes_take_left": "Give them to their objects",
- "boxes_left_tip": "Unlabelled points that hang on to a boxed object (within the gap between objects) but were not taken, for instance where a new side came into view. Select them to look, or give them to their objects: the box widens to hold them, by the same amount in every frame on screen for an object that keeps its shape."
+ "boxes_left_tip": "Unlabelled points that hang on to a boxed object (within the gap between objects) but were not taken, for instance where a new side came into view. Select them to look, or give them to their objects: the box widens to hold them, by the same amount in every frame on screen for an object that keeps its shape.",
+ "anchor": "View fixed to",
+ "anchor_world": "world",
+ "anchor_lidar": "LiDAR",
+ "anchor_object": "chosen box",
+ "anchor_tip": "What stays put on screen while the frames change. World: the view does not move and the scene passes by. LiDAR: the view rides with the sensor of the first frame shown. Chosen box: the view follows the object of the box selected in the box list. The axes are drawn at what the view is fixed to."
 }

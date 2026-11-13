@@ -124,6 +124,7 @@ class Labelling(ClassHistory):
         self.box_store, self._boxes_saved, self.active_box = {}, {}, None
         self._box_actor = self._box_focus = None
         self._above = {}
+        self._anchor_object = 0
         self.classes = ClassList("indoor")
         self.active_class = self.classes.numbers()[0]
         self.hidden_classes, self.locked_classes = set(), set()
@@ -1276,6 +1277,8 @@ class Labelling(ClassHistory):
     def _box_chosen(self, item, *_):
         self.active_box = None if item is None else tuple(item.data(0, Qt.UserRole))
         self._delete_target = "box" if self.active_box is not None else None
+        if self.sequence is not None:
+            self._anchor_changed()
         self._show_box_fields()
         self._draw_boxes()
         if self.active_box is not None:
@@ -1609,6 +1612,7 @@ class Labelling(ClassHistory):
                 return
         if store:
             self._store_frames()
+        before = None if fresh else self._anchor_pose()
         xyz, table, starts = self.sequence.merge(indices, progress)
         cls, inst = np.zeros(len(xyz), np.uint16), np.zeros(len(xyz), np.uint32)
         pending = np.zeros(len(xyz), bool)
@@ -1624,6 +1628,10 @@ class Labelling(ClassHistory):
             self._fill_frames()
             self._fill_instances()
             self._fill_boxes()
+        after = self._anchor_pose()
+        if before is not None and after is not None:
+            self.viewport.carry_camera(after @ np.linalg.inv(before))
+        self._anchor_changed()
         self._draw_boxes()
         self._sync_timeline()
         if not fresh:
@@ -1647,6 +1655,35 @@ class Labelling(ClassHistory):
             self.paint_frame.addItem(self.sequence.names[index], index)
         self.paint_frame.setCurrentIndex(max(self.paint_frame.findData(chosen), 0))
         self.paint_frame.blockSignals(False)
+
+    def _anchor_pose(self):
+        """4x4 pose of what the view is fixed to while frames change, or None for the world (the view stays put).
+
+        'lidar' is the sensor of the first frame on screen; 'object' is the box chosen in the box list, found
+        again in the new frames by its object number.
+        """
+        if self.sequence is None or not self.frame_ids:
+            return None
+        mode = self.timeline.anchor.currentData()
+        if mode == "lidar":
+            return self._pose(self.frame_ids[0]) if self.sequence.poses is not None else None
+        if mode == "object" and self._anchor_object:
+            for key in self.frame_ids:
+                for box in self._boxes_of(key):
+                    if box.get("instance") == self._anchor_object:
+                        return tracking.pose_of(self._box_world(key, box))
+        return None
+
+    def _anchor_changed(self):
+        """Show the axes at what the view is fixed to (the world origin when it is fixed to the world)."""
+        if self.timeline.anchor.currentData() == "object" and self.active_box is not None:
+            key, index = self.active_box
+            found = self._boxes_of(key)
+            if index < len(found) and found[index].get("instance"):
+                self._anchor_object = found[index]["instance"]
+        pose = self._anchor_pose()
+        self.viewport.place_axes(np.eye(4) if pose is None else pose)
+        self.viewport.render()
 
     def _sync_timeline(self):
         if self.sequence is None:

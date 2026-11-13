@@ -804,3 +804,65 @@ def test_points_left_outside_a_box_can_be_taken_in(session):
     final = session.snapshot()
     session.walk_history()
     assert session.same(final, session.snapshot()) is None
+
+
+def test_view_can_be_fixed_to_the_world_the_sensor_or_a_box(session):
+    folder = session.folder / "ride"
+    (folder / "velodyne").mkdir(parents=True)
+    rng = np.random.default_rng(11)
+    road = np.column_stack([rng.uniform(-10, 40, 3000), rng.uniform(-6, 6, 3000), np.zeros(3000)])
+    block = rng.uniform([-1.0, -0.5, 0.4], [1.0, 0.5, 1.6], (500, 3))
+    for index in range(6):
+        scan = np.vstack([road, block + [6.0 + 2.0 * index, 2.0, 0.0]]) - [1.0 * index, 0, 0]
+        np.column_stack([scan, np.zeros(3500)]).astype("<f4").tofile(str(folder / "velodyne" / f"{index:06d}.bin"))
+    (folder / "poses.txt").write_text("".join(f"1 0 0 {1.0 * i} 0 1 0 0 0 0 1 0\n" for i in range(6)))
+    assert session.window.open(str(folder))
+    session.pump(0.3)
+    editor = session.editor
+    bar = editor.timeline
+    assert [bar.anchor.itemData(i) for i in range(bar.anchor.count())] == ["world", "lidar", "object"]
+
+    def camera():
+        view = editor.viewport.renderer.GetActiveCamera()
+        return np.array(view.GetPosition()), np.array(view.GetFocalPoint())
+
+    def axes_at():
+        matrix = editor.viewport.axes.GetUserMatrix()
+        return np.zeros(3) if matrix is None else np.array([matrix.GetElement(i, 3) for i in range(3)])
+
+    position, focus = camera()
+    session.step("next frame, fixed to the world", lambda: session.trigger("."), undoable=False)
+    assert np.allclose(camera()[0], position) and np.allclose(axes_at(), 0)
+
+    bar.anchor.setCurrentIndex(bar.anchor.findData("lidar"))
+    session.pump()
+    assert np.allclose(axes_at(), [1.0, 0, 0]), "the axes sit at the sensor of the first frame shown"
+    position, focus = camera()
+    session.step("next frame, fixed to the LiDAR", lambda: session.trigger("."), undoable=False)
+    assert editor.frame_ids == [2]
+    assert np.allclose(camera()[0], position + [1.0, 0, 0]) and np.allclose(camera()[1], focus + [1.0, 0, 0])
+    assert np.allclose(axes_at(), [2.0, 0, 0])
+    session.step("back two frames", lambda: (session.trigger(","), session.trigger(",")), undoable=False)
+    assert np.allclose(camera()[0], position - [1.0, 0, 0])
+
+    editor.select(np.arange(3000, 3500), "replace")
+    editor.set_active(10)
+    editor.assign_selection()
+    editor.class_boxes.click()
+    editor.timeline.slider.on_range(0, 5)
+    editor.track_boxes()
+    session.pump()
+    assert all(len(editor.box_store[index]) == 1 for index in range(6))
+    editor.timeline.slider.on_range(0, 0)
+    editor.box_list.setCurrentItem(editor.box_list.topLevelItem(0))
+    bar.anchor.setCurrentIndex(bar.anchor.findData("object"))
+    session.pump()
+    assert np.allclose(axes_at()[:2], [6.0, 2.0], atol=0.2), "the axes sit on the chosen box"
+    position, focus = camera()
+    session.step("next frame, fixed to the box", lambda: session.trigger("."), undoable=False)
+    assert np.allclose(camera()[0], position + [2.0, 0, 0], atol=0.2), "the box moves 2 m per frame in the world"
+    assert np.allclose(axes_at()[:2], [8.0, 2.0], atol=0.2)
+    bar.anchor.setCurrentIndex(bar.anchor.findData("world"))
+    session.pump()
+    assert np.allclose(axes_at(), 0)
+    session.check("anchors")

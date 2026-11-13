@@ -136,6 +136,23 @@ class Viewport:
             self._space = down
             self.widget.setCursor(Qt.OpenHandCursor if down else self.default_cursor)
 
+    def carry_camera(self, moved):
+        """Move the camera by a 4x4 transform, so that what it was fixed to stays where it was on screen."""
+        camera = self.renderer.GetActiveCamera()
+        turn, shift = moved[:3, :3], moved[:3, 3]
+        camera.SetPosition(*(turn @ np.array(camera.GetPosition()) + shift))
+        camera.SetFocalPoint(*(turn @ np.array(camera.GetFocalPoint()) + shift))
+        camera.SetViewUp(*(turn @ np.array(camera.GetViewUp())))
+        self.renderer.ResetCameraClippingRange()
+
+    def place_axes(self, pose):
+        """Draw the axes at a 4x4 pose (the frame the view is fixed to) instead of the world origin."""
+        matrix = vtk.vtkMatrix4x4()
+        for row in range(4):
+            for column in range(4):
+                matrix.SetElement(row, column, float(pose[row, column]))
+        self.axes.SetUserMatrix(matrix)
+
     def zoom(self, factor):
         camera = self.renderer.GetActiveCamera()
         if camera.GetParallelProjection():

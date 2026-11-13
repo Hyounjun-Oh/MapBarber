@@ -411,5 +411,10 @@
  "boxes_left": "{n} fuera",
  "boxes_select_left": "Seleccionar puntos fuera de las cajas",
  "boxes_take_left": "Darlos a sus objetos",
- "boxes_left_tip": "Puntos sin etiqueta que cuelgan de un objeto con caja (dentro de la separación entre objetos) pero no se tomaron, por ejemplo donde apareció un lado nuevo. Selecciónalos para verlos o dáselos a sus objetos: la caja se ensancha para contenerlos, lo mismo en todos los fotogramas en pantalla si el objeto conserva su forma."
+ "boxes_left_tip": "Puntos sin etiqueta que cuelgan de un objeto con caja (dentro de la separación entre objetos) pero no se tomaron, por ejemplo donde apareció un lado nuevo. Selecciónalos para verlos o dáselos a sus objetos: la caja se ensancha para contenerlos, lo mismo en todos los fotogramas en pantalla si el objeto conserva su forma.",
+ "anchor": "Vista fija en",
+ "anchor_world": "mundo",
+ "anchor_lidar": "LiDAR",
+ "anchor_object": "caja elegida",
+ "anchor_tip": "Lo que permanece quieto en pantalla al cambiar de fotograma. Mundo: la vista no se mueve y la escena pasa. LiDAR: la vista viaja con el sensor del primer fotograma mostrado. Caja elegida: la vista sigue al objeto de la caja seleccionada en la lista de cajas. Los ejes se dibujan en aquello a lo que está fija la vista."
 }
