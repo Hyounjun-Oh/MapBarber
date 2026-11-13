@@ -1,0 +1,10 @@
+# MapBarber label classes
+classes:
+  - {id: 1, name: "road", color: [44, 83, 178], role: free}
+  - {id: 2, name: "sidewalk", color: [127, 210, 10], role: free}
+  - {id: 3, name: "building", color: [242, 109, 225], role: obstacle}
+  - {id: 4, name: "parked car", color: [44, 178, 156], role: obstacle}
+  - {id: 5, name: "pole", color: [210, 118, 10], role: obstacle}
+  - {id: 6, name: "vegetation", color: [142, 109, 242], role: obstacle}
+  - {id: 7, name: "person", color: [50, 178, 44], role: ignore, wins: true}
+  - {id: 8, name: "moving car", color: [210, 10, 77], role: ignore}

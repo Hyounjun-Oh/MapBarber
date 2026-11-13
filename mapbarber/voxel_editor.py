@@ -3,8 +3,10 @@ import time
 
 import numpy as np
 
-from . import convert, formats, loss
+from . import convert, formats, labels, loss
 from .editor import Editor
+from .label_tools import VoxelLabelling
+from .timeline import LabelBar
 from .formats import CLOUD, GRID, VOXEL
 from .grid import FREE, UNKNOWN
 from .gizmo import AXIS_NAMES, SLICE_DEFAULTS, BoxGizmo, SliceControls, SliceGizmo, Snap
@@ -19,7 +21,10 @@ from .widgets import add_button, ask_numbers, AxisRanges, button, danger_button,
 Qt = QtCore.Qt
 SELECTED_RGB = np.array([255, 40, 200], np.uint8)
 ADDED_RGB = np.array([245, 245, 245], np.uint8)
-TOOL_RGB = {"select": (1.0, 0.2, 0.8), "delete": (1.0, 0.15, 0.1), "add": (0.2, 1.0, 0.3)}
+TOOL_RGB = {"select": (1.0, 0.2, 0.8), "delete": (1.0, 0.15, 0.1), "add": (0.2, 1.0, 0.3), "label": (0.3, 0.85, 0.45),
+            "smart": (0.61, 0.48, 0.94)}
+EDIT_TOOLS = (("view", "H"), ("select", "V"), ("delete", "E"), ("add", "B"), ("measure", "I"))
+LABEL_TOOLS = (("view", "H"), ("select", "V"), ("label", "B"), ("smart", "W"), ("measure", "I"))
 MAX_FILL_CELLS = 2_000_000
 CUBE_BUDGET = 6_000_000
 CACHE_BUDGET = 24_000_000
@@ -30,12 +35,14 @@ DEFAULTS = {"brush": 1, "plane": 0.0, "front_only": True, "tolerance": 0.10, "is
             "slice": SLICE_DEFAULTS, "snap": False}
 
 
-class VoxelEditor(Editor):
+POINT_FORMATS = ("pcd", "ply", "xyz", "las")
+
+
+class VoxelEditor(VoxelLabelling, Editor):
     kind = VOXEL
-    tools = (("view", "H"), ("select", "V"), ("delete", "E"), ("add", "B"), ("measure", "I"))
     export_filters = (("OctoMap binary", "bt"), ("OctoMap full", "ot"), ("Voxel archive", "npz"),
-                      ("PCD point cloud", "pcd"), ("PLY point cloud", "ply"), ("XYZ text", "xyz"), ("CSV text", "csv"),
-                      ("NumPy array", "npy"))
+                      ("PCD point cloud", "pcd"), ("PLY point cloud", "ply"), ("LAS point cloud", "las"),
+                      ("XYZ text", "xyz"), ("CSV text", "csv"), ("NumPy array", "npy"))
 
     def __init__(self, window):
         super().__init__(window)
@@ -73,13 +80,16 @@ class VoxelEditor(Editor):
         self.slice_gizmo = SliceGizmo(self.viewport, self._slice_dragged, Snap(self.map.resolution))
         self.viewport.gizmos = [self.slice_gizmo, self.box_gizmo]
         self.ruler = Ruler3D(self.viewport.renderer)
+        self.label_bar = LabelBar(self.widget, lambda: self.tr, lambda on: self._protect_from_bar(on))
         self.overlay = MeasureOverlay(self.widget, lambda entry: self._ruler_text(entry)[1], self._show_measurement,
                                       lambda: self.tr)
+        self.overlay.below = self.label_bar
         self.viewport.band_allowed = lambda: self.tool != "measure"
-        self.viewport.paint_allowed = lambda: self.tool in ("select", "delete")
+        self.viewport.paint_allowed = lambda: self.tool in ("select", "delete", "label", "smart")
         self.viewport.on_paint = self._paint
         self.viewport.on_paint_end = self._paint_end
         self._stroke = None
+        self._init_voxel_labels()
         self.measurement = None
         self.data_bounds = (np.zeros(3), np.ones(3))
         self._previous_mode = (False, 2)
@@ -88,10 +98,6 @@ class VoxelEditor(Editor):
         self._refresh_timer.setInterval(40)
         self._refresh_timer.timeout.connect(self.filters_changed)
 
-    @property
-    def dirty(self):
-        return self.map.dirty
-
     def changes(self):
         return self.map.changes()
 
@@ -99,15 +105,21 @@ class VoxelEditor(Editor):
         keys, resolution, leaves = formats.read_voxels(path)
         document = VoxelMap(keys, resolution)
         document.leaves = leaves
+        if formats.detect(path) in ("bt", "ot", "npz"):
+            self.read_voxel_label_files(document, path)
         return document
 
     def set_document(self, payload, path=None, fmt=None, progress=None):
-        """payload: a VoxelMap, or (keys, resolution[, source]) where source is the cloud the voxels came from."""
+        """payload: a VoxelMap, or (keys, resolution[, source]) where source is the cloud the voxels came from.
+
+        source holds the points (xyz, table) and, for a labelled cloud, their labels and the voxel classes they voted.
+        """
         self.source = None
         if not isinstance(payload, VoxelMap):
             self.source = payload[2] if len(payload) > 2 else None
             payload = VoxelMap(*payload[:2])
         self.map = payload
+        self._voxel_labels_from(payload, self.source, path)
         self.path, self.format = path, fmt
         self.selected = KeySet()
         self._selection_steps = []
@@ -137,14 +149,36 @@ class VoxelEditor(Editor):
     def export(self, path, fmt=None):
         if not len(self.map):
             raise ValueError(self.tr("empty_map"))
+        fmt = fmt or formats.detect(path)
+        if self.vlabels.any and fmt in POINT_FORMATS:
+            centres = convert.voxels_to_points(self.map.occupied, self.map.resolution)
+            formats.save_cloud(path, centres, self._voxel_point_table(centres), fmt)
+            self.classes.save(path + ".labels.yaml")
+            return
         formats.save_voxels(path, self.map.occupied, self.map.resolution, fmt, self.map.leaves)
+        if fmt in ("bt", "ot", "npz"):
+            self._write_voxel_labels(path, fmt)
 
     def losses(self, fmt):
-        return loss.voxel_losses(self.map.leaves, fmt)
+        out = loss.voxel_losses(self.map.leaves, fmt)
+        if self.vlabels.any and fmt == "npy":
+            out.append((loss.FIELDS, "label"))
+        if self.source is not None:
+            out.append((loss.POINTS, ""))
+        return out
+
+    @property
+    def tools(self):
+        return LABEL_TOOLS if self.label_mode else EDIT_TOOLS
+
+    @property
+    def dirty(self):
+        return self.map.dirty or self.voxel_label_dirty()
 
     def mark_saved(self):
         marked = set(KeySet.split(self.map.added)[0].tolist())
         self.map.mark_saved()
+        self.vlabels.mark_saved()
         self.refresh(marked)
 
     def _after_change(self):
@@ -161,12 +195,10 @@ class VoxelEditor(Editor):
         self.refresh(touched)
 
     def undo(self):
-        if self.map.undo():
-            self._after_change()
+        self.step_back(self._order, self._redo_order, True)
 
     def redo(self):
-        if self.map.redo():
-            self._after_change()
+        self.step_back(self._redo_order, self._order, False)
 
     def summary(self):
         added, removed = self.map.changes()
@@ -181,6 +213,10 @@ class VoxelEditor(Editor):
         step = self.map.resolution
         panel = W.QWidget()
         layout = W.QVBoxLayout(panel)
+
+        if self.label_mode:
+            self.build_voxel_label_section(layout)
+            self.build_voxel_smart_section(layout)
 
         group = Section(t("brush"), "brush")
         form = W.QFormLayout(group)
@@ -270,11 +306,13 @@ class VoxelEditor(Editor):
 
     def store_panel(self):
         if self.panel_alive:
-            self.panel_values = {"brush": self.brush.value(), "plane": self.plane.value(),
-                                 "front_only": self.front_only.isChecked(), "tolerance": self.tolerance.value(),
-                                 "island": self.island_size.value(), "box": self.box.values(),
-                                 "show_box": self.show_box.isChecked(), "range": self.ranges.values(),
-                                 "slice": self.slice.values(), "snap": self.ruler_snap.isChecked()}
+            self.panel_values.update({"brush": self.brush.value(), "plane": self.plane.value(),
+                                      "front_only": self.front_only.isChecked(), "tolerance": self.tolerance.value(),
+                                      "island": self.island_size.value(), "box": self.box.values(),
+                                      "show_box": self.show_box.isChecked(), "range": self.ranges.values(),
+                                      "slice": self.slice.values(), "snap": self.ruler_snap.isChecked()})
+            if self.label_mode:
+                self.panel_values.update(self.voxel_label_values())
 
     def view_actions(self):
         return [(self.tr(f"view_{name}"), lambda d=direction, u=up: self.look_from(d, u), keys)
@@ -286,6 +324,9 @@ class VoxelEditor(Editor):
 
     def conversions(self):
         return [(self.tr("to_grid"), self.to_grid), (self.tr("to_cloud"), self.to_cloud)]
+
+    def extra_actions(self):
+        return super().extra_actions() + (self.voxel_label_actions() if self.label_mode else [])
 
     def activate(self):
         self.viewport.initialize()
@@ -402,13 +443,14 @@ class VoxelEditor(Editor):
         cells = self._shown_cells(chunk, filters)
         self.shown_counts[chunk] = len(cells)
         flags = np.full(len(cells), NORMAL, np.uint8)
-        if len(cells) and (chunk in added_chunks or chunk in self.selected.chunks):
-            keys = pack(cells)
-            if chunk in added_chunks:
+        by_class = bool(self.by_class_on() and len(cells))
+        keys = pack(cells) if len(cells) and (by_class or chunk in added_chunks or chunk in self.selected.chunks) else None
+        if keys is not None:
+            if chunk in added_chunks and not by_class:
                 flags[np.isin(keys, added)] = ADDED
             if chunk in self.selected.chunks:
                 flags[np.isin(keys, self.selected.keys(chunk))] = SELECTED
-        self.view.build(chunk, cells, flags, level)
+        self.view.build(chunk, cells, flags, level, self.voxel_colours(keys) if by_class else None)
 
     def _marks(self):
         added = self.map.added
@@ -588,18 +630,24 @@ class VoxelEditor(Editor):
     def edit(self, add=None, remove=None, label=""):
         added, removed = self.map.apply(add=add, remove=remove)
         if added or removed:
+            self._record("map")
             self._after_change()
             self.status(self.tr("status_edit", what=label, a=added, r=removed))
         else:
             self.status(self.tr("status_no_change", what=label))
 
-    def select(self, keys, mode="add", trusted=False):
+    def select(self, keys, mode="add", trusted=False, review=False):
         """Change the selection: 'add', 'remove' or 'replace'. Keys are checked to be occupied and visible
-        unless the caller already took them from the visible cells (trusted)."""
+        unless the caller already took them from the visible cells (trusted).
+
+        In labelling mode with protection on, labelled voxels stay out of the selection unless a review tool asks.
+        """
         keys = np.asarray(keys, np.int64)
         if len(keys) and not trusted:
             keys = keys[self.map.contains(keys)]
             keys = keys[self.shown(unpack(keys))]
+        if len(keys) and mode != "remove" and not review and self.protecting():
+            keys = keys[self.vlabels.get(keys) == labels.UNLABELED]
         if mode == "remove":
             keys = keys[self.selected.contains(keys)]
             step = ("remove", keys)
@@ -630,6 +678,9 @@ class VoxelEditor(Editor):
         self.status(self.tr("selection_back") + f": {len(self.selected)}")
 
     def delete_selection(self):
+        """Delete removes the selected voxels; in labelling mode it only clears their labels."""
+        if self.label_mode:
+            return self.assign_selection(labels.UNLABELED)
         if len(self.selected):
             self.edit(remove=self.selection, label=self.tr("delete_selection"))
 
@@ -778,15 +829,25 @@ class VoxelEditor(Editor):
         return cells[keep]
 
     def to_cloud(self):
-        """Voxels -> points. A map that came from a cloud gives back that cloud's own points, not voxel centres."""
-        origin = {"resolution": self.map.resolution}
+        """Voxels -> points. A map that came from a cloud gives back that cloud's own points, not voxel centres.
+
+        Each returning point keeps its own class; only voxels relabelled here pass their class on to their points.
+        """
+        if not self.ask_relabel_back():
+            return None
+        origin = {"resolution": self.map.resolution, "classes": self.classes}
+        source, vlabels = self.source, self.vlabels
 
         def work():
-            if self.source is not None:
-                xyz, table = convert.restore_points(self.source["xyz"], self.source["table"], self.map.resolution,
-                                                    self.map)
-                return CLOUD, (xyz, table, origin)
-            return CLOUD, (convert.voxels_to_points(self.map.occupied, self.map.resolution), None, origin)
+            if source is not None:
+                restored = convert.restore(source["xyz"], source["table"], self.map.resolution, self.map,
+                                           source.get("cls"), source.get("inst"), vlabels, source.get("outside"))
+                origin.update(cls=restored["cls"], inst=restored["inst"])
+                return CLOUD, (restored["xyz"], restored["table"], origin)
+            keys = self.map.occupied
+            if vlabels.any:
+                origin.update(cls=vlabels.get(keys), inst=None)
+            return CLOUD, (convert.voxels_to_points(keys, self.map.resolution), None, origin)
         return work
 
     def to_grid(self):
@@ -800,7 +861,14 @@ class VoxelEditor(Editor):
         if band is None:
             return None
         empty = FREE if band[2] else UNKNOWN
-        return lambda: (GRID, convert.voxels_to_grid(self.map.occupied, self.map.resolution, *sorted(band[:2]), empty))
+        keys, size, vlabels, classes = self.map.occupied, self.map.resolution, self.vlabels, self.classes
+        if not vlabels.any:
+            return lambda: (GRID, convert.voxels_to_grid(keys, size, *sorted(band[:2]), empty))
+
+        def work():
+            obstacles, free = convert.split_by_role(keys, vlabels.get(keys), classes)
+            return GRID, convert.voxels_to_grid(obstacles, size, *sorted(band[:2]), empty, free)
+        return work
 
     def target_cells(self, x, y, tool=None):
         """Cells a tool (the active one by default) would change at a screen position, or None."""
@@ -955,6 +1023,9 @@ class VoxelEditor(Editor):
         if self.tool == "measure":
             self._measure_click(x, y)
             return
+        if self.tool == "smart":
+            self._smart_click(x, y, ctrl)
+            return
         cells = self.target_cells(x, y)
         if cells is None or not len(cells):
             return
@@ -963,20 +1034,28 @@ class VoxelEditor(Editor):
             self.select(keys, "remove" if ctrl else "add")
         elif self.tool == "delete":
             self.edit(remove=keys, label=self.tr("tool_delete"))
+        elif self.tool == "label":
+            self.label_voxels(keys, labels.UNLABELED if ctrl else self.active_class, "tool_label")
         else:
             self.edit(add=keys, label=self.tr("tool_add"))
         self._hover(x, y)
 
-    def _paint(self, x, y):
-        """Ctrl + drag: keep applying the brush under the cursor while the view stays still."""
+    def _paint(self, x, y, subtract=False):
+        """Ctrl + drag: keep applying the brush under the cursor while the view stays still.
+
+        The left button applies the tool; the right button takes back (deselects, or clears labels).
+        """
         if self._stroke is None:
-            self._stroke = (len(self._selection_steps), self.map.undo_depth())
+            self._stroke = (len(self._selection_steps), self.map.undo_depth(), len(self._order),
+                            self.vlabels.undo_depth())
         cells = self.target_cells(x, y)
         if cells is None or not len(cells):
             return
-        if self.tool == "select":
-            self.select(pack(cells), "add")
-        else:
+        if self.tool in ("select", "smart"):
+            self.select(pack(cells), "remove" if subtract else "add")
+        elif self.tool == "label":
+            self.label_voxels(pack(cells), labels.UNLABELED if subtract else self.active_class, "tool_label")
+        elif not subtract:
             self.edit(remove=pack(cells), label=self.tr("tool_delete"))
         self._hover(x, y)
 
@@ -984,12 +1063,17 @@ class VoxelEditor(Editor):
         """Fold a finished stroke into a single selection step and a single undo step."""
         if self._stroke is None:
             return
-        steps, depth = self._stroke
+        steps, depth, order, label_depth = self._stroke
         self._stroke = None
         painted = [keys for kind, keys in self._selection_steps[steps:] if kind == "add"]
         if len(painted) > 1:
             self._selection_steps[steps:] = [("add", np.unique(np.concatenate(painted)))]
-        self.map.squash(depth)
+        squashed = self.map.squash(depth)
+        if self.vlabels.undo_depth() - label_depth > 1:
+            self.vlabels.squash(label_depth)
+            squashed = True
+        if squashed:
+            self._order[order:] = self._order[order:order + 1]
 
     def _right_click(self, x, y):
         cells = self.target_cells(x, y, "select")

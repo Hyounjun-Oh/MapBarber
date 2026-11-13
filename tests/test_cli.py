@@ -57,3 +57,19 @@ def test_grid_speckles(tmp_path):
     out = str(tmp_path / "clean.yaml")
     cli.main([source, "--clear-speckles", "3", "-o", out])
     assert grid.load(out).counts()[OCCUPIED] == 30
+
+
+def test_info_on_frames_and_labelled_clouds(tmp_path, capsys):
+    folder = tmp_path / "seq" / "velodyne"
+    folder.mkdir(parents=True)
+    for index in range(2):
+        np.zeros((5, 4), "<f4").tofile(str(folder / f"{index:06d}.bin"))
+    (tmp_path / "seq" / "poses.txt").write_text("1 0 0 0 0 1 0 0 0 0 1 0\n1 0 0 3 0 1 0 0 0 0 1 0\n")
+    assert cli.main([str(tmp_path / "seq"), "--info"]) == 0
+    out = capsys.readouterr().out
+    assert "frame sequence" in out and "frames      2" in out and "3.0 m" in out
+    assert cli.main([str(tmp_path / "seq"), "-o", str(tmp_path / "x.pcd")]) == 1
+    cloud = str(tmp_path / "l.pcd")
+    formats.save_cloud(cloud, np.zeros((4, 3)), formats.with_labels(np.zeros((4, 3)), None, np.array([0, 1, 1, 2], np.uint16), None))
+    assert cli.main([cloud, "--info"]) == 0
+    assert "75.0% labelled, 1: 2, 2: 1" in capsys.readouterr().out

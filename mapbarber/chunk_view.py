@@ -12,9 +12,12 @@ FLAG_RGB = {ADDED: np.array([245, 245, 245], np.uint8), SELECTED: np.array([255,
 
 
 def coarsen(cells, flags, level):
-    """Merge cells into blocks of 2**level; a block takes the strongest flag of its cells."""
+    """Merge cells into blocks of 2**level; a block takes the strongest flag of its cells.
+
+    Returns (blocks, flags, index of one cell of each block).
+    """
     if level == 0 or not len(cells):
-        return cells, flags
+        return cells, flags, np.arange(len(cells))
     blocks = cells >> level
     low = blocks.min(axis=0)
     span = blocks.max(axis=0) - low + 1
@@ -22,7 +25,7 @@ def coarsen(cells, flags, level):
     order = np.argsort(code, kind="stable")
     code = code[order]
     starts = np.concatenate([[0], np.flatnonzero(np.diff(code)) + 1])
-    return blocks[order[starts]] << level, np.maximum.reduceat(flags[order], starts)
+    return blocks[order[starts]] << level, np.maximum.reduceat(flags[order], starts), order[starts]
 
 
 class ChunkView:
@@ -100,14 +103,17 @@ class ChunkView:
         level = np.ceil(np.log2(MIN_PIXELS / np.maximum(pixels, 1e-12)))
         return np.clip(level, 0, MAX_LEVEL).astype(np.int64)
 
-    def build(self, chunk_key, cells, flags, level):
-        """Create the actor for one level of a chunk from its visible cells (N, 3) and per-cell flags, and show it."""
+    def build(self, chunk_key, cells, flags, level, rgb=None):
+        """Create the actor for one level of a chunk from its visible cells (N, 3) and per-cell flags, and show it.
+
+        rgb: a colour per cell instead of the height ramp.
+        """
         if not len(cells):
             self.forget(chunk_key)
             return
-        cells, flags = coarsen(cells, flags, level)
+        cells, flags, first = coarsen(cells, flags, level)
         centres = (cells + (1 << level) / 2.0) * self.resolution
-        colours = ramp(centres[:, 2], *self.height_range)
+        colours = ramp(centres[:, 2], *self.height_range) if rgb is None else np.array(rgb[first], np.uint8)
         for flag, rgb in FLAG_RGB.items():
             colours[flags == flag] = rgb
         data = vtk.vtkPolyData()

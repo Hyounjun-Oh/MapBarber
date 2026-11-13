@@ -5,13 +5,14 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "mapbarber"
 dynamic = ["version"]
-description = "A barbershop for robot maps: edit OctoMap octrees, point clouds and 2D occupancy grids in one tool"
+description = "A barbershop for robot maps: edit and label OctoMap octrees, point clouds, LiDAR sequences and 2D occupancy grids"
 readme = "README.md"
 license = "MIT"
 license-files = ["LICENSE", "THIRD_PARTY_NOTICES.md"]
 requires-python = ">=3.10"
 dependencies = ["numpy>=1.21", "scipy>=1.7", "vtk>=9.1", "PySide6>=6.4"]
-keywords = ["octomap", "occupancy grid", "point cloud", "ros", "map editor", "voxel", "robotics"]
+keywords = ["octomap", "occupancy grid", "point cloud", "ros", "map editor", "voxel", "robotics", "labeling", "annotation",
+            "semantickitti", "lidar"]
 classifiers = [
     "Programming Language :: Python :: 3",
     "Topic :: Scientific/Engineering :: Visualization",
@@ -20,6 +21,7 @@ classifiers = [
 ]
 
 [project.optional-dependencies]
+las = ["laspy[lazrs]>=2.5"]
 dev = ["pytest", "pillow"]
 
 [project.scripts]

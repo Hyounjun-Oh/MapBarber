@@ -78,6 +78,10 @@ class Editor:
         """[(what, detail)] the document holds that a file of this format cannot; see loss.py."""
         return []
 
+    def keeps_path(self, path):
+        """True when writing to `path` was an export and the document should stay where it is."""
+        return False
+
     def mark_saved(self):
         """Called on the main thread after export succeeded."""
 

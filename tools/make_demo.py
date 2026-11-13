@@ -409,6 +409,79 @@ def make_broken(out):
         f.write("Meeting notes\n- order new camera bracket\n- recalibrate on Friday\n")
 
 
+STREET_CLASSES = ((1, "road", "free", False), (2, "sidewalk", "free", False), (3, "building", "obstacle", False),
+                  (4, "parked car", "obstacle", False), (5, "pole", "obstacle", False),
+                  (6, "vegetation", "obstacle", False), (7, "person", "ignore", True), (8, "moving car", "ignore", False))
+STREET_REFLECT = {1: 0.25, 2: 0.4, 3: 0.6, 4: 0.85, 5: 0.7, 6: 0.3, 7: 0.35, 8: 0.85}
+
+
+def street_boxes(frame):
+    """Boxes of a street at one moment: (x0, x1, y0, y1, z0, z1, class)."""
+    b = [(-30, 90, -4, 4, -0.05, 0, 1), (-30, 90, 4, 7, -0.05, 0.12, 2), (-30, 90, -7, -4, -0.05, 0.12, 2),
+         (-30, 24, 7, 7.5, 0, 9, 3), (28, 90, 7, 7.5, 0, 12, 3), (-30, 90, -7.5, -7, 0, 8, 3),
+         (10, 14.5, 2.2, 3.9, 0, 1.5, 4), (31, 35.5, -3.9, -2.2, 0, 1.6, 4), (44, 48.5, 2.2, 3.9, 0, 1.4, 4)]
+    for x in range(4, 60, 12):
+        b.append((x, x + 0.2, 6.4, 6.6, 0.12, 4.5, 5))
+    for x in (18, 38, 52):
+        b += [(x, x + 0.3, -5.8, -5.5, 0.12, 2.4, 6), (x - 1.1, x + 1.4, -6.9, -4.4, 2.4, 4.6, 6)]
+    walker = 9 + 0.45 * frame
+    b.append((walker, walker + 0.4, 5.2, 5.6, 0.12, 1.75, 7))
+    car = 70 - 2.2 * frame
+    b.append((car, car + 4.4, -3.6, -1.9, 0, 1.5, 8))
+    return b
+
+
+def make_drive(out, frames=16):
+    """KITTI-style sequence: velodyne/*.bin in the sensor frame, poses.txt, a class list and noisy predictions."""
+    folder = os.path.join(out, "drive")
+    shutil.rmtree(folder, ignore_errors=True)
+    for name in ("velodyne", "predictions"):
+        os.makedirs(os.path.join(folder, name))
+    elevations = np.radians(np.linspace(-15, 10, 16))
+    azimuths = np.radians(np.arange(-180, 180, 0.5))
+    el, az = np.meshgrid(elevations, azimuths, indexing="ij")
+    local_rays = np.stack([np.cos(el) * np.cos(az), np.cos(el) * np.sin(az), np.sin(el)], axis=-1).reshape(-1, 3)
+    poses, total = [], 0
+    for frame in range(frames):
+        yaw = 0.015 * frame
+        turn = np.array([[math.cos(yaw), -math.sin(yaw), 0], [math.sin(yaw), math.cos(yaw), 0], [0, 0, 1]])
+        origin = np.array([1.2 * frame, 0.25 * math.sin(frame / 4), 1.73])
+        boxes = street_boxes(frame)
+        rays = local_rays @ turn.T
+        ranges, index, normal = cast(origin, rays, boxes)
+        ranges = ranges + rng.normal(0, 0.015, len(ranges))
+        keep = np.isfinite(ranges) & (ranges > 1.0) & (ranges < 45)
+        classes = np.array([b[6] for b in boxes] + [0])[index][keep]
+        world = origin + rays[keep] * ranges[keep, None]
+        local = (world - origin) @ turn
+        reflect = np.array([STREET_REFLECT[c] for c in classes])
+        intensity = np.clip(reflect * np.abs(np.einsum("ij,ij->i", normal[keep], rays[keep])) + rng.normal(0, 0.02, len(classes)), 0, 1)
+        name = f"{frame:06d}"
+        np.column_stack([local, intensity]).astype("<f4").tofile(os.path.join(folder, "velodyne", name + ".bin"))
+        guess = classes.astype(np.uint16).copy()
+        moving = np.isin(guess, (7, 8))
+        if frame % 2:
+            guess[moving & (guess == 8)] = 4
+        edge = (np.abs(np.abs(world[:, 1]) - 4.0) < 0.35) & np.isin(guess, (1, 2))
+        flip = edge & (rng.random(len(guess)) < 0.4)
+        guess[flip] = np.where(guess[flip] == 1, 2, 1)
+        stray = rng.random(len(guess)) < 0.02
+        guess[stray] = rng.choice([1, 2, 3, 4, 5, 6], int(stray.sum()))
+        guess.astype("<u4").tofile(os.path.join(folder, "predictions", name + ".label"))
+        pose = np.eye(4)[:3]
+        pose[:, :3], pose[:, 3] = turn, origin
+        poses.append(" ".join(f"{v:.9g}" for v in pose.ravel()))
+        total += len(classes)
+    with open(os.path.join(folder, "poses.txt"), "w") as f:
+        f.write("\n".join(poses) + "\n")
+    from mapbarber.labels import ClassList
+    classes = ClassList()
+    for number, name, role, wins in STREET_CLASSES:
+        classes.set(number, name, role=role, wins=wins)
+    classes.save(os.path.join(folder, "labels.yaml"))
+    return total
+
+
 def make_large(out):
     os.makedirs(out, exist_ok=True)
     x, y, z = np.meshgrid(np.arange(0, 400), np.arange(0, 300), np.arange(0, 60), indexing="ij")
@@ -430,6 +503,8 @@ if __name__ == "__main__":
     shape = make_warehouse(OUT)
     make_lab(OUT)
     make_broken(OUT)
+    drive_points = make_drive(OUT)
+    print(f"drive: {drive_points} points in 16 frames")
     print(f"office: {voxels} occupied, {free} free voxels, {coloured} coloured voxels; lidar {lidar_points} points; "
           f"warehouse {shape[1]}x{shape[0]} cells")
     if "--large" in sys.argv:

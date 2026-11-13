@@ -87,6 +87,7 @@ class MeasureOverlay(QtWidgets.QFrame):
         super().__init__(host)
         self.host, self.describe, self.on_show, self.translate = host, describe, on_show, translate
         self.entries = []
+        self.below = None
         self.setObjectName("measure")
         self.setStyleSheet("QFrame#measure { background-color: rgba(21, 23, 30, 235); border: 1px solid #ffd126; "
                            "border-radius: 8px; } QLabel { color: #f2f4f8; }")
@@ -117,7 +118,10 @@ class MeasureOverlay(QtWidgets.QFrame):
 
     def place(self):
         self.adjustSize()
-        self.move(self.host.width() - self.width() - MARGIN, MARGIN)
+        top = MARGIN
+        if self.below is not None and self.below.isVisible():
+            top = self.below.geometry().bottom() + MARGIN
+        self.move(self.host.width() - self.width() - MARGIN, top)
         self.raise_()
 
     def total(self):

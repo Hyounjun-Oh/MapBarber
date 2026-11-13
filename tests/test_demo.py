@@ -62,3 +62,17 @@ def test_broken_files(name, message):
             formats.load_voxels(path(name))
         else:
             formats.read_cloud(path(name))
+
+
+def test_drive_sequence_and_its_predictions():
+    from mapbarber import frames, labels
+    sequence = frames.Sequence(path("drive"))
+    assert len(sequence) == 16 and sequence.poses is not None
+    classes = labels.ClassList.load(path(os.path.join("drive", "labels.yaml")))
+    assert classes.role(1) == labels.FREE_ROLE and classes.role(7) == labels.IGNORE and classes.dominant() == [7]
+    for index in (0, 15):
+        xyz, table = sequence.load(index)
+        guess, _ = formats.read_label_file(path(os.path.join("drive", "predictions", sequence.names[index] + ".label")), len(xyz))
+        assert len(xyz) > 8000 and set(np.unique(guess)) <= set(classes.numbers())
+    merged, _, _ = sequence.merge([0, 15])
+    assert np.abs(merged[:, 1]).max() < 10

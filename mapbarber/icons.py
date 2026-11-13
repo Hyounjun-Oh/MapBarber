@@ -9,7 +9,8 @@ BLUE, PINK, AMBER, GOLD, RED, GREEN, TEAL, VIOLET = ("#4f9cf7", "#ff4fc8", "#f2b
 ACCENTS = {
     "brush": BLUE, "paint_with": BLUE, "rectangle": PINK, "islands": PINK, "noise_filters": PINK, "box": AMBER,
     "ruler": GOLD, "slice": VIOLET, "visible_range": TEAL, "display": TEAL, "downsample": RED, "speckles": RED,
-    "map_info": GREEN,
+    "map_info": GREEN, "labels": GREEN, "smart": VIOLET, "review": GOLD, "instances": AMBER, "frames": BLUE,
+    "tool_label": GREEN, "tool_smart": VIOLET, "ground": GREEN, "bbox": AMBER, "kind_voxel": AMBER, "kind_cloud": TEAL, "kind_grid": BLUE,
     "tool_view": BLUE, "tool_select": PINK, "tool_delete": RED, "tool_add": GREEN, "tool_measure": GOLD,
     "tool_pen": BLUE, "tool_line": BLUE, "tool_rectangle": BLUE, "tool_fill": GREEN,
     "open": AMBER, "save": BLUE, "undo": TEAL, "redo": TEAL,
@@ -236,7 +237,88 @@ def _plus_bare(p, c, a):
     p.drawLine(L(4, 12, 20, 12))
 
 
+def _tag(p, c, a):
+    p.drawPolygon(_poly([(3, 4), (12, 4), (21, 13), (13, 21), (3, 11)]))
+    p.setBrush(a)
+    p.setPen(Qt.NoPen)
+    p.drawEllipse(P(8, 9), 2.2, 2.2)
+
+
+def _wand(p, c, a):
+    p.drawLine(L(4, 20, 14, 10))
+    p.setPen(QtGui.QPen(a, 2))
+    for x0, y0, x1, y1 in ((17, 2, 17, 6), (15, 4, 19, 4), (20, 9, 20, 13), (18, 11, 22, 11), (9, 3, 9, 5), (8, 4, 10, 4)):
+        p.drawLine(L(x0, y0, x1, y1))
+
+
+def _check(p, c, a):
+    p.drawRect(R(3, 3, 18, 18))
+    p.setPen(QtGui.QPen(a, 2.4))
+    p.drawPolyline(_poly([(7, 12), (11, 16), (17, 8)]))
+
+
+def _cubes(p, c, a):
+    p.drawRect(R(3, 11, 9, 9))
+    p.setBrush(a)
+    p.drawRect(R(12, 4, 9, 9))
+
+
+def _film(p, c, a):
+    for x in (3, 9.5, 16):
+        p.drawRect(R(x, 6, 5, 12))
+    p.setPen(QtGui.QPen(a, 2))
+    p.drawLine(L(3, 21, 21, 21))
+
+
+def _bbox(p, c, a):
+    p.drawPolygon(_poly([(3, 9), (13, 5), (21, 8), (21, 17), (11, 21), (3, 17)]))
+    p.setPen(QtGui.QPen(a, 2))
+    p.drawPolyline(_poly([(3, 9), (11, 12), (21, 8)]))
+    p.drawLine(L(11, 12, 11, 21))
+
+
+def _ground(p, c, a):
+    p.drawPolyline(_poly([(9, 15), (12, 6), (15, 15)]))
+    p.drawRect(R(14, 9, 6, 6))
+    p.setPen(QtGui.QPen(a, 2.4))
+    p.drawLine(L(2, 18, 22, 18))
+    for x in (5, 10, 15, 20):
+        p.drawLine(L(x, 18, x - 3, 22))
+
+
+def _voxels(p, c, a):
+    p.drawRect(R(3, 12, 8, 8))
+    p.drawRect(R(11, 12, 8, 8))
+    p.setBrush(a)
+    p.drawRect(R(7, 4, 8, 8))
+
+
+def _dots(p, c, a):
+    p.setPen(Qt.NoPen)
+    p.setBrush(c)
+    for x, y, r in ((5, 15, 1.6), (9, 10, 1.6), (13, 17, 1.6), (17, 8, 1.6), (19, 15, 1.6), (7, 20, 1.3), (14, 5, 1.3)):
+        p.drawEllipse(P(x, y), r, r)
+    p.setBrush(a)
+    for x, y in ((11, 14), (16, 12), (9, 16)):
+        p.drawEllipse(P(x, y), 2.2, 2.2)
+
+
+def _cells(p, c, a):
+    for i in range(3):
+        for j in range(3):
+            if (i, j) in ((0, 0), (1, 0), (2, 1)):
+                p.save()
+                p.setBrush(a)
+                p.drawRect(R(3 + 6 * i, 3 + 6 * j, 6, 6))
+                p.restore()
+            else:
+                p.drawRect(R(3 + 6 * i, 3 + 6 * j, 6, 6))
+
+
 _DRAW = {
+    "ground": _ground, "bbox": _bbox, "kind_voxel": _voxels, "kind_cloud": _dots, "kind_grid": _cells,
+    "labels": _tag, "smart": _wand, "review": _check, "instances": _cubes, "frames": _film,
+    "tool_label": _tag, "tool_smart": _wand,
     "brush": _brush, "rectangle": _marquee, "islands": _islands, "box": _box, "ruler": _ruler, "slice": _slice,
     "visible_range": _range, "display": _eye, "noise_filters": _funnel, "downsample": _thin, "paint_with": _states,
     "speckles": _speckles, "map_info": _info,

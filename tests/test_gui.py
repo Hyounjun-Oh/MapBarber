@@ -23,6 +23,8 @@ def workbench(tmp_path_factory):
     for name in os.listdir(EXAMPLES):
         shutil.copy(os.path.join(EXAMPLES, name), folder)
     app, window = launch(None, "en")
+    window.ask_losses = lambda fmt, lines: window.answered_losses.append((fmt, lines)) or True
+    window.answered_losses = []
 
     def pump(seconds=0.3):
         end = time.time() + seconds
@@ -644,6 +646,8 @@ def test_far_chunks_are_drawn_coarser_and_edits_touch_few_chunks(workbench):
     floor = np.stack(np.meshgrid(np.arange(600), np.arange(600), [0, 1], indexing="ij"), -1).reshape(-1, 3)
     editor = window.show_document(VOXEL, (pack(floor), 0.05))
     pump(0.4)
+    editor.update_levels()
+    editor.finish_levels()
     assert len(editor.map.chunks) == 100 and editor.visible_count == len(floor)
     assert editor.view.drawn() < len(floor) / 3 and max(editor.view.levels.values()) >= 1
     editor.viewport.zoom(12.0)
@@ -926,3 +930,595 @@ def test_saving_warns_once_about_what_the_format_cannot_hold(workbench, monkeypa
     keys, _, written = octree.read(flat, "bt")
     assert len(keys) == 3 and int(written.free.sum()) == 1
     window.close_document(editor, ask=False)
+
+
+def unambiguous(window):
+    seen = {}
+    for action in window.actions():
+        for sequence in action.shortcuts():
+            key = sequence.toString()
+            assert key not in seen, (key, seen.get(key), action.text())
+            seen[key] = action.text()
+
+
+def labelled_scene():
+    """Floor (class 1), wall (2) and a box floating apart (3)."""
+    rng = np.random.default_rng(0)
+    floor = np.column_stack([rng.uniform(0, 4, 4000), rng.uniform(0, 4, 4000), rng.normal(0, 0.004, 4000)])
+    wall = np.column_stack([rng.uniform(0, 4, 3000), rng.normal(4.0, 0.004, 3000), rng.uniform(0, 2, 3000)])
+    box = rng.uniform(0, 0.4, (1500, 3)) + [1.5, 1.5, 0.6]
+    return np.vstack([floor, wall, box]), np.repeat([1, 2, 3], [4000, 3000, 1500])
+
+
+def test_labelling_a_cloud(workbench):
+    from mapbarber import formats
+    from mapbarber.qt import QtCore
+    window, folder, pump, dialogs = workbench
+    points, truth = labelled_scene()
+    path = folder / "scene.pcd"
+    formats.save_cloud(str(path), points)
+    assert window.open(str(path))
+    pump()
+    editor = window.editor
+    assert not editor.label_mode and [name for name, _ in editor.tools] == ["view", "select", "delete", "measure"]
+    colour_before = editor.colour_box.currentData()
+    window.set_tool("delete")
+    window.set_label_mode(True)
+    unambiguous(window)
+    assert editor.label_mode and editor.tool == "label" and window.label_action.isChecked()
+    assert [name for name, _ in editor.tools] == ["view", "select", "label", "smart", "measure"]
+    assert editor.colour_box.currentData() == "label"
+    assert editor.classes.numbers()[:3] == [1, 2, 3] and editor.class_list.topLevelItemCount() == 10
+    assert editor.rule_box.currentData() == "unlabeled"
+
+    window.set_tool("smart")
+    editor.smart_box.setCurrentIndex(editor.smart_box.findData("plane"))
+    floor = editor.smart_ids(np.array([2.0, 2.0, 0.0]))
+    assert len(floor) > 3800 and (truth[floor] == 1).mean() > 0.97
+    editor.select(floor, "replace")
+    from mapbarber.qt import QtGui
+    wanted = QtGui.QKeySequence("Ctrl+1")
+    next(action for action in window.actions() if wanted in action.shortcuts()).trigger()
+    pump()
+    assert (editor.labels.cls[floor] == 1).all() and not editor.selected.any()
+    assert editor.colour_box.currentData() == "label" and editor.active_class == 1
+
+    editor.smart_box.setCurrentIndex(editor.smart_box.findData("object"))
+    editor.at_once.setChecked(True)
+    editor.set_active(3)
+    box = np.flatnonzero(truth == 3)
+    editor.look_from((1, -1, 0.8), (0, 0, 1))
+    pump()
+    target = points[box][np.argmax(points[box][:, 2])]
+    editor._smart_click(*screen(editor, target), False)
+    pump()
+    assert (editor.labels.cls[box] == 3).all() and set(editor.labels.cls[editor.labels.cls == 3].tolist()) == {3}
+    assert (editor.labels.cls == 3).sum() == 1500
+
+    editor.rule_box.setCurrentIndex(editor.rule_box.findData("unlabeled"))
+    editor.select(np.arange(len(points)), "replace")
+    editor.assign_selection(2)
+    assert (editor.labels.cls[floor] == 1).all() and (editor.labels.cls[box] == 3).all()
+    wall = np.setdiff1d(np.flatnonzero(truth == 2), floor)
+    assert (editor.labels.cls[wall] == 2).all()
+    editor.undo()
+    assert (editor.labels.cls[wall] == 0).all()
+    editor.redo()
+    editor.rule_box.setCurrentIndex(editor.rule_box.findData("all"))
+
+    editor.toggle_all_classes(2)
+    assert editor.hidden_classes == set([0] + editor.classes.numbers()) and editor.visible_count == 0
+    editor.toggle_all_classes(2)
+    assert editor.hidden_classes == set() and editor.visible_count == len(points)
+    editor.toggle_all_classes(3)
+    assert editor.locked_classes == set([0] + editor.classes.numbers())
+    assert editor.class_list.topLevelItem(4).checkState(3) == QtCore.Qt.Checked
+    editor.toggle_all_classes(3)
+    assert editor.locked_classes == set()
+    locked = editor.class_list.topLevelItem(1)
+    locked.setCheckState(3, QtCore.Qt.Checked)
+    editor.select(floor[:10], "replace")
+    editor.assign_selection(3)
+    assert (editor.labels.cls[floor[:10]] == 1).all()
+    locked.setCheckState(3, QtCore.Qt.Unchecked)
+    editor.class_list.topLevelItem(1).setCheckState(2, QtCore.Qt.Unchecked)
+    assert editor.visible_count == len(points) - len(floor)
+    editor.select_all()
+    assert not editor.selected[floor].any()
+    editor.clear_selection()
+    editor.solo_class()
+    editor.solo_class()
+    assert editor.hidden_classes == set() and editor.visible_count == len(points)
+
+    inner = floor[(truth[floor] == 1) & (points[floor, 1] < 3.5)]
+    wrong = inner[::97]
+    editor.labels.assign(wrong, 3)
+    editor.select_disagreeing()
+    assert set(wrong.tolist()) <= set(editor.selection.tolist())
+    editor.labels.assign(wrong, 0)
+    editor.fill_gaps()
+    assert editor.labels.pending[wrong].all() and (editor.labels.cls[wrong] == 1).all()
+    editor.confirm_pending()
+    assert not editor.labels.pending.any()
+    editor.clear_selection()
+    editor.next_unlabeled()
+    assert not editor.selected.any()
+
+    window.set_label_mode(False)
+    assert not editor.label_bar.isVisible() and not editor.timeline.isVisible()
+    assert editor.tool == "delete" and editor.colour_box.currentData() == colour_before
+    assert window.tool_actions["delete"].isChecked() and not window.label_action.isChecked()
+    editor.remove(box[:100], "erase")
+    editor.undo()
+    assert editor.cloud.alive.all() and (editor.labels.cls[box] == 3).all()
+    editor.undo()
+    assert editor.labels.pending[wrong].all()
+    window.set_label_mode(True)
+    assert editor.colour_box.currentData() == "label" and editor.rule_box.currentData() == "all"
+
+    editor.labels.confirm()
+    editor.set_active(3)
+    editor.split_instances()
+    assert editor.labels.inst[box].min() > 0 and len(np.unique(editor.labels.inst[box])) == 1
+    assert window.save()
+    xyz, table = formats.read_cloud(str(path))
+    cls, inst = formats.table_labels(table)
+    assert cls.tolist() == editor.labels.cls.tolist() and inst.tolist() == editor.labels.inst.tolist()
+    assert (folder / "scene.pcd.labels.yaml").is_file() and not editor.dirty
+
+    window.close_document(editor, ask=False)
+    assert window.open(str(path))
+    pump()
+    again = window.editor
+    assert again.labels.cls.tolist() == cls.tolist() and not again.label_mode
+    window.set_label_mode(True)
+    assert again.colour_box.currentData() == "label"
+    again.labels.assign([0], 2)
+    again._order.append("label")
+    again.save_labels_only()
+    assert formats.read_label_file(str(path) + ".labels.npz")[0][0] == 2
+    assert formats.table_labels(formats.read_cloud(str(path))[1])[0][0] == cls[0] and not again.dirty
+    window.close_all(ask=False)
+    assert not dialogs
+
+
+def test_labelling_frames(workbench):
+    from mapbarber import formats
+    window, folder, pump, dialogs = workbench
+    sequence = folder / "drive"
+    (sequence / "velodyne").mkdir(parents=True)
+    rng = np.random.default_rng(1)
+    wall = np.column_stack([rng.uniform(0, 10, 500), np.full(500, 5.0), rng.uniform(0, 2, 500)])
+    poses = []
+    for index in range(5):
+        walker = np.column_stack([np.full(40, 2.0 + index), rng.uniform(2, 2.4, 40), rng.uniform(0, 1.7, 40)])
+        scan = np.vstack([wall, walker]) - [index, 0, 0]
+        np.column_stack([scan, np.zeros(len(scan))]).astype("<f4").tofile(str(sequence / "velodyne" / f"{index:06d}.bin"))
+        poses.append(f"1 0 0 {index} 0 1 0 0 0 0 1 0")
+    (sequence / "poses.txt").write_text("\n".join(poses) + "\n")
+
+    assert window.open(str(sequence))
+    pump()
+    editor = window.editor
+    unambiguous(window)
+    assert editor.frame_ids == [0] and len(editor.cloud.xyz) == 540 and editor.frame_list.count() == 5
+    assert editor.timeline.isVisible() and editor.label_bar.isVisible()
+    assert "1 of 5" in editor.timeline.caption.text()
+    editor.timeline.slider.on_range(1, 3)
+    assert editor.frame_ids == [1, 2, 3] and editor.timeline.slider.first == 1 and editor.timeline.slider.last == 3
+    editor.step_frame(1)
+    assert editor.frame_ids == [2, 3, 4] and "3 of 5" in editor.timeline.caption.text()
+    editor.show_frames([0])
+    assert editor.label_bar.protect.isChecked() and editor.protecting()
+    editor.label_bar.protect.click()
+    assert not editor.protecting() and editor.rule_box.currentData() == "all"
+    editor.toggle_protect()
+    assert editor.label_bar.protect.isChecked() and "ON" in editor.label_bar.protect.text()
+    for row in (0, 2):
+        editor.frame_list.item(row).setSelected(True)
+    editor.show_selected_frames()
+    assert editor.frame_ids == [0, 2] and len(editor.cloud.xyz) == 1080
+    assert np.allclose(editor.cloud.xyz[:500], wall, atol=1e-4) and np.allclose(editor.cloud.xyz[540:1040], wall, atol=1e-4)
+
+    editor.select(np.r_[0:500, 540:1040], "replace")
+    editor.assign_selection(50)
+    editor.paint_frame.setCurrentIndex(editor.paint_frame.findData(2))
+    editor.select(np.arange(1080), "replace")
+    editor.set_active(30)
+    editor.rule_box.setCurrentIndex(editor.rule_box.findData("unlabeled"))
+    editor.assign_selection()
+    assert (editor.labels.cls[500:540] == 0).all() and (editor.labels.cls[1040:] == 30).all()
+    editor.rule_box.setCurrentIndex(editor.rule_box.findData("all"))
+    editor.paint_frame.setCurrentIndex(0)
+    assert editor.label_mode and not window.label_action.isEnabled() and "delete" not in dict(editor.tools)
+    editor.remove([0], "erase")
+    assert editor.cloud.alive.all()
+
+    editor.propagate_frames()
+    pump()
+    for index in (1, 3, 4):
+        cls, _, pending = editor.frame_store[index]
+        assert (cls[:500] == 50).all() and pending[:500].all() and (cls[500:] == 0).all()
+    editor.step_frame(1)
+    assert editor.frame_ids == [1, 3] and editor.labels.pending[:500].all()
+    editor.confirm_pending()
+    editor.labels.assign([5], 30)
+    editor._order.append("label")
+    editor.select_conflicts()
+    assert 5 in editor.selection.tolist()
+    editor.labels.assign([5], 50)
+
+    assert window.save()
+    labels_dir = sequence / "labels"
+    assert sorted(p.name for p in labels_dir.iterdir()) == [f"{i:06d}.label" for i in range(5)]
+    for index in range(5):
+        cls, _ = formats.read_label_file(str(labels_dir / f"{index:06d}.label"), 540)
+        assert (cls[:500] == 50).all()
+        assert (cls[500:] == (30 if index == 2 else 0)).all()
+    assert (sequence / "labels.yaml").is_file() and not editor.dirty
+    assert window.write(str(folder / "merged.pcd"), None)
+    merged = formats.read_cloud(str(folder / "merged.pcd"))[1]
+    assert sorted(set(merged["frame"].tolist())) == [1, 3] and editor.path == str(sequence)
+    window.close_all(ask=False)
+    assert not dialogs
+
+
+def test_labels_survive_the_trip_through_voxels(workbench, monkeypatch):
+    import mapbarber.cloud_editor as cloud_editor
+    from mapbarber import formats
+    from mapbarber.qt import QtWidgets
+    window, folder, pump, dialogs = workbench
+    points, truth = labelled_scene()
+    path = folder / "labelled.pcd"
+    person = np.random.default_rng(2).uniform([3.0, 3.0, 0.0], [3.3, 3.3, 1.7], (200, 3))
+    points = np.vstack([points, person])
+    truth = np.concatenate([truth, np.full(200, 7)])
+    table = formats.with_labels(points, None, truth.astype(np.uint16), np.where(truth == 3, 9, 0).astype(np.uint32))
+    formats.save_cloud(str(path), points, table)
+    monkeypatch.setattr(cloud_editor, "ask_numbers", lambda parent, title, fields: [0.1 if len(f) > 2 else True
+                                                                                    for f in fields])
+    monkeypatch.setattr(QtWidgets.QMessageBox, "question", staticmethod(lambda *a, **k: QtWidgets.QMessageBox.Yes))
+    assert window.open(str(path))
+    pump()
+    source = window.editor
+    assert source.labels.cls.tolist() == table["label"].tolist()
+    points, person = source.cloud.xyz.copy(), source.cloud.xyz[-200:].copy()
+    window.convert(source.to_voxels)
+    voxels = window.editor
+    assert voxels.vlabels.any and not voxels.label_mode
+    window.set_label_mode(True)
+    unambiguous(window)
+    assert voxels.by_class.isChecked() and voxels.tool in dict(voxels.tools)
+    from mapbarber.convert import point_keys
+    person_keys = np.unique(point_keys(person[person[:, 2] > 0.2], 0.1))
+    assert not np.isin(person_keys, voxels.map.occupied).any()
+    wall_key = point_keys(points[4100:4101], 0.1)
+    assert voxels.vlabels.get(wall_key).tolist() == [2]
+
+    window.convert(voxels.to_cloud)
+    back = window.editor
+    assert np.array_equal(back.cloud.xyz, points) and back.labels.cls.tolist() == table["label"].tolist()
+    assert back.labels.inst.tolist() == table["instance"].tolist()
+
+    window.tabs.setCurrentWidget(voxels.widget)
+    assert voxels.label_mode and voxels.protect.isChecked() and voxels.label_bar.isVisible()
+    voxels.select(wall_key, "replace", trusted=True)
+    assert not len(voxels.selected)
+    voxels.toggle_protect()
+    voxels.select(wall_key, "replace", trusted=True)
+    voxels.assign_selection(4)
+    voxels.toggle_protect()
+    window.set_label_mode(False)
+    voxels.edit(remove=point_keys(points[:1], 0.1), label="erase")
+    voxels.undo()
+    voxels.redo()
+    window.convert(voxels.to_cloud)
+    relabelled = window.editor
+    in_wall = point_keys(points, 0.1) == wall_key[0]
+    gone = point_keys(points, 0.1) == point_keys(points[:1], 0.1)[0]
+    expected = table["label"].copy()
+    expected[in_wall & (table["label"] != 7)] = 4
+    assert relabelled.labels.cls.tolist() == expected[~gone].tolist()
+
+    window.tabs.setCurrentWidget(voxels.widget)
+    target = folder / "labelled_map.bt"
+    assert window.write(str(target), None)
+    assert window.answered_losses[-1] == ("bt", [window.tr_("loss_points")])
+    expected_labels = voxels.vlabels.get(voxels.map.occupied).tolist()
+    voxels.map.mark_saved()
+    voxels.vlabels.mark_saved()
+    window.close_document(voxels, ask=False)
+    assert (folder / "labelled_map.bt.labels.npz").is_file() and (folder / "labelled_map.bt.labels.yaml").is_file()
+    assert window.open(str(target))
+    pump()
+    reopened = window.editor
+    window.set_label_mode(True)
+    assert reopened.by_class.isChecked()
+    assert reopened is not voxels and reopened.source is None
+    assert reopened.vlabels.get(reopened.map.occupied).tolist() == expected_labels
+    assert reopened.classes.name(4) == voxels.classes.name(4)
+    window.close_all(ask=False)
+    assert not dialogs
+
+
+def test_protected_labels_stay_out_of_a_wide_selection(workbench):
+    from mapbarber.formats import CLOUD
+    window, _folder, pump, dialogs = workbench
+    points, truth = labelled_scene()
+    editor = window.show_document(CLOUD, (points, None))
+    pump()
+    window.set_label_mode(True)
+    box = np.flatnonzero(truth == 3)
+    editor.select(box, "replace")
+    editor.assign_selection(5)
+    window.set_tool("select")
+    width, height = editor.viewport.renderer.GetSize()
+    editor._rectangle((0, 0), (width, height), False)
+    assert editor.selected.any() and not editor.selected[box].any()
+    editor.select(np.arange(len(points)), "replace")
+    assert not editor.selected[box].any()
+    editor.selected[box] = True
+    editor.assign_selection(2)
+    assert (editor.labels.cls[box] == 5).all() and (editor.labels.cls[truth != 3] == 2).all()
+    assert "1500" in window.statusBar().currentMessage()
+    editor.select_class()
+    editor.set_active(5)
+    editor.select_class()
+    assert editor.selected[box].all()
+    editor.toggle_protect()
+    editor.select(np.arange(len(points)), "replace")
+    assert editor.selected.all()
+    editor.clear_selection()
+    window.close_all(ask=False)
+    assert not dialogs
+
+
+def test_undo_covers_classes_and_frame_writes(workbench, tmp_path):
+    from mapbarber.formats import CLOUD
+    window, folder, pump, dialogs = workbench
+    points, truth = labelled_scene()
+    editor = window.show_document(CLOUD, (points, None))
+    pump()
+    window.set_label_mode(True)
+    assert editor.apply_button.text().startswith("Label mapping") and "floor" in editor.apply_button.text()
+    editor.set_active(2)
+    assert "wall" in editor.apply_button.text()
+    count = len(editor.classes)
+    editor.remove_class()
+    assert 2 not in editor.classes and len(editor.classes) == count - 1
+    editor.undo()
+    assert 2 in editor.classes and editor.classes.name(2) == "wall"
+    assert editor.class_list.topLevelItemCount() == count + 1
+    editor.redo()
+    assert 2 not in editor.classes
+    editor.undo()
+    editor.preset_box.setCurrentIndex(editor.preset_box.findData("las"))
+    editor.load_preset(editor.preset_box.findData("las"))
+    assert editor.classes.name(2) == "ground"
+    editor.undo()
+    assert editor.classes.name(2) == "wall"
+    window.close_all(ask=False)
+
+    sequence = tmp_path / "seq"
+    (sequence / "velodyne").mkdir(parents=True)
+    wall = np.column_stack([np.linspace(0, 9, 300), np.full(300, 5.0), np.linspace(0, 2, 300)])
+    for index in range(3):
+        np.column_stack([wall - [index, 0, 0], np.zeros(300)]).astype("<f4").tofile(
+            str(sequence / "velodyne" / f"{index:06d}.bin"))
+    (sequence / "poses.txt").write_text("".join(f"1 0 0 {i} 0 1 0 0 0 0 1 0\n" for i in range(3)))
+    assert window.open(str(sequence))
+    pump()
+    frames = window.editor
+    frames.select(np.arange(300), "replace")
+    frames.assign_selection(50)
+    frames.propagate_frames()
+    assert (frames.frame_store[1][0] == 50).all() and frames.frame_store[1][2].all()
+    frames.step_frame(1)
+    assert frames.frame_ids == [1] and frames.labels.pending.all()
+    frames.undo()
+    assert not frames.labels.cls.any() and not frames.frame_store[2][0].any()
+    frames.undo()
+    frames.step_frame(-1)
+    assert frames.frame_ids == [0] and not frames.labels.cls.any()
+    frames.redo()
+    assert (frames.labels.cls == 50).all()
+    for document in window.documents:
+        document.mark_saved()
+    window.close_all(ask=False)
+    assert not dialogs
+
+
+def test_connected_pick_keeps_clear_of_the_ground(workbench):
+    from mapbarber.formats import CLOUD
+    window, _folder, pump, dialogs = workbench
+    rng = np.random.default_rng(4)
+    floor = np.column_stack([rng.uniform(-3, 3, 20000), rng.uniform(-3, 3, 20000), rng.normal(0, 0.01, 20000)])
+    crate = rng.uniform([-0.3, -0.3, 0.0], [0.3, 0.3, 0.8], (3000, 3))
+    points = np.vstack([floor, crate])
+    editor = window.show_document(CLOUD, (points, None))
+    pump()
+    window.set_label_mode(True)
+    window.set_tool("smart")
+    editor.smart_box.setCurrentIndex(editor.smart_box.findData("object"))
+    editor.clearance.setValue(0.0)
+    editor.stop_bends.setChecked(False)
+    assert len(editor.smart_ids(np.array([0.0, 0.0, 0.5]))) > 20000
+    editor.stop_bends.setChecked(True)
+    by_direction = editor.smart_ids(np.array([0.0, 0.0, 0.5]))
+    assert np.isin(np.arange(20000, 23000), by_direction).mean() > 0.9 and (by_direction < 20000).sum() < 600
+    floor_only = editor.smart_ids(np.array([2.0, 2.0, 0.0]))
+    assert len(floor_only) > 15000 and (floor_only >= 20000).sum() < 400
+    editor.stop_bends.setChecked(False)
+    editor.clearance.setValue(0.1)
+    picked = editor.smart_ids(np.array([0.0, 0.0, 0.5]))
+    assert (picked < 20000).sum() < 30 and np.isin(np.arange(20000, 23000), picked).mean() > 0.9
+    floor_pick = editor.smart_ids(np.array([2.0, 2.0, 0.0]))
+    assert len(floor_pick) > 15000 and (points[floor_pick[floor_pick >= 20000], 2] < 0.15).all()
+    window.close_all(ask=False)
+    assert not dialogs
+
+
+def test_objects_and_boxes(workbench, tmp_path):
+    import json
+    from mapbarber import formats
+    window, _folder, pump, dialogs = workbench
+    rng = np.random.default_rng(6)
+    floor = np.column_stack([rng.uniform(-5, 5, 8000), rng.uniform(-5, 5, 8000), np.zeros(8000)])
+    crates = [rng.uniform([x - 0.3, -0.4, 0.05], [x + 0.3, 0.4, 0.9], (800, 3)) for x in (-3, 0, 3)]
+    crumbs = rng.uniform([4.0, 4.0, 0.3], [4.05, 4.05, 0.35], (5, 3))
+    points = np.vstack([floor] + crates + [crumbs])
+    path = str(tmp_path / "crates.pcd")
+    formats.save_cloud(path, points)
+    assert window.open(path)
+    pump()
+    editor = window.editor
+    window.set_label_mode(True)
+    crate_ids = np.arange(8000, 10405)
+    editor.select(crate_ids, "replace")
+    editor.assign_selection(5)
+    editor.set_active(5)
+    editor.split_instances()
+    inst = editor.labels.inst[crate_ids]
+    assert len(np.unique(inst[:2400])) == 3 and (inst[2400:] == 0).all()
+    assert editor.instance_list.topLevelItemCount() == 3
+    editor._instance_chosen(editor.instance_list.topLevelItem(1))
+    assert editor.selected.sum() == 800
+    editor.clear_selection()
+
+    editor.clear_instances()
+    assert not editor.labels.inst.any() and "furniture" in editor.class_boxes.text()
+    editor.boxes_for_class()
+    assert len(np.unique(editor.labels.inst[crate_ids[:2400]])) == 3
+    assert len(editor.box_store[None]) == 3 and editor.box_list.topLevelItemCount() == 3
+    assert {box["class"] for box in editor.box_store[None]} == {5}
+    editor.boxes_for_class()
+    assert len(editor.box_store[None]) == 3
+    editor.set_active(2)
+    editor.boxes_for_class()
+    assert len(editor.box_store[None]) == 3
+    editor.set_active(5)
+    size = sorted(editor.box_store[None][0]["size"])
+    assert np.allclose(size, [0.6, 0.8, 0.85], atol=0.05)
+    editor.box_list.setCurrentItem(editor.box_list.topLevelItem(0))
+    editor.box_fields[6].setValue(30.0)
+    assert np.isclose(np.degrees(editor.box_store[None][0]["yaw"]), 30.0)
+    editor.undo()
+    assert not np.isclose(np.degrees(editor.box_store[None][0]["yaw"]), 30.0)
+    editor.select_in_box()
+    assert editor.selected.sum() >= 790
+    editor.delete_box()
+    assert len(editor.box_store[None]) == 2
+    editor.undo()
+    assert len(editor.box_store[None]) == 3
+    editor.select(np.arange(10400, 10405), "replace", review=True)
+    assert editor.selected.sum() == 5
+    editor.label_box_from_selection()
+    assert len(editor.box_store[None]) == 4
+
+    editor.clear_selection()
+    editor.clear_instances()
+    assert not editor.labels.inst.any() and (editor.labels.cls[crate_ids] == 5).all()
+    editor.undo()
+    assert editor.labels.inst[crate_ids[:2400]].all()
+
+    out = tmp_path / "standard"
+    out.mkdir()
+    editor.export_standard(str(out), [True, True, True])
+    scan = np.fromfile(str(out / "velodyne" / "000000.bin"), "<f4").reshape(-1, 4)
+    packed = np.fromfile(str(out / "labels" / "000000.label"), "<u4")
+    assert np.allclose(scan[:, :3], points, atol=1e-4) and (packed & 0xFFFF).tolist() == editor.labels.cls.tolist()
+    assert (packed >> 16).tolist() == editor.labels.inst.tolist()
+    config = (out / "semantic-kitti.yaml").read_text()
+    assert '5: "furniture"' in config and "learning_map:" in config and "color_map: # bgr" in config
+    kitti_rows = (out / "label_2" / "000000.txt").read_text().splitlines()
+    pcdet_rows = (out / "boxes_pcdet" / "000000.txt").read_text().splitlines()
+    assert len(kitti_rows) == len(pcdet_rows) == 4 and len(kitti_rows[0].split()) == 15
+    first = editor.box_store[None][0]
+    values = pcdet_rows[0].split()
+    assert values[-1] == "furniture" and np.allclose([float(v) for v in values[:3]], first["center"], atol=1e-3)
+    fields = kitti_rows[0].split()
+    assert fields[0] == "furniture" and np.isclose(float(fields[8]), first["size"][2], atol=0.01)
+    assert np.allclose([float(fields[11]), float(fields[12]), float(fields[13])],
+                       [-first["center"][1], -(first["center"][2] - first["size"][2] / 2), first["center"][0]], atol=0.011)
+
+    assert window.save()
+    saved = json.load(open(path + ".boxes.json"))
+    assert len(saved["boxes"]) == 4 and saved["boxes"][0]["name"] == "furniture"
+    window.close_document(editor, ask=False)
+    assert window.open(path)
+    pump()
+    again = window.editor
+    window.set_label_mode(True)
+    assert len(again.box_store[None]) == 4 and again.box_list.topLevelItemCount() == 4
+    window.close_all(ask=False)
+
+    sequence = tmp_path / "seq"
+    (sequence / "velodyne").mkdir(parents=True)
+    for index in range(2):
+        scan = np.vstack([floor, crates[1]]) - [index, 0, 0]
+        np.column_stack([scan, np.zeros(len(scan))]).astype("<f4").tofile(str(sequence / "velodyne" / f"{index:06d}.bin"))
+    (sequence / "poses.txt").write_text("1 0 0 0 0 1 0 0 0 0 1 0\n1 0 0 1 0 1 0 0 0 0 1 0\n")
+    assert window.open(str(sequence))
+    pump()
+    frames_editor = window.editor
+    frames_editor.show_frames([0, 1])
+    frames_editor.select(np.r_[8000:8800, 16800:17600], "replace")
+    frames_editor.assign_selection(10)
+    frames_editor.set_active(10)
+    frames_editor.clear_selection()
+    frames_editor.split_instances()
+    frames_editor.fit_boxes()
+    assert len(frames_editor.box_store[0]) == 1 and len(frames_editor.box_store[1]) == 1
+    assert np.allclose(frames_editor.box_store[1][0]["center"][0], -1.0, atol=0.05)
+    assert window.save()
+    stored = json.load(open(sequence / "boxes" / "000001.json"))
+    assert stored["frame"] == "000001" and np.isclose(stored["boxes"][0]["center"][0], -1.0, atol=0.05)
+    for document in window.documents:
+        document.mark_saved()
+    window.close_all(ask=False)
+    assert not dialogs
+
+
+def test_voxel_smart_pick(workbench):
+    from mapbarber.formats import VOXEL
+    from mapbarber.voxels import pack
+    window, _folder, pump, dialogs = workbench
+    floor = np.stack(np.meshgrid(np.arange(60), np.arange(60), [0], indexing="ij"), -1).reshape(-1, 3)
+    crate = np.stack(np.meshgrid(np.arange(20, 26), np.arange(20, 26), np.arange(1, 9), indexing="ij"), -1).reshape(-1, 3)
+    wall = np.stack(np.meshgrid(np.arange(60), [59], np.arange(1, 30), indexing="ij"), -1).reshape(-1, 3)
+    editor = window.show_document(VOXEL, (pack(np.vstack([floor, crate, wall])), 0.05))
+    pump()
+    window.set_label_mode(True)
+    unambiguous(window)
+    window.set_tool("smart")
+    assert editor.tool == "smart" and editor.smart_box.currentData() == "object"
+    crate_keys, floor_keys, wall_keys = set(pack(crate).tolist()), set(pack(floor).tolist()), set(pack(wall).tolist())
+    editor.stop_bends.setChecked(False)
+    editor.clearance.setValue(0.0)
+    assert len(editor.smart_keys(np.array([22, 22, 8]))) == len(floor) + len(crate) + len(wall)
+    editor.clearance.setValue(0.05)
+    assert set(editor.smart_keys(np.array([22, 22, 8])).tolist()) == crate_keys
+    editor.smart_box.setCurrentIndex(editor.smart_box.findData("plane"))
+    plane = set(editor.smart_keys(np.array([40, 10, 0])).tolist())
+    assert plane == floor_keys
+    wall_pick = set(editor.smart_keys(np.array([30, 59, 15])).tolist())
+    assert len(wall_pick & wall_keys) > 0.95 * len(wall_keys) and not wall_pick & crate_keys
+    editor.smart_box.setCurrentIndex(editor.smart_box.findData("object"))
+    editor.look_from((1, -1, 0.8), (0, 0, 1))
+    pump()
+    editor._smart_click(*screen(editor, (1.15, 1.15, 0.45)), False)
+    assert set(editor.selection.tolist()) == crate_keys
+    editor.set_active(5)
+    editor.assign_selection()
+    assert set(editor.vlabels.get(pack(crate)).tolist()) == {5} and not editor.vlabels.get(pack(floor)).any()
+    editor.at_once.setChecked(True)
+    editor.smart_box.setCurrentIndex(editor.smart_box.findData("plane"))
+    editor.set_active(1)
+    editor._smart_click(*screen(editor, (2.5, 0.5, 0.05)), False)
+    assert set(editor.vlabels.get(pack(floor)).tolist()) == {1} and set(editor.vlabels.get(pack(crate)).tolist()) == {5}
+    editor.undo()
+    assert not editor.vlabels.get(pack(floor)).any()
+    for document in window.documents:
+        document.mark_saved()
+    window.close_all(ask=False)
+    assert not dialogs

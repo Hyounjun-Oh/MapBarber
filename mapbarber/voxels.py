@@ -179,6 +179,7 @@ class VoxelMap(KeySet):
         self.resolution = float(resolution)
         self.leaves = None
         self.added, self.removed = EMPTY, EMPTY
+        self.last_added = EMPTY
         self.touched = set()
         self._undo, self._redo = [], []
 
@@ -202,6 +203,7 @@ class VoxelMap(KeySet):
         add = add[~self.contains(add)]
         remove = remove[self.contains(remove)]
         self.touched = set()
+        self.last_added = add
         if not len(add) and not len(remove):
             return 0, 0
         self._change(add, remove)
@@ -233,6 +235,8 @@ class VoxelMap(KeySet):
         steps = self._undo[depth:]
         if len(steps) > 1 and all(not len(add) for add, _ in steps):
             self._undo[depth:] = [(EMPTY, np.unique(np.concatenate([remove for _, remove in steps])))]
+            return True
+        return False
 
     @property
     def dirty(self):

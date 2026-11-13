@@ -1,15 +1,18 @@
 """Editor for point clouds: points are removed, never moved, and every per-point field is kept on save."""
+import os
 import time
 
 import numpy as np
 import vtk
 from vtk.util import numpy_support
 
-from . import cloud, convert, formats, loss
+from . import cloud, convert, formats, frames, labels, loss
 from .chunk_view import PointChunkView
 from .editor import Editor
 from .formats import CLOUD, GRID, VOXEL
 from .grid import FREE, UNKNOWN
+from .label_tools import Labelling
+from .timeline import LabelBar, TimelineBar
 from .gizmo import AXIS_NAMES, SLICE_DEFAULTS, BoxGizmo, SliceControls, SliceGizmo, Snap
 from .qt import QtCore, QtWidgets
 from .measure_panel import MeasureOverlay
@@ -20,13 +23,15 @@ from .widgets import ask_numbers, AxisRanges, button, danger_button, int_spin, R
 
 Qt = QtCore.Qt
 SELECTED_RGB = np.array([255, 40, 200], np.uint8)
-TOOL_RGB = {"select": (1.0, 0.2, 0.8), "delete": (1.0, 0.15, 0.1)}
+TOOL_RGB = {"select": (1.0, 0.2, 0.8), "delete": (1.0, 0.15, 0.1), "label": (0.3, 0.85, 0.45)}
+BRUSH_TOOLS = ("select", "delete", "label", "smart")
+LABEL_MODES = ("label", "instance")
 PICK_PIXELS = 6
 MAX_LEVEL = 4
 POINT_BUDGET = 8_000_000
 CACHE_BUDGET = 40_000_000
 COLOUR_FIELDS_SKIPPED = {"x", "y", "z", "rgb", "rgba", "red", "green", "blue", "alpha", "r", "g", "b", "a"}
-DEFAULTS = {"radius": 0.10, "point_size": 3, "colour": "height", "front_only": True, "tolerance": 0.10,
+DEFAULTS = {"ground_cell": 0.5, "ground_slope": 15.0, "ground_height": 0.15, "radius": 0.10, "point_size": 3, "colour": "height", "front_only": True, "tolerance": 0.10,
             "neighbours": 16, "ratio": 2.0, "sparse_radius": 0.10, "sparse_min": 4, "leaf": 0.05,
             "box": [(-0.5, 0.5)] * 3, "show_box": False, "range": [(-RANGE_LIMIT, RANGE_LIMIT)] * 3,
             "slice": SLICE_DEFAULTS}
@@ -50,10 +55,14 @@ def point_colours(table):
     return None
 
 
-class CloudEditor(Editor):
+EDIT_TOOLS = (("view", "H"), ("select", "V"), ("delete", "E"), ("measure", "I"))
+LABEL_TOOLS = (("view", "H"), ("select", "V"), ("label", "B"), ("smart", "W"), ("measure", "I"))
+
+
+class CloudEditor(Labelling, Editor):
     kind = CLOUD
-    tools = (("view", "H"), ("select", "V"), ("delete", "E"), ("measure", "I"))
-    export_filters = (("PCD point cloud", "pcd"), ("PLY point cloud", "ply"), ("XYZ text", "xyz"), ("CSV text", "csv"),
+    export_filters = (("PCD point cloud", "pcd"), ("PLY point cloud", "ply"), ("LAS point cloud", "las"),
+                      ("LAZ point cloud", "laz"), ("XYZ text", "xyz"), ("CSV text", "csv"), ("LiDAR scan", "bin"),
                       ("NumPy array", "npy"), ("NumPy archive", "npz"))
 
     def __init__(self, window):
@@ -100,10 +109,21 @@ class CloudEditor(Editor):
         self.slice_gizmo = SliceGizmo(self.viewport, self._slice_dragged, Snap(0.01))
         self.viewport.gizmos = [self.slice_gizmo, self.box_gizmo]
         self.ruler = Ruler3D(self.viewport.renderer)
-        self.overlay = MeasureOverlay(self.widget, lambda entry: self._ruler_text(entry)[1], self._show_measurement,
-                                      lambda: self.tr)
+        self.overlay = MeasureOverlay(self.viewport.widget, lambda entry: self._ruler_text(entry)[1],
+                                      self._show_measurement, lambda: self.tr)
+        self.label_bar = LabelBar(self.viewport.widget, lambda: self.tr, self._protect_from_bar)
+        self.overlay.below = self.label_bar
+        self.timeline = TimelineBar(lambda first, last: self.show_frames(range(first, last + 1)), self.step_frame,
+                                    lambda: self.tr)
+        self.timeline.hide()
+        self.widget = QtWidgets.QWidget()
+        column = QtWidgets.QVBoxLayout(self.widget)
+        column.setContentsMargins(0, 0, 0, 0)
+        column.setSpacing(0)
+        column.addWidget(self.viewport.widget, 1)
+        column.addWidget(self.timeline)
         self.viewport.band_allowed = lambda: self.tool != "measure"
-        self.viewport.paint_allowed = lambda: self.tool in ("select", "delete")
+        self.viewport.paint_allowed = lambda: self.tool in BRUSH_TOOLS
         self.viewport.on_paint = self._paint
         self.viewport.on_paint_end = self._paint_end
         self._stroke = None
@@ -114,21 +134,52 @@ class CloudEditor(Editor):
         self._refresh_timer.setSingleShot(True)
         self._refresh_timer.setInterval(40)
         self._refresh_timer.timeout.connect(self.refresh)
+        self._init_labels()
+
+    @property
+    def tools(self):
+        return LABEL_TOOLS if self.label_mode else EDIT_TOOLS
 
     @property
     def dirty(self):
-        return self.cloud.dirty
+        return self.cloud.dirty or self.label_dirty()
 
     def read(self, path):
+        """A file gives (xyz, table); a folder of frames gives a Sequence with its first frame already read."""
+        if os.path.isdir(path):
+            sequence = frames.Sequence(path)
+            sequence.load(0)
+            return sequence
         return formats.read_cloud(path)
 
     def set_document(self, payload, path=None, fmt=None, progress=None):
-        """payload: (xyz, table[, origin]) where origin names the voxel size of the map the points came from."""
-        xyz, table = payload[:2]
-        self.origin = payload[2] if len(payload) > 2 else None
+        """payload: a frames.Sequence, or (xyz, table[, origin]).
+
+        origin describes where converted points came from: the voxel size of the map, and the labels they carry.
+        """
+        self.path, self.format = path, fmt
+        self.frame_store, self.frame_dirty, self.frame_ids = {}, set(), []
+        if isinstance(payload, frames.Sequence):
+            self.sequence, self.origin, self.format = payload, None, formats.FRAMES
+            self.switch_label_mode(True)
+            self.panel_values.update(stop_bends=False, gap=0.3, object_gap=0.5)
+            if os.path.isfile(payload.class_file):
+                self.classes = labels.ClassList.load(payload.class_file)
+            elif payload.layout != "folder":
+                self.classes = labels.ClassList("semantickitti")
+            self.active_class = self.classes.numbers()[0] if len(self.classes) else labels.UNLABELED
+            self.show_frames([0], progress, store=False, fresh=True)
+        else:
+            self.sequence = None
+            xyz, table = payload[:2]
+            self.origin = payload[2] if len(payload) > 2 else None
+            self._install(xyz, table, *self._initial_labels(xyz, table, path), progress, True)
+        self.offer_recovery()
+
+    def _install(self, xyz, table, cls, inst, progress=None, fresh=True):
+        """Make a cloud and its labels the content of the editor (a whole document, or the frames now on screen)."""
         self.cloud = cloud.PointCloud(xyz, table)
         self.colours = point_colours(table)
-        self.path, self.format = path, fmt
         self.selected = np.zeros(len(self.cloud.xyz), bool)
         self._selection_steps = []
         self.chunks = cloud.PointChunks(self.cloud.xyz, self.cloud.alive)
@@ -137,45 +188,91 @@ class CloudEditor(Editor):
             self.data_bounds = (self.chunks.low.min(axis=0), self.chunks.high.max(axis=0))
         extent = float((self.data_bounds[1] - self.data_bounds[0]).max()) if len(self.chunks) else 1.0
         self.viewport.set_axes_length(max(0.08 * extent, 1e-3))
-        self.clear_ruler()
-        self.panel_values["range"] = DEFAULTS["range"]
+        self._reset_labels(len(self.cloud.xyz), cls, inst, fresh)
+        if fresh:
+            self.clear_ruler()
+            self.panel_values["range"] = DEFAULTS["range"]
+        if self.panel_alive:
+            self.panel_values["colour"] = self.colour_box.currentData() or self.panel_values["colour"]
         if self.panel_values["colour"] not in self.colour_modes():
             self.panel_values["colour"] = "height"
         if self.panel_alive:
-            self.ranges.reset()
+            if fresh:
+                self.ranges.reset()
             self._fill_colour_modes()
-        self.refresh(render=False, progress=progress)
+        self.refresh(render=not fresh, progress=progress)
 
     def export(self, path, fmt=None):
-        xyz, table = self.cloud.surviving()
-        if not len(xyz):
-            raise ValueError(self.tr("empty_map"))
-        formats.save_cloud(path, xyz, table, fmt)
+        if self.sequence is not None and os.path.isdir(path):
+            self._save_frames()
+        else:
+            self._write_labelled(path, fmt)
 
     def losses(self, fmt):
-        return loss.cloud_losses(self.cloud.table, fmt)
+        pending = self.pending_count()
+        suggested = [(loss.PENDING, str(pending))] if pending else []
+        if fmt == formats.FRAMES:
+            return suggested
+        table = self.cloud.table
+        if self.labels.any and fmt in ("pcd", "ply", "xyz", "las"):
+            table = formats.with_labels(self.cloud.xyz[:1], None if table is None else table[:1],
+                                        self.labels.cls[:1], self.labels.inst[:1] if self.labels.inst.any() else None)
+        return loss.cloud_losses(table, fmt) + suggested
 
     def mark_saved(self):
         self.cloud.mark_saved()
+        self.labels.mark_saved()
+        self.frame_dirty.clear()
+        self.boxes_saved()
+        self.clear_recovery()
+        if self.sequence is not None and self.panel_alive:
+            self._fill_frames()
         self.changed()
+
+    def keeps_path(self, path):
+        """Saving the frames on screen to a single file exports a copy; the document stays the frame folder."""
+        return self.sequence is not None and not os.path.isdir(path)
 
     def _after_change(self):
         """Redraw the chunks the last removal or undo touched."""
         ids = self.cloud.touched
         self.selected[ids] &= self.cloud.alive[ids]
         self.refresh(self.chunks.touched(ids))
+        self._stats_timer.start()
+
+    def _step(self, source, target, undo):
+        """Undo (or redo) the most recent step: points, labels, frames, boxes or the class list, alone or together."""
+        entry = source.pop() if source else "cloud"
+        kinds = entry if isinstance(entry, tuple) else (entry,)
+        swaps = {"label": (self.labels.undo, self.labels.redo, self._after_labels),
+                 "frames": (lambda: self._swap_frames(self._frame_undo, self._frame_redo),
+                            lambda: self._swap_frames(self._frame_redo, self._frame_undo), self._after_labels),
+                 "classes": (lambda: self._swap_classes(self._class_undo, self._class_redo),
+                             lambda: self._swap_classes(self._class_redo, self._class_undo), self.changed),
+                 "boxes": (lambda: self._swap_boxes(self._box_undo, self._box_redo),
+                           lambda: self._swap_boxes(self._box_redo, self._box_undo), self.changed),
+                 "cloud": (self.cloud.undo, self.cloud.redo, self._after_change)}
+        done = []
+        for kind in (reversed(kinds) if undo else kinds):
+            back, forth, after = swaps[kind]
+            if (back if undo else forth)():
+                done.append(after)
+        if done:
+            target.append(entry)
+            for after in dict.fromkeys(done):
+                after()
 
     def undo(self):
-        if self.cloud.undo():
-            self._after_change()
+        self._step(self._order, self._redo_order, True)
 
     def redo(self):
-        if self.cloud.redo():
-            self._after_change()
+        self._step(self._redo_order, self._order, False)
 
     def summary(self):
+        done, total = self.progress()
         return self.tr("cloud_counts", n=len(self.cloud), v=self.visible_count, r=self.cloud.removed(),
-                       s=int(self.selected.sum()))
+                       s=int(self.selected.sum())) + (f"  ·  {self.tr('label_share', p=100.0 * done / max(total, 1))}"
+                                                      if done else "")
 
     @property
     def selection(self):
@@ -193,7 +290,7 @@ class CloudEditor(Editor):
     @property
     def visible_ids(self):
         """Indices of every point that is alive and not hidden by the range or slice (a pass over the cloud)."""
-        ids = self.cloud.ids()
+        ids = self._class_filter(self.cloud.ids())
         return ids[self.shown(self.cloud.xyz[ids])]
 
     @property
@@ -220,13 +317,14 @@ class CloudEditor(Editor):
     def chunk_ids(self, chunk, filters="unset"):
         """Indices of a chunk's points that are alive and visible."""
         ids = self.chunks.ids[chunk]
-        ids = ids[self.cloud.alive[ids]]
+        ids = self._class_filter(ids[self.cloud.alive[ids]])
         return ids[self.shown(self.cloud.xyz[ids], filters)]
 
     def colour_modes(self):
         modes = ["height"]
         if self.colours is not None:
             modes.append("rgb")
+        modes += list(LABEL_MODES)
         table = self.cloud.table
         if table is not None:
             modes += [name for name in table.dtype.names
@@ -238,7 +336,7 @@ class CloudEditor(Editor):
         self.colour_box.blockSignals(True)
         self.colour_box.clear()
         for mode in self.colour_modes():
-            label = self.tr("colour_height") if mode == "height" else self.tr("colour_rgb") if mode == "rgb" else mode
+            label = self.tr(f"colour_{mode}") if mode in ("height", "rgb") + LABEL_MODES else mode
             self.colour_box.addItem(label, mode)
         index = self.colour_box.findData(self.panel_values["colour"])
         self.colour_box.setCurrentIndex(max(index, 0))
@@ -257,6 +355,9 @@ class CloudEditor(Editor):
         self.colour_box.currentIndexChanged.connect(lambda *_: self.recolor())
         form.addRow(t("colour_by"), self.colour_box)
         group.add_to(layout)
+
+        if self.label_mode:
+            self.build_label_sections(layout)
 
         group = Section(t("brush"), "brush")
         form = W.QFormLayout(group)
@@ -281,26 +382,9 @@ class CloudEditor(Editor):
         form.addRow(row)
         group.add_to(layout)
 
-        group = Section(t("noise_filters"), "noise_filters")
-        form = W.QFormLayout(group)
-        self.neighbours = int_spin(2, 200, values["neighbours"])
-        self.ratio = spin(0.1, 10.0, values["ratio"], 0.1, decimals=2)
-        form.addRow(t("neighbours"), self.neighbours)
-        form.addRow(t("std_ratio"), self.ratio)
-        form.addRow(select_button(t("select_outliers"), self.select_outliers, t("outliers_tip")))
-        self.sparse_radius = spin(0.001, RANGE_LIMIT, values["sparse_radius"], 0.01)
-        self.sparse_min = int_spin(1, 1000, values["sparse_min"])
-        form.addRow(t("search_radius"), self.sparse_radius)
-        form.addRow(t("min_neighbours"), self.sparse_min)
-        form.addRow(select_button(t("select_sparse"), self.select_sparse, t("sparse_tip")))
-        group.add_to(layout)
-
-        group = Section(t("downsample"), "downsample")
-        form = W.QFormLayout(group)
-        self.leaf = spin(0.001, RANGE_LIMIT, values["leaf"], 0.01)
-        form.addRow(t("cell_size"), self.leaf)
-        form.addRow(danger_button(t("thin_out"), self.thin_out, t("thin_tip")))
-        group.add_to(layout)
+        if not self.label_mode:
+            self._build_cleaning_sections(layout)
+        self._build_ground_section(layout)
 
         group = Section(t("box"), "box")
         group.setToolTip(t("box_handles_tip"))
@@ -312,8 +396,9 @@ class CloudEditor(Editor):
         grid.addWidget(self.show_box, 3, 0, 1, 2)
         grid.addWidget(button(t("box_from_selection"), self.box_from_selection), 3, 2)
         grid.addWidget(select_button(t("box_select"), self.box_select), 4, 0, 1, 3)
-        grid.addWidget(danger_button(t("box_delete"), self.box_delete), 5, 0, 1, 3)
-        grid.addWidget(danger_button(t("box_delete_outside"), self.box_delete_outside, t("crop_tip")), 6, 0, 1, 3)
+        if not self.label_mode:
+            grid.addWidget(danger_button(t("box_delete"), self.box_delete), 5, 0, 1, 3)
+            grid.addWidget(danger_button(t("box_delete_outside"), self.box_delete_outside, t("crop_tip")), 6, 0, 1, 3)
         group.add_to(layout)
 
         group = Section(t("ruler"), "ruler")
@@ -337,7 +422,7 @@ class CloudEditor(Editor):
         group.add_to(layout)
 
         layout.addStretch(1)
-        legend = W.QLabel(t("cloud_legend"))
+        legend = W.QLabel(t("cloud_legend") + ("\n" + t("label_legend") if self.label_mode else ""))
         legend.setWordWrap(True)
         legend.setStyleSheet("color: gray;")
         layout.addWidget(legend)
@@ -347,15 +432,88 @@ class CloudEditor(Editor):
         self._update_slice_gizmo()
         return panel
 
+    def _build_ground_section(self, layout):
+        """Ground filter: in editing mode to remove or keep the ground, in labelling mode to label it."""
+        t, values, W = self.tr, self.panel_values, QtWidgets
+        group = Section(t("ground"), "ground")
+        group.setToolTip(t("ground_tip"))
+        form = W.QFormLayout(group)
+        self.ground_cell = spin(0.05, 100.0, values["ground_cell"], 0.1)
+        self.ground_slope = spin(1.0, 60.0, values["ground_slope"], 1.0, decimals=1)
+        self.ground_height = spin(0.01, 10.0, values["ground_height"], 0.01)
+        form.addRow(t("ground_cell"), self.ground_cell)
+        form.addRow(t("ground_slope"), self.ground_slope)
+        form.addRow(t("ground_height"), self.ground_height)
+        row = W.QHBoxLayout()
+        row.addWidget(select_button(t("ground_select"), lambda: self.select_ground(True)))
+        row.addWidget(select_button(t("ground_others"), lambda: self.select_ground(False)))
+        form.addRow(row)
+        group.add_to(layout)
+
+    def select_ground(self, wanted=True):
+        """Select the ground under the visible points (wanted=True) or everything standing on it."""
+        QtWidgets.QApplication.setOverrideCursor(Qt.WaitCursor)
+        try:
+            ids = self.visible_ids
+            settings = {"cell": self.ground_cell.value(), "slope": self.ground_slope.value(),
+                        "tolerance": self.ground_height.value()}
+            table = self.cloud.table
+            try:
+                if table is not None and "frame" in table.dtype.names:
+                    mask = labels.ground_by_group(self.cloud.xyz[ids], table["frame"][ids], **settings)
+                else:
+                    mask = labels.ground(self.cloud.xyz[ids], **settings)
+            except ValueError as error:
+                QtWidgets.QApplication.restoreOverrideCursor()
+                QtWidgets.QMessageBox.warning(self.window, self.tr("ground"), str(error))
+                QtWidgets.QApplication.setOverrideCursor(Qt.WaitCursor)
+                return
+        finally:
+            QtWidgets.QApplication.restoreOverrideCursor()
+        self.select(ids[mask if wanted else ~mask], "replace")
+        self.status(self.tr("status_filter", n=int(self.selected.sum())) +
+                    ("   ·   " + self.tr("label_mode_on").split(":")[0] + ": Enter" if self.label_mode else ""), 10000)
+
+    def _build_cleaning_sections(self, layout):
+        """Noise filters and thinning: editing mode only."""
+        t, values, W = self.tr, self.panel_values, QtWidgets
+        group = Section(t("noise_filters"), "noise_filters")
+        form = W.QFormLayout(group)
+        self.neighbours = int_spin(2, 200, values["neighbours"])
+        self.ratio = spin(0.1, 10.0, values["ratio"], 0.1, decimals=2)
+        form.addRow(t("neighbours"), self.neighbours)
+        form.addRow(t("std_ratio"), self.ratio)
+        form.addRow(select_button(t("select_outliers"), self.select_outliers, t("outliers_tip")))
+        self.sparse_radius = spin(0.001, RANGE_LIMIT, values["sparse_radius"], 0.01)
+        self.sparse_min = int_spin(1, 1000, values["sparse_min"])
+        form.addRow(t("search_radius"), self.sparse_radius)
+        form.addRow(t("min_neighbours"), self.sparse_min)
+        form.addRow(select_button(t("select_sparse"), self.select_sparse, t("sparse_tip")))
+        group.add_to(layout)
+
+        group = Section(t("downsample"), "downsample")
+        form = W.QFormLayout(group)
+        self.leaf = spin(0.001, RANGE_LIMIT, values["leaf"], 0.01)
+        form.addRow(t("cell_size"), self.leaf)
+        form.addRow(danger_button(t("thin_out"), self.thin_out, t("thin_tip")))
+        group.add_to(layout)
+
     def store_panel(self):
-        if self.panel_alive:
-            self.panel_values = {"radius": self.radius.value(), "point_size": self.point_size.value(),
-                                 "colour": self.colour_box.currentData() or "height",
-                                 "front_only": self.front_only.isChecked(), "tolerance": self.tolerance.value(),
-                                 "neighbours": self.neighbours.value(), "ratio": self.ratio.value(),
-                                 "sparse_radius": self.sparse_radius.value(), "sparse_min": self.sparse_min.value(),
-                                 "leaf": self.leaf.value(), "box": self.box.values(), "show_box": self.show_box.isChecked(),
-                                 "range": self.ranges.values(), "slice": self.slice.values()}
+        if not self.panel_alive:
+            return
+        self.panel_values.update({"ground_cell": self.ground_cell.value(), "ground_slope": self.ground_slope.value(),
+                                  "ground_height": self.ground_height.value(),
+                                  "radius": self.radius.value(), "point_size": self.point_size.value(),
+                                  "colour": self.colour_box.currentData() or "height",
+                                  "front_only": self.front_only.isChecked(), "tolerance": self.tolerance.value(),
+                                  "box": self.box.values(), "show_box": self.show_box.isChecked(),
+                                  "range": self.ranges.values(), "slice": self.slice.values()})
+        if self.label_mode:
+            self.panel_values.update(self.label_panel_values())
+        else:
+            self.panel_values.update({"neighbours": self.neighbours.value(), "ratio": self.ratio.value(),
+                                      "sparse_radius": self.sparse_radius.value(), "sparse_min": self.sparse_min.value(),
+                                      "leaf": self.leaf.value()})
 
     def view_actions(self):
         return [(self.tr(f"view_{name}"), lambda d=direction, u=up: self.look_from(d, u), keys)
@@ -365,13 +523,17 @@ class CloudEditor(Editor):
         return {"delete": self.delete_selection, "select_all": self.select_all, "invert": self.invert_selection,
                 "clear": self.clear_selection, "back": self.selection_back}
 
+    def extra_actions(self):
+        return super().extra_actions() + (self.label_actions() if self.label_mode else [])
+
     def conversions(self):
         return [(self.tr("to_voxels"), self.to_voxels), (self.tr("to_grid"), self.to_grid)]
 
     def shutdown(self):
         self._closed = True
         self._pending = []
-        for timer in (self._refresh_timer, self._level_timer, self._slice_timer):
+        self.clear_recovery()
+        for timer in (self._refresh_timer, self._level_timer, self._slice_timer, self._stats_timer, self._autosave):
             timer.stop()
         self.viewport.renderer.GetActiveCamera().RemoveObserver(self._camera_watch)
         self.view.clear()
@@ -387,7 +549,7 @@ class CloudEditor(Editor):
         """Colour mode and the value range its ramp spans, taken from a sample of the cloud."""
         mode = self.colour_box.currentData() if self.panel_alive else "height"
         mode = mode or "height"
-        if mode != "rgb":
+        if mode not in ("rgb",) + LABEL_MODES:
             sample = self.cloud.ids()[::max(1, len(self.cloud) // 200_000)]
             values = self.cloud.xyz[sample, 2] if mode == "height" else self.cloud.table[mode][sample].astype(np.float64)
             if len(values):
@@ -433,7 +595,9 @@ class CloudEditor(Editor):
             keep[:-(-len(ids) // 4 ** level)] = True
             ids = ids[keep | self.selected[ids]]
         points = self.cloud.xyz[ids]
-        if mode == "rgb" and self.colours is not None:
+        if mode in LABEL_MODES:
+            colours = self.label_colours(ids, mode)
+        elif mode == "rgb" and self.colours is not None:
             colours = self.colours[ids].copy()
         else:
             values = points[:, 2] if mode == "height" else self.cloud.table[mode][ids].astype(np.float64)
@@ -531,19 +695,30 @@ class CloudEditor(Editor):
         self.viewport.render()
 
     def remove(self, ids, label):
+        if self.sequence is not None:
+            return self.status(self.tr("frames_no_erase"), 8000)
         removed = self.cloud.remove(ids)
         if removed:
+            self._order.append("cloud")
+            self._redo_order.clear()
             self._after_change()
             self.status(self.tr("status_removed", what=label, n=removed))
         else:
             self.status(self.tr("status_no_change", what=label))
 
-    def select(self, ids, mode="add"):
-        """Change the selection with alive, visible points: 'add', 'remove' or 'replace'."""
+    def select(self, ids, mode="add", review=False):
+        """Change the selection with alive, visible points: 'add', 'remove' or 'replace'.
+
+        In labelling mode with protection on, points the next labelling may not change are left out, so the
+        selection shows exactly what will be labelled; review tools (review=True) pick labelled points on purpose.
+        """
         ids = np.asarray(ids, np.int64)
+        self._delete_target = None
         if len(ids):
-            ids = ids[self.cloud.alive[ids]]
+            ids = self._class_filter(ids[self.cloud.alive[ids]])
             ids = ids[self.shown(self.cloud.xyz[ids])]
+            if mode != "remove" and not review and self.protecting():
+                ids = self._writable(ids)
         if mode == "remove":
             changed = ids[self.selected[ids]]
             self.selected[changed] = False
@@ -582,6 +757,8 @@ class CloudEditor(Editor):
         self.status(self.tr("selection_back") + f": {int(self.selected.sum())}")
 
     def delete_selection(self):
+        if self.label_mode:
+            return self.label_delete()
         if self.selected.any():
             self.remove(self.selection, self.tr("delete_selection"))
 
@@ -596,7 +773,7 @@ class CloudEditor(Editor):
         self.select(ids[~self.selected[ids]], "replace")
 
     def _select_filtered(self, ids):
-        self.select(ids, "replace")
+        self.select(ids, "replace", review=True)
         self.status(self.tr("status_filter", n=int(self.selected.sum())), 10000)
 
     def select_outliers(self):
@@ -711,12 +888,46 @@ class CloudEditor(Editor):
         answer = ask_numbers(self.window, self.tr("voxel_size_title"), [(self.tr("voxel_size_cloud"), guess, 1e-4, 1e3, 4)])
         return (xyz, answer[0]) if answer else (None, None)
 
+    def _labelled_source(self, xyz):
+        """What a conversion needs to know about the labels of the surviving points, or None when there are none."""
+        if not self.labels.any:
+            return None
+        alive = self.cloud.alive
+        return {"cls": self.labels.cls[alive], "inst": self.labels.inst[alive], "classes": self.classes}
+
+    def _ask_ignore(self, source):
+        """With labels present, ask whether classes marked 'ignore' stay out of the converted map."""
+        ignored = self.classes.with_role(labels.IGNORE) if source else []
+        if not ignored:
+            return np.zeros(0, np.int64)
+        names = ", ".join(self.classes.name(number) for number in ignored)
+        answer = ask_numbers(self.window, self.tr("convert_classes"), [(self.tr("convert_skip_ignored", names=names), True)])
+        if answer is None:
+            return None
+        return np.array(ignored if answer[0] else [], np.int64)
+
     def to_voxels(self):
         xyz, size = self._ask_size()
         if size is None:
             return None
         table = self.cloud.surviving()[1]
-        return lambda: (VOXEL, (convert.points_to_voxels(xyz, size), size, {"xyz": xyz, "table": table}))
+        source = {"xyz": xyz, "table": table}
+        marks = self._labelled_source(xyz)
+        ignored = self._ask_ignore(marks)
+        if ignored is None:
+            return None
+        if marks:
+            source.update(marks, outside=np.isin(marks["cls"], ignored))
+
+        classes = self.classes
+
+        def work():
+            if not marks:
+                return VOXEL, (convert.points_to_voxels(xyz, size), size, source)
+            inside = ~source["outside"]
+            source["voxel"] = convert.vote_voxels(xyz[inside], marks["cls"][inside], size, classes)
+            return VOXEL, (convert.points_to_voxels(xyz[inside], size), size, source)
+        return work
 
     def to_grid(self):
         xyz, size = self._ask_size()
@@ -729,7 +940,15 @@ class CloudEditor(Editor):
         if band is None:
             return None
         empty = FREE if band[2] else UNKNOWN
-        return lambda: (GRID, convert.voxels_to_grid(convert.points_to_voxels(xyz, size), size, *sorted(band[:2]), empty))
+        marks = self._labelled_source(xyz)
+        if not marks:
+            return lambda: (GRID, convert.voxels_to_grid(convert.points_to_voxels(xyz, size), size, *sorted(band[:2]), empty))
+        classes = self.classes
+
+        def work():
+            obstacles, free = convert.voxels_by_role(xyz, marks["cls"], size, classes)
+            return GRID, convert.voxels_to_grid(obstacles, size, *sorted(band[:2]), empty, free)
+        return work
 
     def _pick(self, x, y):
         """Nearest visible point close to the cursor ray, searching only the chunks the ray passes."""
@@ -791,6 +1010,8 @@ class CloudEditor(Editor):
         return short, detail
 
     def adjust_brush(self, step):
+        if self.tool == "smart":
+            return self.adjust_smart(step)
         self.radius.setValue(self.radius.value() * (1.25 if step > 0 else 0.8))
 
     def zoom(self, factor):
@@ -866,12 +1087,21 @@ class CloudEditor(Editor):
                 self.preview_actor.VisibilityOff()
                 self.viewport.render()
             return
+        if self.tool == "smart":
+            self.hover_source.SetCenter(*centre)
+            self.hover_source.SetRadius(self._marker_size() * 2.5)
+            self.hover_actor.GetProperty().SetColor(*TOOL_RGB["label"])
+            self.hover_actor.VisibilityOn()
+            self.status(self.tr("status_hover", x=centre[0], y=centre[1], z=centre[2]), 0)
+            self.viewport.render()
+            return
+        rgb = tuple(v / 255.0 for v in self.classes.rgb(self.active_class)) if self.tool == "label" else TOOL_RGB[self.tool]
         self.hover_source.SetCenter(*centre)
         self.hover_source.SetRadius(self.radius.value())
-        self.hover_actor.GetProperty().SetColor(*TOOL_RGB[self.tool])
+        self.hover_actor.GetProperty().SetColor(*rgb)
         self.hover_actor.VisibilityOn()
         inside = self.cloud.xyz[self._brush_ids(centre)]
-        self._show_preview(inside, TOOL_RGB[self.tool])
+        self._show_preview(inside, rgb)
         eye = np.array(self.viewport.renderer.GetActiveCamera().GetPosition())
         self.status(self.tr("status_hover", x=centre[0], y=centre[1], z=centre[2]) + "   ·   "
                     + self.tr("status_brush", n=len(inside), d=float(np.linalg.norm(centre - eye))), 0)
@@ -898,40 +1128,51 @@ class CloudEditor(Editor):
         if self.tool == "measure":
             self._measure_click(x, y)
             return
+        if self.viewport.interactor.GetAltKey():
+            self.pick_class(x, y)
+            return
+        if self.tool == "smart":
+            self._smart_click(x, y, ctrl)
+            return
         centre = self._pick(x, y)
         if centre is None:
             return
-        ids = self._brush_ids(centre)
-        if self.tool == "select":
-            self.select(ids, "remove" if ctrl else "add")
-        else:
-            self.remove(ids, self.tr("tool_delete"))
+        self._brush(self._brush_ids(centre), ctrl)
         self._hover(x, y)
 
-    def _paint(self, x, y):
-        """Ctrl + drag: keep applying the brush under the cursor while the view stays still."""
+    def _brush(self, ids, subtract=False):
+        if self.tool in ("select", "smart"):
+            self.select(ids, "remove" if subtract else "add")
+        elif self.tool == "label":
+            self.assign(ids, labels.UNLABELED if subtract else self.active_class, "tool_label")
+        elif not subtract:
+            self.remove(ids, self.tr("tool_delete"))
+
+    def _paint(self, x, y, subtract=False):
+        """Ctrl + drag: keep applying the brush under the cursor while the view stays still.
+
+        The left button applies the tool; the right button takes back (deselects, or clears labels).
+        """
         if self._stroke is None:
-            self._stroke = (len(self._selection_steps), self.cloud.undo_depth())
+            self._stroke = (len(self._selection_steps), self.cloud.undo_depth(), self.labels.undo_depth(), len(self._order))
         centre = self._pick(x, y) if self.visible_count else None
         if centre is None:
             return
-        ids = self._brush_ids(centre)
-        if self.tool == "select":
-            self.select(ids, "add")
-        else:
-            self.remove(ids, self.tr("tool_delete"))
+        self._brush(self._brush_ids(centre), subtract)
         self._hover(x, y)
 
     def _paint_end(self):
         """Fold a finished stroke into a single selection step and a single undo step."""
         if self._stroke is None:
             return
-        steps, depth = self._stroke
+        steps, depth, label_depth, order = self._stroke
         self._stroke = None
         painted = [ids for kind, ids in self._selection_steps[steps:] if kind == "add"]
         if len(painted) > 1:
             self._selection_steps[steps:] = [("add", np.unique(np.concatenate(painted)))]
         self.cloud.squash(depth)
+        self.labels.squash(label_depth)
+        self._order[order:] = self._order[order:order + 1]
 
     def _right_click(self, x, y):
         if not self.selected.any() or not self.visible_count:

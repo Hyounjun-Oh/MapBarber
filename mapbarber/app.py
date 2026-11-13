@@ -14,7 +14,7 @@ from .i18n import LANGUAGES, Translator
 from .qt import QAction, QActionGroup, QtCore, QtGui, QtWidgets, run
 from .voxel_editor import VoxelEditor
 from .voxels import EMPTY
-from .widgets import BusyDialog, WheelGuard, ask_numbers
+from .widgets import BusyDialog, UndoGuard, WheelGuard, ask_numbers
 
 Qt = QtCore.Qt
 EDITORS = {VOXEL: VoxelEditor, CLOUD: CloudEditor, GRID: GridEditor}
@@ -107,8 +107,9 @@ class Workbench(QtWidgets.QMainWindow):
         save = self._action(t("save"), self.save, "@Save", enabled=editor is not None)
         file_menu.addAction(self._action(t("new_voxel"), self.new_voxel_map, "@New"))
         file_menu.addAction(self._action(t("new_grid"), self.new_grid, "Ctrl+Shift+N"))
-        file_menu.addActions([open_, save, self._action(t("save_as"), self.save_as, ["@SaveAs", "Ctrl+Shift+S"],
-                                                        enabled=editor is not None)])
+        file_menu.addActions([open_, self._action(t("open_frames"), self.open_frames_dialog, "Ctrl+Shift+O"), save,
+                              self._action(t("save_as"), self.save_as, ["@SaveAs", "Ctrl+Shift+S"],
+                                           enabled=editor is not None)])
         file_menu.addAction(self._action(t("close_tab"), lambda: editor and self.close_document(editor), ["@Close", "Ctrl+W"],
                                          enabled=editor is not None))
         file_menu.addSeparator()
@@ -132,6 +133,8 @@ class Workbench(QtWidgets.QMainWindow):
                                          ("select_all", "select_all", "@SelectAll"),
                                          ("invert", "invert_selection", "Ctrl+Shift+I"),
                                          ("clear", "clear_selection", ["Ctrl+D", "Escape", "@Deselect"])):
+                if key == "delete" and getattr(editor, "label_mode", False):
+                    label = "label_clear"
                 edit_menu.addAction(self._action(t(label), selection[key], shortcut))
         extras = [self._action(label, slot, shortcut) for label, shortcut, slot in (editor.extra_actions() if editor else [])]
         if extras:
@@ -189,6 +192,17 @@ class Workbench(QtWidgets.QMainWindow):
                 self.tool_actions[name] = action
                 self.toolbar.addAction(action)
             self.tool_actions[editor.tool].setChecked(True)
+            if hasattr(editor, "label_mode"):
+                self.toolbar.addSeparator()
+                self.label_action = self._action(t("label_mode"), lambda: self.set_label_mode(not editor.label_mode),
+                                                 "Ctrl+L", checkable=True,
+                                                 enabled=getattr(editor, "sequence", None) is None)
+                self.label_action.setIcon(icons.icon("labels"))
+                self.label_action.setChecked(editor.label_mode)
+                self.label_action.setToolTip(t("label_mode_tip"))
+                self.toolbar.addAction(self.label_action)
+                edit_menu.addSeparator()
+                edit_menu.addAction(self.label_action)
             self.toolbar.addSeparator()
             self.toolbar.addActions(view_actions)
 
@@ -227,15 +241,52 @@ class Workbench(QtWidgets.QMainWindow):
         layout.addWidget(subtitle)
         row = QtWidgets.QHBoxLayout()
         row.addStretch(1)
-        for label, slot in ((t("open"), self.open_dialog), (t("new_voxel"), self.new_voxel_map), (t("new_grid"), self.new_grid)):
-            widget = QtWidgets.QPushButton(label)
-            widget.setMinimumSize(180, 42)
-            widget.clicked.connect(slot)
-            row.addWidget(widget)
+        cards = ((VOXEL, ((t("open_voxel"), lambda: self.open_dialog(VOXEL)), (t("new_voxel"), self.new_voxel_map))),
+                 (CLOUD, ((t("open_cloud"), lambda: self.open_dialog(CLOUD)), (t("open_frames"), self.open_frames_dialog))),
+                 (GRID, ((t("open_grid"), lambda: self.open_dialog(GRID)), (t("new_grid"), self.new_grid))))
+        for kind, buttons in cards:
+            row.addWidget(self._welcome_card(kind, buttons))
         row.addStretch(1)
         layout.addSpacing(18)
         layout.addLayout(row)
+        other = QtWidgets.QPushButton(t("open"))
+        other.setFlat(True)
+        other.setToolTip(t("welcome_any_tip"))
+        other.clicked.connect(lambda: self.open_dialog())
+        layout.addWidget(other, 0, Qt.AlignCenter)
         layout.addStretch(2)
+
+    def _welcome_card(self, kind, buttons):
+        """One map type on the start page: what it is, and how to open or start one."""
+        t = self.tr_
+        card = QtWidgets.QFrame()
+        card.setObjectName("card")
+        card.setFixedWidth(270)
+        card.setStyleSheet(f"QFrame#card {{ border: 1px solid rgba(128, 128, 128, 0.35); "
+                           f"border-top: 4px solid {icons.accent('kind_' + kind)}; border-radius: 8px; "
+                           "background-color: rgba(128, 128, 128, 0.07); }")
+        column = QtWidgets.QVBoxLayout(card)
+        column.setSpacing(8)
+        head = QtWidgets.QHBoxLayout()
+        badge = QtWidgets.QLabel()
+        badge.setPixmap(icons.pixmap(f"kind_{kind}", 28))
+        head.addWidget(badge)
+        title = QtWidgets.QLabel(t(f"kind_{kind}"))
+        title.setStyleSheet("font-size: 16px; font-weight: 700;")
+        head.addWidget(title, 1)
+        column.addLayout(head)
+        text = QtWidgets.QLabel(t(f"welcome_{kind}"))
+        text.setWordWrap(True)
+        text.setStyleSheet("color: gray;")
+        text.setAlignment(Qt.AlignLeft | Qt.AlignTop)
+        text.setMinimumHeight(70)
+        column.addWidget(text)
+        for label, slot in buttons:
+            widget = QtWidgets.QPushButton(label)
+            widget.setMinimumHeight(34)
+            widget.clicked.connect(slot)
+            column.addWidget(widget)
+        return card
 
     def set_language(self, code):
         self.tr_ = Translator(code)
@@ -252,6 +303,21 @@ class Workbench(QtWidgets.QMainWindow):
 
     def _toggle_backup(self):
         self.settings.setValue("backup", "true" if self.backup_action.isChecked() else "false")
+
+    def set_label_mode(self, on):
+        """Switch the current editor between editing and labelling; leaving labelling restores the editing state."""
+        editor = self.editor
+        if editor is None or not hasattr(editor, "label_mode") or editor.label_mode == on:
+            return
+        if self._panel_owner is editor:
+            editor.store_panel()
+            editor.panel_alive = False
+            self._panel_owner = None
+        editor.switch_label_mode(on)
+        self._build_ui()
+        editor.set_tool(editor.tool)
+        editor.refresh()
+        self.statusBar().showMessage(self.tr_("label_mode_on" if on else "label_mode_off"), 6000)
 
     def set_tool(self, name):
         if self.editor:
@@ -412,12 +478,20 @@ class Workbench(QtWidgets.QMainWindow):
             return os.path.dirname(self.editor.path)
         return str(self.settings.value("directory") or os.getcwd())
 
-    def open_dialog(self):
+    def open_dialog(self, kind=None):
+        """Choose files to open; `kind` limits the list to one map type."""
         t = self.tr_
+        patterns = " ".join(f"*{ext}" for ext in formats.KIND_EXTENSIONS[kind]) if kind else formats.OPEN_PATTERNS
+        label = t(f"kind_{kind}") if kind else t("filter_maps")
         paths, _ = QtWidgets.QFileDialog.getOpenFileNames(
-            self, t("open"), self._directory(), f"{t('filter_maps')} ({formats.OPEN_PATTERNS});;{t('filter_all')} (*)")
+            self, t("open"), self._directory(), f"{label} ({patterns});;{t('filter_all')} (*)")
         for path in paths:
             self.open(path)
+
+    def open_frames_dialog(self):
+        folder = QtWidgets.QFileDialog.getExistingDirectory(self, self.tr_("open_frames"), self._directory())
+        if folder:
+            self.open(folder)
 
     def new_voxel_map(self):
         answer = ask_numbers(self, self.tr_("new_voxel"), [(self.tr_("voxel_size_new"), 0.05, 1e-4, 1e3, 4)])
@@ -470,6 +544,8 @@ class Workbench(QtWidgets.QMainWindow):
         filters = ";;".join(f"{label} (*.{ext})" for label, ext in editor.export_filters)
         default = {VOXEL: "map.bt", CLOUD: "cloud.pcd", GRID: "map.yaml"}[editor.kind]
         start = editor.path or os.path.join(self._directory(), default)
+        if os.path.isdir(start):
+            start = os.path.join(start, default)
         path, chosen = QtWidgets.QFileDialog.getSaveFileName(self, self.tr_("save_as"), start, filters)
         if not path:
             return False
@@ -503,20 +579,22 @@ class Workbench(QtWidgets.QMainWindow):
         if not self._accept_losses(editor, fmt or formats.detect(path)):
             return False
         try:
-            if os.path.exists(path) and self.backup_action.isChecked():
+            if os.path.isfile(path) and self.backup_action.isChecked():
                 backup = f"{path}.bak_{time.strftime('%Y%m%d_%H%M%S')}"
                 shutil.copy2(path, backup)
                 notes.append(t("status_backup", name=os.path.basename(backup)))
             _, dialog = self.busy(t("saving", name=os.path.basename(path)), lambda: editor.export(path, fmt))
             dialog.finish()
-            editor.mark_saved()
+            if not editor.keeps_path(path):
+                editor.mark_saved()
         except Exception as error:
             QtWidgets.QMessageBox.critical(self, t("save_failed"), f"{path}\n\n{error}")
             return False
-        editor.path, editor.format = os.path.abspath(path), fmt or formats.detect(path)
-        self.settings.setValue("directory", os.path.dirname(editor.path))
+        if not editor.keeps_path(path):
+            editor.path, editor.format = os.path.abspath(path), fmt or formats.detect(path)
+            self.settings.setValue("directory", os.path.dirname(editor.path))
         self.document_changed()
-        notes.insert(0, t("status_saved", path=editor.path))
+        notes.insert(0, t("status_saved", path=os.path.abspath(path)))
         self.statusBar().showMessage("  ·  ".join(notes), 10000)
         return True
 
@@ -530,9 +608,9 @@ class Workbench(QtWidgets.QMainWindow):
                 corner = self.editor.widget.mapTo(self, QtCore.QPoint(0, 0))
                 ratio = image.devicePixelRatio()
                 painter.drawImage(QtCore.QRectF(corner.x(), corner.y(), view.width() / ratio, view.height() / ratio), view)
-            overlay = self.editor.overlay
-            if overlay.isVisible():
-                painter.drawPixmap(overlay.mapTo(self, QtCore.QPoint(0, 0)), overlay.grab())
+            for overlay in (self.editor.overlay, getattr(self.editor, "label_bar", None)):
+                if overlay is not None and overlay.isVisible():
+                    painter.drawPixmap(overlay.mapTo(self, QtCore.QPoint(0, 0)), overlay.grab())
             painter.end()
         return image
 
@@ -565,6 +643,8 @@ def launch(paths=None, language=None):
         app.wheel_guard = WheelGuard(app)
         app.installEventFilter(app.wheel_guard)
     window = Workbench(paths, language)
+    app.undo_guard = UndoGuard(window)
+    app.installEventFilter(app.undo_guard)
     window.show()
     return app, window
 

@@ -5,7 +5,7 @@ import sys
 
 import numpy as np
 
-from . import __version__, cloud, convert, formats, grid, loss
+from . import __version__, cloud, convert, formats, frames, grid, loss
 from .formats import CLOUD, GRID, VOXEL
 from .i18n import LANGUAGES, Translator
 from .voxels import VoxelMap, unpack
@@ -40,7 +40,12 @@ def build_parser():
     return parser
 
 
+FRAMES = "frames"
+
+
 def load(path):
+    if formats.detect(path) == formats.FRAMES:
+        return FRAMES, frames.Sequence(path)
     kind = formats.kind(path)
     if kind == VOXEL:
         return kind, formats.read_voxels(path)
@@ -50,6 +55,14 @@ def load(path):
 
 
 def describe(kind, payload):
+    if kind == FRAMES:
+        labelled = sum(os.path.isfile(payload.label_path(i)) for i in range(len(payload)))
+        lines = [("type", "frame sequence"), ("frames", len(payload)), ("scans", payload.scan_folder),
+                 ("poses", payload.pose_source or "none"), ("labelled", f"{labelled} frames")]
+        if payload.poses is not None:
+            travel = np.linalg.norm(np.diff(payload.poses[:, :3, 3], axis=0), axis=1).sum()
+            lines.append(("path length", f"{travel:.1f} m"))
+        return "\n".join(f"{name:<12}{value}" for name, value in lines)
     if kind == VOXEL:
         keys, resolution, leaves = payload
         lines = [("type", "voxel map"), ("voxel size", f"{resolution:g} m"), ("voxels", len(keys))]
@@ -67,6 +80,11 @@ def describe(kind, payload):
         lines = [("type", "point cloud"), ("points", len(finite))]
         if table is not None:
             lines.append(("fields", " ".join(table.dtype.names)))
+            cls, _ = formats.table_labels(table)
+            if cls is not None:
+                counts = np.bincount(cls)
+                lines.append(("labels", f"{100.0 * (cls != 0).mean():.1f}% labelled, "
+                                        + ", ".join(f"{n}: {counts[n]}" for n in np.flatnonzero(counts)[:12] if n)))
         if len(finite):
             lines += [(f"{a} range", f"{lo:+.3f} .. {hi:+.3f} m") for a, lo, hi in zip("xyz", finite.min(0), finite.max(0))]
     else:
@@ -150,6 +168,11 @@ def main(argv=None):
         return 1
     if args.info:
         print(describe(kind, payload))
+    if kind == FRAMES:
+        if args.output:
+            print("mapbarber: a folder of frames can only be inspected with --info; open it to label it", file=sys.stderr)
+            return 1
+        return 0
     try:
         payload = clean(kind, payload, args)
         if args.output:

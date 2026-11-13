@@ -2,7 +2,8 @@
 from . import formats
 from .formats import CLOUD, VOXEL
 
-FREE_SPACE, VALUES, COLOURS, FIELDS, ELEMENTS = "free_space", "values", "colours", "fields", "elements"
+FREE_SPACE, VALUES, COLOURS, FIELDS, ELEMENTS, POINTS = "free_space", "values", "colours", "fields", "elements", "points"
+PENDING = "pending"
 
 
 def voxel_losses(leaves, fmt):

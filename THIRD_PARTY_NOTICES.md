@@ -11,6 +11,14 @@ below, which are installed separately (by `mapbarber.sh` or `pip`) and keep thei
 | [NumPy](https://numpy.org/doc/stable/license.html) | arrays | BSD-3-Clause |
 | [SciPy](https://github.com/scipy/scipy/blob/main/LICENSE.txt) | connected components, neighbour search | BSD-3-Clause |
 
+Optional, only for LAS / LAZ files (`pip install "laspy[lazrs]"`); without them those two formats are refused
+with a hint and everything else works:
+
+| Library | Used for | License |
+|---|---|---|
+| [laspy](https://github.com/laspy/laspy) | reading and writing LAS | BSD-2-Clause |
+| [lazrs](https://github.com/laz-rs/laz-rs-python) | LAZ compression backend for laspy | MIT |
+
 Only LGPL Qt modules are imported: QtCore, QtGui, QtWidgets and QtTest, plus the SVG image plugin for
 the window icon. No GPL-only Qt module (such as Qt Charts or Qt Data Visualization) is used.
 `MAPBARBER_QT` can select PySide2 (LGPL) or PyQt5 instead; PyQt5 is GPL-3.0 or commercial, so choosing
@@ -26,9 +34,12 @@ their licenses apply to that bundle:
   PySide6 are used, keep the Qt libraries replaceable by the recipient (a one-folder build with
   separate shared libraries, not a single fused executable), and say where their source code can be
   obtained.
-- **VTK, NumPy, SciPy (BSD-3-Clause):** include each project's copyright notice and license text.
+- **VTK, NumPy, SciPy (BSD-3-Clause), laspy (BSD-2-Clause), lazrs (MIT):** include each project's copyright notice
+  and license text.
 
 ## Names
 
-OctoMap, PCL, ROS and map_server are the names of independent projects. MapBarber reads and writes
-their file formats but is not affiliated with or endorsed by them, and contains none of their code.
+OctoMap, PCL, ROS, map_server, KITTI, SemanticKITTI and LAS (ASPRS) are the names of independent projects
+and specifications. MapBarber reads and writes their file formats but is not affiliated with or endorsed
+by them, and contains none of their code. The SemanticKITTI and LAS class presets list the published class
+numbers and names of those formats so that files exchanged with them keep their meaning.

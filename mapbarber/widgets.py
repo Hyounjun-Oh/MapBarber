@@ -1,13 +1,15 @@
 """Small widget helpers shared by the editors."""
-from .qt import QtCore, QtWidgets
+from .qt import QtCore, QtGui, QtWidgets
 
 RANGE_LIMIT = 1000.0
 
 
 class WheelGuard(QtCore.QObject):
-    """The wheel edits a number field or list only after it was clicked and while the pointer stays on it.
+    """The wheel acts on a number field, drop-down, slider or inner scrolling box only after it was clicked
+    and while the pointer stays on it.
 
-    Anywhere else the wheel scrolls the surrounding panel, so values never change by accident.
+    Anywhere else the wheel scrolls the surrounding panel, so values never change by accident and a list
+    in the panel never swallows the wheel while the panel is being scrolled.
     """
 
     GUARDED = (QtWidgets.QAbstractSpinBox, QtWidgets.QComboBox, QtWidgets.QAbstractSlider)
@@ -16,13 +18,30 @@ class WheelGuard(QtCore.QObject):
         super().__init__(parent)
         self.armed = None
 
+    @staticmethod
+    def _outer(widget):
+        """The scrolling area a widget sits in, or None."""
+        area = widget.parent()
+        while area is not None and not isinstance(area, QtWidgets.QAbstractScrollArea):
+            area = area.parent()
+        return area
+
     def _field(self, target):
-        if isinstance(target, QtWidgets.QScrollBar):
-            return None
-        if isinstance(target, self.GUARDED):
-            return target
-        parent = target.parent() if isinstance(target, QtWidgets.QLineEdit) else None
-        return parent if isinstance(parent, self.GUARDED) else None
+        """What a click or wheel turn belongs to: a number field, drop-down or slider, or any scrolling box
+        (list, table, text) that sits inside another scrolling panel. None for everything else."""
+        widget = target
+        while widget is not None:
+            if isinstance(widget, QtWidgets.QScrollBar) and widget is target:
+                widget = widget.parent()
+                continue
+            if isinstance(widget, self.GUARDED) and not isinstance(widget, QtWidgets.QScrollBar):
+                return widget
+            if isinstance(widget, QtWidgets.QAbstractScrollArea):
+                return widget if self._outer(widget) is not None else None
+            if widget.isWindow():
+                return None
+            widget = widget.parent()
+        return None
 
     def eventFilter(self, target, event):
         kind = event.type()
@@ -33,16 +52,41 @@ class WheelGuard(QtCore.QObject):
         elif kind == QtCore.QEvent.Wheel and isinstance(target, QtWidgets.QWidget):
             field = self._field(target)
             if field is not None and field is not self.armed:
-                area = field.parent()
-                while area is not None and not isinstance(area, QtWidgets.QAbstractScrollArea):
-                    area = area.parent()
+                area = self._outer(field)
                 if area is not None:
                     QtWidgets.QApplication.sendEvent(area.verticalScrollBar(), event)
                 return True
-            if field is not None and field is not target:
+            if field is not None and field is not target and not isinstance(field, QtWidgets.QAbstractScrollArea):
                 QtWidgets.QApplication.sendEvent(field, event)
                 return True
         return False
+
+
+class UndoGuard(QtCore.QObject):
+    """Sends Ctrl+Z / Ctrl+Y to the editor even while a number field has the keyboard.
+
+    A number field would otherwise keep those keys for the text typed into it, and after clicking one the
+    editor's undo would seem dead.
+    """
+
+    def __init__(self, window):
+        super().__init__(window)
+        self.window = window
+
+    def eventFilter(self, target, event):
+        if event.type() not in (QtCore.QEvent.KeyPress, QtCore.QEvent.ShortcutOverride):
+            return False
+        focus = QtWidgets.QApplication.focusWidget()
+        field = focus if isinstance(focus, QtWidgets.QAbstractSpinBox) else focus.parent() if focus is not None else None
+        if not isinstance(field, QtWidgets.QAbstractSpinBox) or field.window() is not self.window:
+            return False
+        undo, redo = event.matches(QtGui.QKeySequence.Undo), event.matches(QtGui.QKeySequence.Redo)
+        if not (undo or redo) or self.window.editor is None:
+            return False
+        if event.type() == QtCore.QEvent.KeyPress:
+            (self.window.editor.undo if undo else self.window.editor.redo)()
+        event.accept()
+        return event.type() == QtCore.QEvent.KeyPress
 
 
 def spin(low, high, value, step=0.05, slot=None, decimals=3):
@@ -86,6 +130,15 @@ def button(text, slot, tip=None, role=None):
         widget.setStyleSheet(ROLE_STYLE.format(c=colour, r=r, g=g, b=b))
         widget.setIcon(icons.icon(f"role_{role}", 14))
     return widget
+
+
+def tint(widget, rgb, icon_name=None):
+    """Colour a push button with any colour (for example a class colour) instead of a role colour."""
+    r, g, b = (int(v) for v in rgb)
+    widget.setStyleSheet(ROLE_STYLE.format(c=f"rgb({r}, {g}, {b})", r=r, g=g, b=b))
+    if icon_name:
+        from . import icons
+        widget.setIcon(icons.icon(icon_name, 14))
 
 
 def danger_button(text, slot, tip=None):

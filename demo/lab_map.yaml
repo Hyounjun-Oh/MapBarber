@@ -1,7 +1,7 @@
 image: lab_map.png
 mode: trinary
 resolution: 0.05
-origin: [-2, -3, 0.35]
+origin: [-2.0, -3.0, 0.35]
 negate: 1
 occupied_thresh: 0.65
 free_thresh: 0.25

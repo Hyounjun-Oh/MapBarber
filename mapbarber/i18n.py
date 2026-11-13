@@ -28,5 +28,7 @@ class Translator:
         self.language = language if language in LANGUAGES else system_language()
 
     def __call__(self, key, **values):
-        text = table(self.language).get(key) or table("en")[key]
+        text = table(self.language).get(key) or table("en").get(key)
+        if text is None:
+            return key
         return text.format(**values) if values else text

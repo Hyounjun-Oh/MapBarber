@@ -5,6 +5,7 @@ import vtk
 from .qt import QtCore, QtGui, QVTKRenderWindowInteractor
 
 Qt = QtCore.Qt
+PAINT_SPACING = 8
 CLICK_SLOP = 3
 VIEWS = (("top", (0, 0, 1), (0, 1, 0), ["7", "Num+7"]), ("front", (1, 0, 0), (0, 0, 1), ["1", "Num+1"]),
          ("side", (0, -1, 0), (0, 0, 1), ["3", "Num+3"]), ("iso", (1, -1, 0.8), (0, 0, 1), ["Home", "0", "Num+0"]))
@@ -35,7 +36,7 @@ class Viewport:
         self.paint_allowed = lambda: False
         self.on_paint = None
         self.on_paint_end = None
-        self._painting = False
+        self._painting, self._paint_subtract, self._paint_at = False, False, None
         self._space = False
         self._panning = False
         self.default_cursor = Qt.ArrowCursor
@@ -260,8 +261,8 @@ class Viewport:
             gizmo.begin(handle, x, y)
             return
         if self.interactor.GetControlKey() and self.on_paint and self.paint_allowed():
-            self._painting = True
-            self.on_paint(x, y)
+            self._painting, self._paint_subtract, self._paint_at = True, False, (x, y)
+            self.on_paint(x, y, False)
             return
         self.style.OnLeftButtonDown()
 
@@ -270,6 +271,9 @@ class Viewport:
         self._right = (x, y)
         if self.interactor.GetShiftKey():
             self._band, self._band_subtract = (x, y), True
+        elif self.interactor.GetControlKey() and self.on_paint and self.paint_allowed():
+            self._painting, self._paint_subtract, self._paint_at = True, True, (x, y)
+            self.on_paint(x, y, True)
         else:
             self.style.OnRightButtonDown()
 
@@ -278,6 +282,11 @@ class Viewport:
         start, self._right = self._right, None
         if self._band is not None:
             self._finish_band(x, y)
+            return
+        if self._painting:
+            self._painting = False
+            if self.on_paint_end:
+                self.on_paint_end()
             return
         self.style.OnRightButtonUp()
         if start is not None and self.on_right_click and abs(x - start[0]) <= CLICK_SLOP and abs(y - start[1]) <= CLICK_SLOP:
@@ -298,7 +307,14 @@ class Viewport:
             self.render()
             return
         if self._painting:
-            self.on_paint(x, y)
+            # A fast drag skips pixels; stamp along the way so the stroke has no holes.
+            last = self._paint_at or (x, y)
+            steps = int(min(max(abs(x - last[0]), abs(y - last[1])) // PAINT_SPACING, 64))
+            for index in range(1, steps + 1):
+                self.on_paint(int(last[0] + (x - last[0]) * index / (steps + 1)),
+                              int(last[1] + (y - last[1]) * index / (steps + 1)), self._paint_subtract)
+            self.on_paint(x, y, self._paint_subtract)
+            self._paint_at = (x, y)
             return
         if self._band is not None:
             x0, y0 = self._band
