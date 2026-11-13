@@ -44,7 +44,7 @@ MapBarber now labels LiDAR point clouds, scan sequences and voxel maps. The guid
 - Busy dialog with progress for long work; screen-sized axes and markers; LAS / LAZ support (optional laspy).
 
 ### Documentation
-- Short README led by a 3 × 3 animation of every feature; the full guide, shortcuts and file notes moved to the wiki.
+- Short README led by a 2 × 3 animation of the main features; the full guide, shortcuts and file notes moved to the wiki.
 
 ## 1.0.0 — 2026-11-12
 

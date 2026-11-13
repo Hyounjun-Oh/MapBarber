@@ -16,7 +16,7 @@
 ![license](https://img.shields.io/badge/license-MIT-green)
 ![version](https://img.shields.io/badge/version-1.1.0-orange)
 
-![Voxel-Editor, Punktwolken-Editor, 2D-Raster-Editor, Umwandlung, Punktwolken beschriften, intelligente Auswahl, 3D-Quader, automatische 3D-Quader-Beschriftung und Frame-Sequenzen](docs/home.webp)
+![Voxel-Editor, Punktwolken-Editor, 2D-Raster-Editor, Punktwolken beschriften, 3D-Objekte beschriften und automatische 3D-Quader-Beschriftung](docs/home.webp)
 
 <sub>Beschriftungs-Animationen: [KITTI raw dataset](https://www.cvlibs.net/datasets/kitti/raw_data.php), Fahrt 2011_09_26_0005 (Geiger et al., CC BY-NC-SA 3.0), Frame 0 von Hand beschriftet.</sub>
 

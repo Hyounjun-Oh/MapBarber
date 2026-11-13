@@ -16,7 +16,7 @@
 ![license](https://img.shields.io/badge/license-MIT-green)
 ![version](https://img.shields.io/badge/version-1.1.0-orange)
 
-![Editor de vóxeles, editor de nubes de puntos, editor de rejillas 2D, conversión, etiquetado de nubes de puntos, selección inteligente, cajas 3D, etiquetado automático de cajas 3D y secuencias](docs/home.webp)
+![Editor de vóxeles, editor de nubes de puntos, editor de rejillas 2D, etiquetado de nubes de puntos, etiquetado de objetos 3D y etiquetado automático de cajas 3D](docs/home.webp)
 
 <sub>Animaciones de etiquetado: [KITTI raw dataset](https://www.cvlibs.net/datasets/kitti/raw_data.php), trayecto 2011_09_26_0005 (Geiger et al., CC BY-NC-SA 3.0), fotograma 0 etiquetado a mano.</sub>
 

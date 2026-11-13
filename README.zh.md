@@ -16,7 +16,7 @@
 ![license](https://img.shields.io/badge/license-MIT-green)
 ![version](https://img.shields.io/badge/version-1.1.0-orange)
 
-![体素编辑器、点云编辑器、二维栅格编辑器、转换、点云标注、智能选取、3D 包围盒、自动 3D 包围盒标注、帧序列](docs/home.webp)
+![体素编辑器、点云编辑器、二维栅格编辑器、点云标注、3D 物体标注、自动 3D 包围盒标注](docs/home.webp)
 
 <sub>标注动画：[KITTI raw dataset](https://www.cvlibs.net/datasets/kitti/raw_data.php)，行驶 2011_09_26_0005 (Geiger et al., CC BY-NC-SA 3.0)，第 0 帧为手动标注。</sub>
 

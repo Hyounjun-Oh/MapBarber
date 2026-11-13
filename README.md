@@ -16,7 +16,7 @@
 ![license](https://img.shields.io/badge/license-MIT-green)
 ![version](https://img.shields.io/badge/version-1.1.0-orange)
 
-![Voxel editor, point cloud editor, 2D grid editor, conversion, point cloud labelling, smart pick, 3D boxes, auto 3D box labelling and frame sequences](docs/home.webp)
+![Voxel editor, point cloud editor, 2D grid editor, point cloud labelling, 3D object labelling and auto 3D box labelling](docs/home.webp)
 
 <sub>Labelling animations: [KITTI raw dataset](https://www.cvlibs.net/datasets/kitti/raw_data.php), drive 2011_09_26_0005 (Geiger et al., CC BY-NC-SA 3.0), frame 0 labelled by hand.</sub>
 

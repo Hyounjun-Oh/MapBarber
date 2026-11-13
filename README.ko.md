@@ -16,7 +16,7 @@
 ![license](https://img.shields.io/badge/license-MIT-green)
 ![version](https://img.shields.io/badge/version-1.1.0-orange)
 
-![복셀 편집기, 포인트 클라우드 편집기, 2D 격자 편집기, 변환, 포인트 클라우드 라벨링, 스마트 선택, 3D 박스, 자동 3D 박스 라벨링, 프레임 시퀀스](docs/home_ko.webp)
+![복셀 편집기, 포인트 클라우드 편집기, 2D 격자 편집기, 포인트 클라우드 라벨링, 3D 물체 라벨링, 자동 3D 박스 라벨링](docs/home_ko.webp)
 
 <sub>라벨링 애니메이션: [KITTI raw dataset](https://www.cvlibs.net/datasets/kitti/raw_data.php), 2011_09_26_0005 주행 (Geiger et al., CC BY-NC-SA 3.0), 0번 프레임은 직접 라벨링한 GT.</sub>
 

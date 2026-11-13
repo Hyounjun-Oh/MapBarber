@@ -16,7 +16,7 @@
 ![license](https://img.shields.io/badge/license-MIT-green)
 ![version](https://img.shields.io/badge/version-1.1.0-orange)
 
-![ボクセルエディタ、点群エディタ、2D 格子エディタ、変換、点群のラベル付け、スマート選択、3D ボックス、自動 3D ボックスラベル付け、フレーム列](docs/home.webp)
+![ボクセルエディタ、点群エディタ、2D 格子エディタ、点群のラベル付け、3D 物体のラベル付け、自動 3D ボックスラベル付け](docs/home.webp)
 
 <sub>ラベル付けのアニメーション: [KITTI raw dataset](https://www.cvlibs.net/datasets/kitti/raw_data.php)、走行 2011_09_26_0005 (Geiger et al., CC BY-NC-SA 3.0)、フレーム 0 は手でラベル付け。</sub>
 
