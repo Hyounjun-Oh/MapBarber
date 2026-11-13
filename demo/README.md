@@ -145,7 +145,7 @@ extrude the warehouse map to 2 m walls.
    now selects only what is still unlabelled.
 4. With *parked car* active press *Auto 3D boxes: parked car*. Each car becomes its own object with
    a box; turn or resize one in the box list.
-5. *Auto 3D box tracking ▶ forwards in time* carries the boxes and object numbers from the first frame
+5. *Auto 3D box labelling ▶ forwards in time* carries the boxes and object numbers from the first frame
    to the later ones (◀ goes back to earlier frames, for objects labelled in a middle frame); the score of
    each step is shown in the box list.
 6. *Load labels…* ▸ pick `drive/predictions`: the model's guesses arrive as pale suggestions on the points

@@ -16,7 +16,37 @@
 ![license](https://img.shields.io/badge/license-MIT-green)
 ![version](https://img.shields.io/badge/version-1.1.0-orange)
 
-![在标签页中打开三种地图，把体素地图转换为二维栅格，并切换语言](docs/overview.gif)
+![体素编辑器、点云编辑器、二维栅格编辑器、转换、点云标注、智能选取、3D 包围盒、自动 3D 包围盒标注、帧序列](docs/home.webp)
+
+<sub>标注动画：[KITTI raw dataset](https://www.cvlibs.net/datasets/kitti/raw_data.php)，行驶 2011_09_26_0005 (Geiger et al., CC BY-NC-SA 3.0)，第 0 帧为手动标注。</sub>
+
+详细用法、全部快捷键和文件说明见 **[Wiki](https://github.com/Hyounjun-Oh/MapBarber/wiki)**。
+
+## 功能
+
+- **体素编辑器** — OctoMap `.bt` / `.ot`：擦除、添加、悬浮孤立块、包围框、切片、尺子；3500 万体素也能流畅操作。
+- **点云编辑器** — PCD、PLY、LAS/LAZ、文本、`.bin`：噪声过滤、抽稀、按任意字段着色；保存时保留所有字段。
+- **二维栅格编辑器** — ROS map_server 地图：画笔、直线、矩形、填充、去斑点、裁剪边缘、原点。
+- **转换** — 体素地图 ↔ 点云 ↔ 二维栅格，无损往返。
+- **LiDAR 标注** — 类别、智能选取、3D 包围盒和整段扫描序列的自动 3D 包围盒标注；导出为 SemanticKITTI、KITTI 和 OpenPCDet。
+- **命令行** — 无窗口批量清理和转换。
+
+| 体素地图 | 点云 | 二维占据栅格 |
+|---|---|---|
+| ![体素地图](docs/voxel.gif) | ![点云](docs/cloud.gif) | ![二维占据栅格](docs/grid.gif) |
+
+三种地图之间可无损转换，保存前的所有编辑都可撤销。
+
+## 快速开始
+
+```bash
+git clone https://github.com/Hyounjun-Oh/MapBarber.git
+cd MapBarber
+./mapbarber.sh                                  # 空窗口 — 把地图拖进来
+./mapbarber.sh demo/office_octomap.bt           # 或直接打开文件（每个文件一个标签页）
+```
+
+首次运行会在 `.venv/` 中安装 NumPy、SciPy、VTK 和 PySide6（约 500 MB）；需要 Python 3.10+ 和桌面环境。也可以 `pip install .`（`pip install ".[las]"` 增加 LAS/LAZ 支持）。[`demo/`](demo/README.md) 提供带已知缺陷的地图和检查清单。
 
 ## 1.1 新功能：LiDAR 标注
 
@@ -35,36 +65,16 @@
 
 ![3D 包围盒](docs/boxes.gif)
 
-### 自动 3D 包围盒跟踪
-按时间顺序或倒序在整段行驶中跟踪包围盒。示例：从一帧手动标注跟踪到全部 154 帧扫描。
+### 自动 3D 包围盒标注
+按时间顺序或倒序把包围盒和点标签延续到整段行驶。示例：从一帧手动标注到全部 154 帧扫描。
 
-![自动 3D 包围盒跟踪](docs/tracking.webp)
+![自动 3D 包围盒标注](docs/auto_labelling.webp)
 
 <sub>标注动画：[KITTI raw dataset](https://www.cvlibs.net/datasets/kitti/raw_data.php)，行驶 2011_09_26_0005 (Geiger et al., CC BY-NC-SA 3.0)，第 0 帧为手动标注。</sub>
 
-## 编辑器
-
-| 体素地图 | 点云 | 二维占据栅格 |
-|---|---|---|
-| ![体素地图](docs/voxel.gif) | ![点云](docs/cloud.gif) | ![二维占据栅格](docs/grid.gif) |
-| OctoMap `.bt` / `.ot`：擦除、添加、孤立块、包围框、切片、尺子 | PCD、PLY、LAS/LAZ、文本、`.bin`：噪声过滤、抽稀、按字段着色 | map_server YAML + PGM/PNG：画笔、直线、填充、去斑点、裁剪边缘 |
-
-三种地图之间可无损转换，保存前的所有编辑都可撤销。
-
-## 快速开始
-
-```bash
-git clone https://github.com/Hyounjun-Oh/MapBarber.git
-cd MapBarber
-./mapbarber.sh                                  # 空窗口 — 把地图拖进来
-./mapbarber.sh demo/office_octomap.bt           # 或直接打开文件（每个文件一个标签页）
-```
-
-首次运行会在 `.venv/` 中安装 NumPy、SciPy、VTK 和 PySide6（约 500 MB）；需要 Python 3.10+ 和桌面环境。也可以 `pip install .`（`pip install ".[las]"` 增加 LAS/LAZ 支持）。[`demo/`](demo/README.md) 提供带已知缺陷的地图和检查清单。
-
 ## 文档
 
-完整指南见 **[Wiki](https://github.com/Hyounjun-Oh/MapBarber/wiki)**（英文、韩文）： [入门](https://github.com/Hyounjun-Oh/MapBarber/wiki/Getting-Started) · [标注](https://github.com/Hyounjun-Oh/MapBarber/wiki/Labelling) · [智能选取](https://github.com/Hyounjun-Oh/MapBarber/wiki/Smart-Pick) · [3D 包围盒](https://github.com/Hyounjun-Oh/MapBarber/wiki/3D-Boxes) · [自动 3D 包围盒跟踪](https://github.com/Hyounjun-Oh/MapBarber/wiki/Auto-3D-Box-Tracking) · [帧序列](https://github.com/Hyounjun-Oh/MapBarber/wiki/Frame-Sequences) · [快捷键](https://github.com/Hyounjun-Oh/MapBarber/wiki/Keyboard-Shortcuts) · [文件格式](https://github.com/Hyounjun-Oh/MapBarber/wiki/Files-and-Formats) · [命令行](https://github.com/Hyounjun-Oh/MapBarber/wiki/Command-Line) · [FAQ](https://github.com/Hyounjun-Oh/MapBarber/wiki/FAQ)
+完整指南见 **[Wiki](https://github.com/Hyounjun-Oh/MapBarber/wiki)**（英文、韩文）： [入门](https://github.com/Hyounjun-Oh/MapBarber/wiki/Getting-Started) · [标注](https://github.com/Hyounjun-Oh/MapBarber/wiki/Labelling) · [智能选取](https://github.com/Hyounjun-Oh/MapBarber/wiki/Smart-Pick) · [3D 包围盒](https://github.com/Hyounjun-Oh/MapBarber/wiki/3D-Boxes) · [自动 3D 包围盒标注](https://github.com/Hyounjun-Oh/MapBarber/wiki/Auto-3D-Box-Labelling) · [帧序列](https://github.com/Hyounjun-Oh/MapBarber/wiki/Frame-Sequences) · [快捷键](https://github.com/Hyounjun-Oh/MapBarber/wiki/Keyboard-Shortcuts) · [文件格式](https://github.com/Hyounjun-Oh/MapBarber/wiki/Files-and-Formats) · [命令行](https://github.com/Hyounjun-Oh/MapBarber/wiki/Command-Line) · [FAQ](https://github.com/Hyounjun-Oh/MapBarber/wiki/FAQ)
 
 ## 许可证
 

@@ -16,7 +16,37 @@
 ![license](https://img.shields.io/badge/license-MIT-green)
 ![version](https://img.shields.io/badge/version-1.1.0-orange)
 
-![세 종류의 맵을 탭으로 열고, 복셀 맵을 2D 격자로 변환하고, 언어를 바꾸는 장면](docs/overview.gif)
+![복셀 편집기, 포인트 클라우드 편집기, 2D 격자 편집기, 변환, 포인트 클라우드 라벨링, 스마트 선택, 3D 박스, 자동 3D 박스 라벨링, 프레임 시퀀스](docs/home_ko.webp)
+
+<sub>라벨링 애니메이션: [KITTI raw dataset](https://www.cvlibs.net/datasets/kitti/raw_data.php), 2011_09_26_0005 주행 (Geiger et al., CC BY-NC-SA 3.0), 0번 프레임은 직접 라벨링한 GT.</sub>
+
+자세한 사용법, 전체 단축키, 파일 참고 사항은 **[위키](https://github.com/Hyounjun-Oh/MapBarber/wiki/Home-ko)** 에 있습니다.
+
+## 기능
+
+- **복셀 편집기** — OctoMap `.bt` / `.ot`: 지우기, 추가, 떠 있는 고립 덩어리, 상자, 슬라이스, 자. 3,500만 복셀도 조작할 수 있습니다.
+- **포인트 클라우드 편집기** — PCD, PLY, LAS/LAZ, 텍스트, `.bin`: 잡음 필터, 솎아내기, 필드별 색. 저장해도 모든 필드가 유지됩니다.
+- **2D 격자 편집기** — ROS map_server 맵: 펜, 직선, 사각형, 채우기, 잡티, 테두리 자르기, 원점.
+- **변환** — 복셀 맵 ↔ 포인트 클라우드 ↔ 2D 격자, 손실 없는 왕복 변환.
+- **LiDAR 라벨링** — 클래스, 스마트 선택, 3D 박스, 스캔 시퀀스 전체의 자동 3D 박스 라벨링. SemanticKITTI·KITTI·OpenPCDet 형식으로 내보내기.
+- **명령행** — 창 없이 일괄 정리·변환.
+
+| 복셀 맵 | 포인트 클라우드 | 2D 점유 격자 |
+|---|---|---|
+| ![복셀 맵](docs/voxel.gif) | ![포인트 클라우드](docs/cloud.gif) | ![2D 점유 격자](docs/grid.gif) |
+
+세 종류 사이를 손실 없이 변환하고, 저장하기 전까지 모든 편집을 되돌릴 수 있습니다.
+
+## 빠른 시작
+
+```bash
+git clone https://github.com/Hyounjun-Oh/MapBarber.git
+cd MapBarber
+./mapbarber.sh                                  # 빈 창 — 맵 파일을 끌어다 놓으세요
+./mapbarber.sh demo/office_octomap.bt           # 또는 파일을 바로 열기 (파일마다 탭 하나)
+```
+
+처음 실행할 때 `.venv/` 에 NumPy, SciPy, VTK, PySide6 를 설치합니다(약 500 MB). Python 3.10 이상과 데스크톱 환경이 필요합니다. `pip install .` 도 되고, `pip install ".[las]"` 는 LAS/LAZ 지원을 더합니다. [`demo/`](demo/README.ko.md) 에 결함을 아는 실제 같은 맵과 점검표가 있습니다.
 
 ## 1.1 신규: LiDAR 라벨링
 
@@ -35,36 +65,16 @@
 
 ![3D 바운딩 박스](docs/boxes.gif)
 
-### 자동 3D 박스 추적
-박스를 시간순·역순으로 주행 전체에 걸쳐 따라갑니다. 예시: 직접 라벨링한 프레임 하나에서 154개 스캔 전체로 추적.
+### 자동 3D 박스 라벨링
+박스와 포인트 라벨을 시간순·역순으로 주행 전체에 이어 붙입니다. 예시: 직접 라벨링한 프레임 하나에서 154개 스캔 전체로.
 
-![자동 3D 박스 추적](docs/tracking.webp)
+![자동 3D 박스 라벨링](docs/auto_labelling.webp)
 
 <sub>라벨링 애니메이션: [KITTI raw dataset](https://www.cvlibs.net/datasets/kitti/raw_data.php), 2011_09_26_0005 주행 (Geiger et al., CC BY-NC-SA 3.0), 0번 프레임은 직접 라벨링한 GT.</sub>
 
-## 편집기
-
-| 복셀 맵 | 포인트 클라우드 | 2D 점유 격자 |
-|---|---|---|
-| ![복셀 맵](docs/voxel.gif) | ![포인트 클라우드](docs/cloud.gif) | ![2D 점유 격자](docs/grid.gif) |
-| OctoMap `.bt` / `.ot`: 지우기, 추가, 고립 덩어리, 상자, 슬라이스, 자 | PCD, PLY, LAS/LAZ, 텍스트, `.bin`: 잡음 필터, 솎아내기, 필드별 색 | map_server YAML + PGM/PNG: 펜, 직선, 채우기, 잡티, 테두리 자르기 |
-
-세 종류 사이를 손실 없이 변환하고, 저장하기 전까지 모든 편집을 되돌릴 수 있습니다.
-
-## 빠른 시작
-
-```bash
-git clone https://github.com/Hyounjun-Oh/MapBarber.git
-cd MapBarber
-./mapbarber.sh                                  # 빈 창 — 맵 파일을 끌어다 놓으세요
-./mapbarber.sh demo/office_octomap.bt           # 또는 파일을 바로 열기 (파일마다 탭 하나)
-```
-
-처음 실행할 때 `.venv/` 에 NumPy, SciPy, VTK, PySide6 를 설치합니다(약 500 MB). Python 3.10 이상과 데스크톱 환경이 필요합니다. `pip install .` 도 되고, `pip install ".[las]"` 는 LAS/LAZ 지원을 더합니다. [`demo/`](demo/README.ko.md) 에 결함을 아는 실제 같은 맵과 점검표가 있습니다.
-
 ## 문서
 
-자세한 사용법은 **[위키](https://github.com/Hyounjun-Oh/MapBarber/wiki/Home-ko)** 에 있습니다: [시작하기](https://github.com/Hyounjun-Oh/MapBarber/wiki/Getting-Started-ko) · [라벨링](https://github.com/Hyounjun-Oh/MapBarber/wiki/Labelling-ko) · [스마트 선택](https://github.com/Hyounjun-Oh/MapBarber/wiki/Smart-Pick-ko) · [3D 박스](https://github.com/Hyounjun-Oh/MapBarber/wiki/3D-Boxes-ko) · [자동 3D 박스 추적](https://github.com/Hyounjun-Oh/MapBarber/wiki/Auto-3D-Box-Tracking-ko) · [프레임 시퀀스](https://github.com/Hyounjun-Oh/MapBarber/wiki/Frame-Sequences-ko) · [단축키](https://github.com/Hyounjun-Oh/MapBarber/wiki/Keyboard-Shortcuts-ko) · [파일 형식](https://github.com/Hyounjun-Oh/MapBarber/wiki/Files-and-Formats-ko) · [명령행](https://github.com/Hyounjun-Oh/MapBarber/wiki/Command-Line-ko) · [FAQ](https://github.com/Hyounjun-Oh/MapBarber/wiki/FAQ-ko) — [English](https://github.com/Hyounjun-Oh/MapBarber/wiki) 판도 있습니다.
+자세한 사용법은 **[위키](https://github.com/Hyounjun-Oh/MapBarber/wiki/Home-ko)** 에 있습니다: [시작하기](https://github.com/Hyounjun-Oh/MapBarber/wiki/Getting-Started-ko) · [라벨링](https://github.com/Hyounjun-Oh/MapBarber/wiki/Labelling-ko) · [스마트 선택](https://github.com/Hyounjun-Oh/MapBarber/wiki/Smart-Pick-ko) · [3D 박스](https://github.com/Hyounjun-Oh/MapBarber/wiki/3D-Boxes-ko) · [자동 3D 박스 라벨링](https://github.com/Hyounjun-Oh/MapBarber/wiki/Auto-3D-Box-Labelling-ko) · [프레임 시퀀스](https://github.com/Hyounjun-Oh/MapBarber/wiki/Frame-Sequences-ko) · [단축키](https://github.com/Hyounjun-Oh/MapBarber/wiki/Keyboard-Shortcuts-ko) · [파일 형식](https://github.com/Hyounjun-Oh/MapBarber/wiki/Files-and-Formats-ko) · [명령행](https://github.com/Hyounjun-Oh/MapBarber/wiki/Command-Line-ko) · [FAQ](https://github.com/Hyounjun-Oh/MapBarber/wiki/FAQ-ko) — [English](https://github.com/Hyounjun-Oh/MapBarber/wiki) 판도 있습니다.
 
 ## 라이선스
 

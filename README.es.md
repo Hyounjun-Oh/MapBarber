@@ -16,7 +16,37 @@
 ![license](https://img.shields.io/badge/license-MIT-green)
 ![version](https://img.shields.io/badge/version-1.1.0-orange)
 
-![Abrir tres tipos de mapa en pestañas, convertir un mapa de vóxeles en una rejilla 2D y cambiar de idioma](docs/overview.gif)
+![Editor de vóxeles, editor de nubes de puntos, editor de rejillas 2D, conversión, etiquetado de nubes de puntos, selección inteligente, cajas 3D, etiquetado automático de cajas 3D y secuencias](docs/home.webp)
+
+<sub>Animaciones de etiquetado: [KITTI raw dataset](https://www.cvlibs.net/datasets/kitti/raw_data.php), trayecto 2011_09_26_0005 (Geiger et al., CC BY-NC-SA 3.0), fotograma 0 etiquetado a mano.</sub>
+
+El uso detallado, todos los atajos y las notas sobre archivos están en la **[wiki](https://github.com/Hyounjun-Oh/MapBarber/wiki)**.
+
+## Funciones
+
+- **Editor de vóxeles** — OctoMap `.bt` / `.ot`: borrar, añadir, islas flotantes, caja, corte, regla; 35 millones de vóxeles siguen fluidos.
+- **Editor de nubes de puntos** — PCD, PLY, LAS/LAZ, texto, `.bin`: filtros de ruido, aclarado, color por cualquier campo; al guardar se conserva cada campo.
+- **Editor de rejillas 2D** — mapas de map_server de ROS: lápiz, línea, rectángulo, relleno, motas, recorte del borde, origen.
+- **Conversión** — mapa de vóxeles ↔ nube de puntos ↔ rejilla 2D, ida y vuelta sin pérdidas.
+- **Etiquetado LiDAR** — clases, selección inteligente, cajas 3D y etiquetado automático de cajas 3D en secuencias de escaneos; exportación a SemanticKITTI, KITTI y OpenPCDet.
+- **Línea de comandos** — limpieza y conversión por lotes sin ventana.
+
+| Mapas de vóxeles | Nubes de puntos | Rejillas de ocupación 2D |
+|---|---|---|
+| ![Mapas de vóxeles](docs/voxel.gif) | ![Nubes de puntos](docs/cloud.gif) | ![Rejillas de ocupación 2D](docs/grid.gif) |
+
+Los mapas se convierten entre los tres tipos sin pérdidas, y toda edición se puede deshacer hasta guardar.
+
+## Inicio rápido
+
+```bash
+git clone https://github.com/Hyounjun-Oh/MapBarber.git
+cd MapBarber
+./mapbarber.sh                                  # ventana vacía — suelta mapas en ella
+./mapbarber.sh demo/office_octomap.bt           # o abre archivos, una pestaña cada uno
+```
+
+La primera ejecución instala NumPy, SciPy, VTK y PySide6 en `.venv/` (unos 500 MB); hace falta Python 3.10+ y una sesión de escritorio. También funciona `pip install .` (`pip install ".[las]"` añade LAS/LAZ). [`demo/`](demo/README.md) tiene mapas realistas con defectos conocidos y una lista de comprobación.
 
 ## Novedad en 1.1: etiquetado LiDAR
 
@@ -35,36 +65,16 @@ Divide una clase en objetos y pon una caja a cada uno; unos pocos puntos mal eti
 
 ![Cajas 3D](docs/boxes.gif)
 
-### Seguimiento automático de cajas 3D
-Sigue las cajas hacia delante o hacia atrás en el tiempo a lo largo de todo un trayecto. Aquí: desde un fotograma etiquetado a mano por los 154 escaneos.
+### Etiquetado automático de cajas 3D
+Las cajas y las etiquetas de puntos se llevan hacia delante o hacia atrás en el tiempo a lo largo de todo un trayecto. Aquí: desde un fotograma etiquetado a mano por los 154 escaneos.
 
-![Seguimiento automático de cajas 3D](docs/tracking.webp)
+![Etiquetado automático de cajas 3D](docs/auto_labelling.webp)
 
 <sub>Animaciones de etiquetado: [KITTI raw dataset](https://www.cvlibs.net/datasets/kitti/raw_data.php), trayecto 2011_09_26_0005 (Geiger et al., CC BY-NC-SA 3.0), fotograma 0 etiquetado a mano.</sub>
 
-## Editores
-
-| Mapas de vóxeles | Nubes de puntos | Rejillas de ocupación 2D |
-|---|---|---|
-| ![Mapas de vóxeles](docs/voxel.gif) | ![Nubes de puntos](docs/cloud.gif) | ![Rejillas de ocupación 2D](docs/grid.gif) |
-| OctoMap `.bt` / `.ot`: borrar, añadir, islas, caja, corte, regla | PCD, PLY, LAS/LAZ, texto, `.bin`: filtros de ruido, aclarado, color por campo | YAML de map_server + PGM/PNG: lápiz, línea, relleno, motas, recorte del borde |
-
-Los mapas se convierten entre los tres tipos sin pérdidas, y toda edición se puede deshacer hasta guardar.
-
-## Inicio rápido
-
-```bash
-git clone https://github.com/Hyounjun-Oh/MapBarber.git
-cd MapBarber
-./mapbarber.sh                                  # ventana vacía — suelta mapas en ella
-./mapbarber.sh demo/office_octomap.bt           # o abre archivos, una pestaña cada uno
-```
-
-La primera ejecución instala NumPy, SciPy, VTK y PySide6 en `.venv/` (unos 500 MB); hace falta Python 3.10+ y una sesión de escritorio. También funciona `pip install .` (`pip install ".[las]"` añade LAS/LAZ). [`demo/`](demo/README.md) tiene mapas realistas con defectos conocidos y una lista de comprobación.
-
 ## Documentación
 
-La guía completa está en la **[wiki](https://github.com/Hyounjun-Oh/MapBarber/wiki)** (inglés, coreano): [Primeros pasos](https://github.com/Hyounjun-Oh/MapBarber/wiki/Getting-Started) · [Etiquetado](https://github.com/Hyounjun-Oh/MapBarber/wiki/Labelling) · [Selección inteligente](https://github.com/Hyounjun-Oh/MapBarber/wiki/Smart-Pick) · [Cajas 3D](https://github.com/Hyounjun-Oh/MapBarber/wiki/3D-Boxes) · [Seguimiento de cajas 3D](https://github.com/Hyounjun-Oh/MapBarber/wiki/Auto-3D-Box-Tracking) · [Secuencias](https://github.com/Hyounjun-Oh/MapBarber/wiki/Frame-Sequences) · [Atajos de teclado](https://github.com/Hyounjun-Oh/MapBarber/wiki/Keyboard-Shortcuts) · [Archivos y formatos](https://github.com/Hyounjun-Oh/MapBarber/wiki/Files-and-Formats) · [Línea de comandos](https://github.com/Hyounjun-Oh/MapBarber/wiki/Command-Line) · [FAQ](https://github.com/Hyounjun-Oh/MapBarber/wiki/FAQ)
+La guía completa está en la **[wiki](https://github.com/Hyounjun-Oh/MapBarber/wiki)** (inglés, coreano): [Primeros pasos](https://github.com/Hyounjun-Oh/MapBarber/wiki/Getting-Started) · [Etiquetado](https://github.com/Hyounjun-Oh/MapBarber/wiki/Labelling) · [Selección inteligente](https://github.com/Hyounjun-Oh/MapBarber/wiki/Smart-Pick) · [Cajas 3D](https://github.com/Hyounjun-Oh/MapBarber/wiki/3D-Boxes) · [Etiquetado de cajas 3D](https://github.com/Hyounjun-Oh/MapBarber/wiki/Auto-3D-Box-Labelling) · [Secuencias](https://github.com/Hyounjun-Oh/MapBarber/wiki/Frame-Sequences) · [Atajos de teclado](https://github.com/Hyounjun-Oh/MapBarber/wiki/Keyboard-Shortcuts) · [Archivos y formatos](https://github.com/Hyounjun-Oh/MapBarber/wiki/Files-and-Formats) · [Línea de comandos](https://github.com/Hyounjun-Oh/MapBarber/wiki/Command-Line) · [FAQ](https://github.com/Hyounjun-Oh/MapBarber/wiki/FAQ)
 
 ## Licencia
 

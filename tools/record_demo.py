@@ -697,7 +697,7 @@ def demo_boxes(rec, out):
     rec.write_gif(out)
 
 
-def demo_tracking(rec, out):
+def demo_auto_labelling(rec, out):
     editor = kitti(rec, labels=True, boxes=True)
     known = hand_boxes(editor)
     last = len(editor.sequence) - 1
@@ -715,7 +715,7 @@ def demo_tracking(rec, out):
     rec.hold(1.4)
     forward = rec.panel_button(editor.tr("track"))
     rec.scroll_panel_to(forward)
-    rec.say("▶ Auto 3D box tracking forwards in time")
+    rec.say("▶ Auto 3D box labelling forwards in time")
     rec.click_widget(forward)
     rec.hold(1.4)
     rec.say(f"The result, scan by scan from frame 0 to {last}, with the view fixed to the LiDAR")
@@ -729,10 +729,76 @@ def demo_tracking(rec, out):
     for frame in range(1, last + 1):
         editor.timeline.slider.on_range(frame, frame)
         rec.pump(0.05)
-        rec.caption = f"Auto 3D box tracking from the hand-labelled frame 0 — frame {frame} / {last}"
+        rec.caption = f"Auto 3D box labelling from the hand-labelled frame 0 — frame {frame} / {last}"
         rec.frame()
     rec.hold(1.2)
     rec.write_gif(out, width=720)
+
+
+def demo_conversion(rec, out):
+    window = rec.window
+    window.open(os.path.join(rec.workdir, "scan.pcd"))
+    rec.pump(0.4)
+    rec.start()
+    rec.say("A point cloud with colour and intensity", 1.4)
+    rec.say("Convert ▸ To voxel map")
+    item = menu_pick(rec, "Convert", window.tr_("to_voxels"))
+    answer_dialog(rec, [0.05])
+    item.trigger()
+    rec.pump(0.4)
+    rec.say("… a voxel map, in a new tab", 1.6)
+    rec.say("Convert ▸ To 2D occupancy grid")
+    item = menu_pick(rec, "Convert", window.tr_("to_grid"))
+    answer_dialog(rec, [0.3, 1.9])
+    item.trigger()
+    rec.pump(0.4)
+    rec.say("… and a ROS 2D occupancy grid", 1.6)
+    window.tabs.setCurrentIndex(1)
+    rec.pump(0.3)
+    rec.say("Back again: the voxel map returns the cloud's own points")
+    item = menu_pick(rec, "Convert", window.tr_("to_cloud"))
+    item.trigger()
+    rec.pump(0.4)
+    rec.say("Every point at its exact position, with all its fields", 1.8)
+    rec.write_gif(out)
+
+
+def demo_frames(rec, out):
+    editor = kitti(rec, labels=True, boxes=True)
+    known = hand_boxes(editor)
+    editor.timeline.slider.on_range(0, 0)
+    rec.pump(0.5)
+    low, high = around(list(known.values()), 8.0)
+    show(editor, low, high, (-0.8, -1.0, 1.0))
+    rec.start()
+    rec.say("A folder of LiDAR scans opens as one sequence (KITTI raw, poses from the GPS/IMU)", 2.0)
+    slider = editor.timeline.slider
+    rec.say("Drag the timeline handles: frames 0–9 merged by their poses")
+    rec.glide(rec.in_window(slider, QtCore.QPointF(slider._x(0), slider.height() / 2)), 8)
+    rec.glide(rec.in_window(slider, QtCore.QPointF(slider._x(9), slider.height() / 2)), 10)
+    slider.on_range(0, 9)
+    rec.pump(0.4)
+    show(editor, low - [10, 10, 0], high + [10, 10, 0], (-0.8, -1.0, 1.0))
+    rec.hold(1.6)
+    rec.say("Click the strip, then → slides the range by its own width")
+    rec.ripple = 4
+    slider.setFocus(QtCore.Qt.MouseFocusReason)
+    for _ in range(3):
+        QtTest.QTest.keyClick(slider, QtCore.Qt.Key_Right)
+        rec.pump(0.3)
+        rec.hold(0.9)
+    rec.say("One scan at a time, with the view fixed to the LiDAR")
+    editor.timeline.anchor.setCurrentIndex(editor.timeline.anchor.findData("lidar"))
+    slider.on_range(40, 40)
+    rec.pump(0.3)
+    centre = editor.sequence.poses[40][:3, 3]
+    show(editor, centre - [22, 22, 3], centre + [22, 22, 3], (-0.5, -1.0, 1.1))
+    for _ in range(30):
+        rec.shortcut(".")
+        rec.pump(0.05)
+        rec.frame(2)
+    rec.hold(0.8)
+    rec.write_gif(out)
 
 
 def main(out_dir):
@@ -749,8 +815,9 @@ def main(out_dir):
     recorder.pump(1.0)
     demos = (("overview.gif", demo_overview), ("voxel.gif", demo_voxels), ("cloud.gif", demo_cloud),
              ("grid.gif", demo_grid), ("labelling.gif", demo_labelling), ("smart_pick.gif", demo_smart_pick),
-             ("boxes.gif", demo_boxes), ("tracking.webp", demo_tracking))
-    KITTI_DEMOS = {"labelling.gif", "smart_pick.gif", "boxes.gif", "tracking.webp"}
+             ("boxes.gif", demo_boxes), ("auto_labelling.webp", demo_auto_labelling),
+             ("conversion.gif", demo_conversion), ("frames.gif", demo_frames))
+    KITTI_DEMOS = {"labelling.gif", "smart_pick.gif", "boxes.gif", "auto_labelling.webp", "frames.gif"}
     options = [arg for arg in sys.argv[2:] if arg.startswith("--kitti=")]
     KITTI = options[0].split("=", 1)[1] if options else None
     selected = [arg for arg in sys.argv[2:] if not arg.startswith("--")] or [name for name, _ in demos]

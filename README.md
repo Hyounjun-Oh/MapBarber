@@ -16,7 +16,37 @@
 ![license](https://img.shields.io/badge/license-MIT-green)
 ![version](https://img.shields.io/badge/version-1.1.0-orange)
 
-![Opening three kinds of map in tabs, converting a voxel map to a 2D grid and switching language](docs/overview.gif)
+![Voxel editor, point cloud editor, 2D grid editor, conversion, point cloud labelling, smart pick, 3D boxes, auto 3D box labelling and frame sequences](docs/home.webp)
+
+<sub>Labelling animations: [KITTI raw dataset](https://www.cvlibs.net/datasets/kitti/raw_data.php), drive 2011_09_26_0005 (Geiger et al., CC BY-NC-SA 3.0), frame 0 labelled by hand.</sub>
+
+Detailed usage, every shortcut and the file notes are in the **[wiki](https://github.com/Hyounjun-Oh/MapBarber/wiki)**.
+
+## Features
+
+- **Voxel editor** — OctoMap `.bt` / `.ot`: erase, add, floating islands, box, slice, ruler; 35 million voxels stay interactive.
+- **Point cloud editor** — PCD, PLY, LAS/LAZ, text, `.bin`: noise filters, thinning, colour by any field; every field is kept on save.
+- **2D grid editor** — ROS map_server maps: pen, line, rectangle, fill, speckles, border trim, origin.
+- **Conversion** — voxel map ↔ point cloud ↔ 2D grid, with lossless round trips.
+- **LiDAR labelling** — classes, smart pick, 3D boxes and auto 3D box labelling through scan sequences; export to SemanticKITTI, KITTI and OpenPCDet.
+- **Command line** — batch cleaning and conversion without a window.
+
+| Voxel maps | Point clouds | 2D occupancy grids |
+|---|---|---|
+| ![Voxel maps](docs/voxel.gif) | ![Point clouds](docs/cloud.gif) | ![2D occupancy grids](docs/grid.gif) |
+
+Maps convert between the three kinds without loss, and every edit can be undone until you save.
+
+## Quick start
+
+```bash
+git clone https://github.com/Hyounjun-Oh/MapBarber.git
+cd MapBarber
+./mapbarber.sh                                  # empty window — drop maps onto it
+./mapbarber.sh demo/office_octomap.bt           # or open files, one tab each
+```
+
+The first run installs NumPy, SciPy, VTK and PySide6 into `.venv/` (about 500 MB); you need Python 3.10+ and a desktop session. `pip install .` works too (`pip install ".[las]"` adds LAS/LAZ). [`demo/`](demo/README.md) has realistic maps with known defects and a checklist.
 
 ## New in 1.1: LiDAR labelling
 
@@ -35,36 +65,16 @@ Split a class into objects and box each one; a few mislabelled points do not str
 
 ![3D bounding boxes](docs/boxes.gif)
 
-### Auto 3D box tracking
-Follow the boxes forwards or backwards in time through a whole drive. Here: tracked from one hand-labelled frame through all 154 scans.
+### Auto 3D box labelling
+Boxes and point labels are carried forwards or backwards in time through a whole drive. Here: from one hand-labelled frame through all 154 scans.
 
-![Auto 3D box tracking](docs/tracking.webp)
+![Auto 3D box labelling](docs/auto_labelling.webp)
 
 <sub>Labelling animations: [KITTI raw dataset](https://www.cvlibs.net/datasets/kitti/raw_data.php), drive 2011_09_26_0005 (Geiger et al., CC BY-NC-SA 3.0), frame 0 labelled by hand.</sub>
 
-## Editors
-
-| Voxel maps | Point clouds | 2D occupancy grids |
-|---|---|---|
-| ![Voxel maps](docs/voxel.gif) | ![Point clouds](docs/cloud.gif) | ![2D occupancy grids](docs/grid.gif) |
-| OctoMap `.bt` / `.ot`: erase, add, islands, box, slice, ruler | PCD, PLY, LAS/LAZ, text, `.bin`: noise filters, thinning, colour by field | map_server YAML + PGM/PNG: pen, line, fill, speckles, trim |
-
-Maps convert between the three kinds without loss, and every edit can be undone until you save.
-
-## Quick start
-
-```bash
-git clone https://github.com/Hyounjun-Oh/MapBarber.git
-cd MapBarber
-./mapbarber.sh                                  # empty window — drop maps onto it
-./mapbarber.sh demo/office_octomap.bt           # or open files, one tab each
-```
-
-The first run installs NumPy, SciPy, VTK and PySide6 into `.venv/` (about 500 MB); you need Python 3.10+ and a desktop session. `pip install .` works too (`pip install ".[las]"` adds LAS/LAZ). [`demo/`](demo/README.md) has realistic maps with known defects and a checklist.
-
 ## Documentation
 
-The **[wiki](https://github.com/Hyounjun-Oh/MapBarber/wiki)** is the full guide: [Getting started](https://github.com/Hyounjun-Oh/MapBarber/wiki/Getting-Started) · [Labelling](https://github.com/Hyounjun-Oh/MapBarber/wiki/Labelling) · [Smart pick](https://github.com/Hyounjun-Oh/MapBarber/wiki/Smart-Pick) · [3D boxes](https://github.com/Hyounjun-Oh/MapBarber/wiki/3D-Boxes) · [Auto 3D box tracking](https://github.com/Hyounjun-Oh/MapBarber/wiki/Auto-3D-Box-Tracking) · [Frame sequences](https://github.com/Hyounjun-Oh/MapBarber/wiki/Frame-Sequences) · [Keyboard shortcuts](https://github.com/Hyounjun-Oh/MapBarber/wiki/Keyboard-Shortcuts) · [Files and formats](https://github.com/Hyounjun-Oh/MapBarber/wiki/Files-and-Formats) · [Command line](https://github.com/Hyounjun-Oh/MapBarber/wiki/Command-Line) · [FAQ](https://github.com/Hyounjun-Oh/MapBarber/wiki/FAQ) — also in [한국어](https://github.com/Hyounjun-Oh/MapBarber/wiki/Home-ko).
+The **[wiki](https://github.com/Hyounjun-Oh/MapBarber/wiki)** is the full guide: [Getting started](https://github.com/Hyounjun-Oh/MapBarber/wiki/Getting-Started) · [Labelling](https://github.com/Hyounjun-Oh/MapBarber/wiki/Labelling) · [Smart pick](https://github.com/Hyounjun-Oh/MapBarber/wiki/Smart-Pick) · [3D boxes](https://github.com/Hyounjun-Oh/MapBarber/wiki/3D-Boxes) · [Auto 3D box labelling](https://github.com/Hyounjun-Oh/MapBarber/wiki/Auto-3D-Box-Labelling) · [Frame sequences](https://github.com/Hyounjun-Oh/MapBarber/wiki/Frame-Sequences) · [Keyboard shortcuts](https://github.com/Hyounjun-Oh/MapBarber/wiki/Keyboard-Shortcuts) · [Files and formats](https://github.com/Hyounjun-Oh/MapBarber/wiki/Files-and-Formats) · [Command line](https://github.com/Hyounjun-Oh/MapBarber/wiki/Command-Line) · [FAQ](https://github.com/Hyounjun-Oh/MapBarber/wiki/FAQ) — also in [한국어](https://github.com/Hyounjun-Oh/MapBarber/wiki/Home-ko).
 
 ## License
 

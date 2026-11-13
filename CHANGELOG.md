@@ -14,7 +14,7 @@ MapBarber now labels LiDAR point clouds, scan sequences and voxel maps. The guid
 - **Objects:** split a class into objects, merge, undo the split; colour by object.
 - **Files:** `label` / `instance` fields in PCD and PLY, LAS `classification`, SemanticKITTI `.label` per frame, `name.labels.npz` otherwise; export to SemanticKITTI, KITTI object labels and OpenPCDet.
 - **Voxels:** voxel labels by vote of their points, and a lossless way back to every point's own label.
-- `Ctrl+Z` / `Ctrl+Shift+Z` cover labels, classes, objects, boxes and tracking.
+- `Ctrl+Z` / `Ctrl+Shift+Z` cover labels, classes, objects, boxes and auto labelling.
 
 ### Smart pick
 - One click finds a **connected object**, a **flat surface** or a **smooth surface**; objects stop at the ground and, on dense data, at sharp bends; `[` / `]` loosen or tighten the last pick. Also in the voxel editor.
@@ -26,12 +26,12 @@ MapBarber now labels LiDAR point clouds, scan sequences and voxel maps. The guid
 - Unlabelled points beside a box can be selected and put into it.
 - Boxes are saved per cloud (`name.boxes.json`) or per frame (`boxes/<frame>.json`).
 
-### Auto 3D box tracking
-- Tracking **forwards or backwards in time** from every box made or corrected by hand; a track stops at the next such box of the same object, so objects labelled in a middle frame can be followed both ways.
+### Auto 3D box labelling
+- Boxes and point labels are carried **forwards or backwards in time** from every box made or corrected by hand; a run stops at the next such box of the same object, so objects labelled in a middle frame can be labelled both ways.
 - Each frame is judged only against the previous one or two frames: box overlap picks the candidate, point-to-plane alignment fits it and holds still where surfaces cannot tell (static objects no longer slide).
 - Score = 0.5 × IoU + 0.5 × alignment; frames below the accept score arrive as suggestions marked `?` and never teach the next frame.
 - The starting frame is the reference: neighbours there are never taken later; shape-changing classes stay within their labelled size.
-- *Re-track from the corrected box* carries a correction to the frames around it.
+- *Auto-label again from the corrected box* carries a correction to the frames around it.
 
 ### Frame sequences
 - KITTI odometry, KITTI raw (OXTS poses) and any folder of scans with a pose file (3×4, 4×4, TUM, CSV, timestamps in file names).
@@ -44,7 +44,7 @@ MapBarber now labels LiDAR point clouds, scan sequences and voxel maps. The guid
 - Busy dialog with progress for long work; screen-sized axes and markers; LAS / LAZ support (optional laspy).
 
 ### Documentation
-- Short README built around animations; the full guide, shortcuts and file notes moved to the wiki.
+- Short README led by a 3 × 3 animation of every feature; the full guide, shortcuts and file notes moved to the wiki.
 
 ## 1.0.0 — 2026-11-12
 

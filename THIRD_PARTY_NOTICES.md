@@ -39,10 +39,11 @@ their licenses apply to that bundle:
 
 ## Data shown in the documentation
 
-`docs/labelling.gif`, `docs/smart_pick.gif`, `docs/boxes.gif` and `docs/tracking.webp` show LiDAR scans from the
+`docs/labelling.gif`, `docs/smart_pick.gif`, `docs/boxes.gif`, `docs/auto_labelling.webp` and `docs/frames.gif`, and the
+mosaics `docs/home.webp` and `docs/home_ko.webp` that include them, show LiDAR scans from the
 [KITTI raw dataset](https://www.cvlibs.net/datasets/kitti/raw_data.php) (A. Geiger, P. Lenz, C. Stiller and
 R. Urtasun, "Vision meets Robotics: The KITTI Dataset", IJRR 2013), drive 2011_09_26_0005, licensed under
-[CC BY-NC-SA 3.0](https://creativecommons.org/licenses/by-nc-sa/3.0/). These four animations are shared under
+[CC BY-NC-SA 3.0](https://creativecommons.org/licenses/by-nc-sa/3.0/). These animations are shared under
 CC BY-NC-SA 3.0, not MIT. They are documentation only: no KITTI data is part of the program or needed to run it.
 The labels and boxes of frame 0 seen in them were made by hand for this demonstration.
 

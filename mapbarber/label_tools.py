@@ -1092,7 +1092,7 @@ class Labelling(ClassHistory):
         return self._above[key]
 
     def track_boxes(self, direction=1):
-        """Auto 3D box tracking through the frames on screen, forwards in time (direction 1) or backwards (-1).
+        """Auto 3D box labelling through the frames on screen, forwards in time (direction 1) or backwards (-1).
 
         Every box made or corrected by hand (by Auto 3D boxes, from a selection, or edited) is a starting point:
         its object is followed from that frame in the chosen direction until the range ends, the object is lost,
@@ -1189,7 +1189,7 @@ class Labelling(ClassHistory):
         box["yaw"] = float((box["yaw"] + quarter * np.pi / 2 + np.pi) % (2 * np.pi) - np.pi)
 
     def track_back(self):
-        """Auto 3D box tracking backwards in time (see track_boxes)."""
+        """Auto 3D box labelling backwards in time (see track_boxes)."""
         self.track_boxes(-1)
 
     def _aside(self, key, world, members, reach):
