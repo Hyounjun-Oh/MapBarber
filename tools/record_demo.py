@@ -1,6 +1,10 @@
 """Record the README animations by driving the real application and capturing every frame.
 
-    python tools/record_demo.py docs/        (needs ffmpeg and a display)
+    python tools/record_demo.py docs/ [name.gif ...] [--kitti=/path/to/2011_09_26_drive_0005_sync]
+
+Needs ffmpeg and a display. The labelling animations need the KITTI raw drive 2011_09_26_0005 (with its
+calib_*.txt one folder up) whose frame 0 holds labels and boxes made by hand (labels/, boxes/); they only show
+and use those, and are skipped without --kitti.
 """
 import math
 import os
@@ -37,20 +41,31 @@ class Recorder:
         self.caption = ""
         self.ripple = 0
         self.last = None
+        self.crop = None
 
     def pump(self, seconds=0.05):
         end = time.time() + seconds
         while time.time() < end:
             self.app.processEvents()
 
-    def start(self):
+    def start(self, crop=None):
+        """Begin a recording; `crop` (a widget) keeps only the part of the window that widget covers."""
         self.frame_dir = tempfile.mkdtemp(prefix="frames_", dir=self.workdir)
         self.frames = 0
+        self.crop = None
+        if crop is not None:
+            corner = crop.mapTo(self.window, QtCore.QPoint(0, 0))
+            self.crop = QtCore.QRect(corner, crop.size())
 
     def compose(self):
         image = self.window.capture().convertToFormat(QtGui.QImage.Format_RGB32)
+        shift = QtCore.QPoint(0, 0)
+        if self.crop is not None:
+            image = image.copy(self.crop)
+            shift = self.crop.topLeft()
         painter = QtGui.QPainter(image)
         painter.setRenderHint(QtGui.QPainter.Antialiasing)
+        painter.translate(-shift)
         origin = self.window.mapToGlobal(QtCore.QPoint(0, 0))
         for widget in QtWidgets.QApplication.topLevelWidgets():
             if widget is self.window or not widget.isVisible():
@@ -58,6 +73,7 @@ class Recorder:
             if isinstance(widget, (QtWidgets.QMenu, QtWidgets.QDialog)):
                 corner = widget.mapToGlobal(QtCore.QPoint(0, 0)) - origin
                 painter.drawPixmap(corner, widget.grab())
+        painter.resetTransform()
         if self.caption:
             font = painter.font()
             font.setPointSizeF(13)
@@ -71,6 +87,7 @@ class Recorder:
             painter.drawRoundedRect(box, 10, 10)
             painter.setPen(QtGui.QColor(255, 255, 255))
             painter.drawText(box, Qt.AlignCenter, self.caption)
+        painter.translate(-shift)
         if self.ripple:
             radius = 8 + (4 - self.ripple) * 6
             painter.setPen(QtGui.QPen(QtGui.QColor(255, 210, 40), 3))
@@ -146,6 +163,7 @@ class Recorder:
     def scroll_panel_to(self, widget):
         scroll = self.window.dock.widget()
         scroll.ensureWidgetVisible(widget, 0, 40)
+        scroll.horizontalScrollBar().setValue(0)
         self.pump(0.05)
 
     def vtk_to_window(self, x, y):
@@ -219,11 +237,17 @@ class Recorder:
     def canvas_click(self, row, column, modifiers=Qt.NoModifier):
         self.canvas_drag([(row, column)], modifiers=modifiers)
 
-    def write_gif(self, path, width=960):
-        palette = (f"fps={FPS},scale={width}:-1:flags=lanczos,split[a][b];[a]palettegen=max_colors=160:stats_mode=diff[p];"
-                   "[b][p]paletteuse=dither=bayer:bayer_scale=4:diff_mode=rectangle")
-        subprocess.run(["ffmpeg", "-loglevel", "error", "-y", "-framerate", str(FPS), "-i",
-                        os.path.join(self.frame_dir, "%05d.png"), "-vf", palette, path], check=True)
+    def write_gif(self, path, width=960, colours=160, dither="bayer:bayer_scale=4"):
+        """Encode the frames: a GIF, or for a .webp path an animated WebP (far smaller for whole LiDAR scans)."""
+        frames = ["-framerate", str(FPS), "-i", os.path.join(self.frame_dir, "%05d.png")]
+        if path.endswith(".webp"):
+            subprocess.run(["ffmpeg", "-loglevel", "error", "-y", *frames, "-vf", f"scale={width}:-1:flags=lanczos",
+                            "-c:v", "libwebp_anim", "-lossless", "0", "-q:v", "62", "-compression_level", "6",
+                            "-loop", "0", path], check=True)
+        else:
+            palette = (f"fps={FPS},scale={width}:-1:flags=lanczos,split[a][b];[a]palettegen=max_colors={colours}:stats_mode=diff[p];"
+                       f"[b][p]paletteuse=dither={dither}:diff_mode=rectangle")
+            subprocess.run(["ffmpeg", "-loglevel", "error", "-y", *frames, "-vf", palette, path], check=True)
         shutil.rmtree(self.frame_dir)
         print(f"{path}: {self.frames} frames, {os.path.getsize(path) // 1024} KiB")
 
@@ -340,14 +364,14 @@ def demo_voxels(rec, out):
     rec.hold(0.6)
 
     rec.say("Select islands finds the floating specks")
-    rec.click_widget(rec.panel_button("Select islands"))
+    rec.click_widget(rec.panel_button("Select small isolated clusters"))
     rec.hold(1.2)
     rec.say("Delete removes them")
     rec.shortcut("Delete")
     rec.hold(1.0)
 
     rec.say("Box: drag its arrows onto the ghost of a passer-by")
-    rec.scroll_panel_to(rec.panel_button("Erase inside"))
+    rec.scroll_panel_to(rec.panel_button("Erase inside the box"))
     editor.set_box((4.3, 2.6, 0.05), (4.7, 3.0, 1.85))
     rec.hold(0.6)
     length = editor.box_gizmo.length()
@@ -360,13 +384,13 @@ def demo_voxels(rec, out):
         rec.vtk_drag(rec.project(tip), rec.project(moved), 14)
     editor.set_box((5.15, 3.95, 0.05), (5.55, 4.35, 1.85))
     rec.hold(0.6)
-    rec.click_widget(rec.panel_button("Erase inside"))
+    rec.click_widget(rec.panel_button("Erase inside the box"))
     rec.hold(1.2)
 
     rec.say("…and fill the holes in a black monitor")
     editor.set_box((2.6, 3.6, 0.75), (3.0, 3.65, 1.1))
     rec.hold(0.8)
-    rec.click_widget(rec.panel_button("Fill"))
+    rec.click_widget(rec.panel_button("Fill the box"))
     rec.hold(1.2)
     editor.show_box.setChecked(False)
 
@@ -429,8 +453,8 @@ def demo_cloud(rec, out):
     rec.ripple = 4
     rec.hold(1.2)
     rec.say("Thin out to a 5 cm grid")
-    rec.scroll_panel_to(rec.panel_button("Thin out"))
-    rec.click_widget(rec.panel_button("Thin out"))
+    rec.scroll_panel_to(rec.panel_button("Thin out (one point per cell)"))
+    rec.click_widget(rec.panel_button("Thin out (one point per cell)"))
     rec.hold(1.2)
     rec.say("Ctrl+Z undoes it")
     rec.shortcut("Ctrl+Z")
@@ -490,7 +514,229 @@ def demo_grid(rec, out):
     rec.write_gif(out)
 
 
+KITTI = None
+KITTI_CLASSES = {"road": 40, "car": 10, "person": 30, "pole": 80, "bus": 13}
+
+
+def kitti(rec, labels=True, boxes=True):
+    """A working copy of a KITTI raw drive (the scans stay where they are and are only read), opened in the editor.
+
+    labels / boxes: also copy the drive's labels/ and boxes/ folders (the frame labelled by hand).
+    """
+    root = os.path.join(rec.workdir, "kitti")
+    target = os.path.join(root, "drive")
+    shutil.rmtree(root, ignore_errors=True)
+    os.makedirs(target)
+    parent = os.path.dirname(os.path.abspath(KITTI))
+    for name in os.listdir(parent):
+        if name.startswith("calib_") and name.endswith(".txt"):
+            shutil.copy(os.path.join(parent, name), root)
+    os.symlink(os.path.join(os.path.abspath(KITTI), "velodyne_points"), os.path.join(target, "velodyne_points"))
+    shutil.copytree(os.path.join(KITTI, "oxts"), os.path.join(target, "oxts"))
+    for name, wanted in (("labels.yaml", True), ("labels", labels), ("boxes", boxes)):
+        source = os.path.join(KITTI, name)
+        if wanted and os.path.isdir(source):
+            shutil.copytree(source, os.path.join(target, name))
+        elif wanted and os.path.isfile(source):
+            shutil.copy(source, target)
+    rec.window.open(target)
+    rec.pump(0.8)
+    return rec.window.editor
+
+
+def hand_boxes(editor):
+    """The boxes of the frame labelled by hand (frame 0), in world coordinates, by object number."""
+    from mapbarber import boxes
+    path = os.path.join(KITTI, "boxes", editor.sequence.names[0] + ".json")
+    return {box["instance"]: boxes.moved(box, editor.sequence.poses[0]) for box in boxes.load(path)}
+
+
+def show(editor, low, high, direction=(-1.0, -0.9, 0.85)):
+    editor.viewport.look_from(direction, (0, 0, 1), (low[0], high[0], low[1], high[1], low[2], high[2]))
+    editor.viewport.fit_axes()
+    editor.viewport.render()
+
+
+def spot(editor, box, frame, grow=1.0):
+    """A point of a frame inside a (world) box grown by `grow`, the one nearest its centre: a safe place to click."""
+    from mapbarber import boxes
+    ids = editor._key_ids(frame)
+    inside = ids[boxes.inside(dict(box, size=[v + grow for v in box["size"]]), editor.cloud.xyz[ids])]
+    centre = np.asarray(box["center"])
+    return editor.cloud.xyz[inside[np.argmin(np.linalg.norm(editor.cloud.xyz[inside] - centre, axis=1))]]
+
+
+def zoom(editor, box, pad=7.0, direction=(-0.8, -1.0, 0.8)):
+    centre = np.asarray(box["center"], float)
+    show(editor, centre - [pad, pad, pad / 3], centre + [pad, pad, pad / 3], direction)
+
+
+def around(boxes, pad=3.0):
+    centres = np.array([box["center"] for box in boxes])
+    return centres.min(axis=0) - [pad, pad, 1.5], centres.max(axis=0) + [pad, pad, 2.0]
+
+
+def tree_item(rec, tree, item):
+    return rec.in_window(tree.viewport(), QtCore.QPointF(tree.visualItemRect(item).center()))
+
+
+def demo_labelling(rec, out):
+    editor = kitti(rec, labels=True, boxes=False)
+    known = hand_boxes(editor)
+    editor.timeline.slider.on_range(0, 0)
+    rec.pump(0.5)
+    show(editor, (-14, -12, -2.5), (16, 12, 2), (-0.8, -1.0, 0.9))
+    rec.start()
+    rec.say("KITTI drive 0005, frame 0 labelled by hand: cars, a bus, pedestrians, poles", 2.0)
+    rec.scroll_panel_to(editor.class_list)
+    rec.say("The class list counts the points of every class; the corner bar shows the active one")
+    rec.glide(rec.in_window(editor.class_list), 10)
+    rec.hold(1.4)
+    editor.set_active(KITTI_CLASSES["person"])
+    solo = rec.panel_button(editor.tr("label_solo"))
+    rec.say("Show only this class: the pedestrians")
+    rec.click_widget(solo)
+    rec.hold(1.6)
+    rec.say("Select all of this class")
+    rec.click_widget(rec.panel_button(editor.tr("label_select_class")))
+    rec.hold(1.4)
+    rec.shortcut("Escape")
+    rec.click_widget(solo)
+    rec.hold(0.6)
+    rec.say("Colour by object: every instance gets its own shade of its class")
+    rec.scroll_panel_to(editor.colour_box)
+    rec.glide(rec.in_window(editor.colour_box), 8)
+    editor.colour_box.setCurrentIndex(editor.colour_box.findData("instance"))
+    rec.ripple = 4
+    rec.hold(1.8)
+    editor.colour_box.setCurrentIndex(editor.colour_box.findData("label"))
+    zoom(editor, known[8], 7.0)
+    rec.shortcut("V")
+    rec.say("Labelled points are protected: a wide rectangle takes only what is still unlabelled")
+    car = np.asarray(known[8]["center"])
+    rec.vtk_drag(rec.project(car + [-4, -3, -1]), rec.project(car + [4, 3, 1.5]), 16, shift=True)
+    rec.hold(2.0)
+    rec.shortcut("Escape")
+    rec.hold(0.6)
+    rec.write_gif(out)
+
+
+def demo_smart_pick(rec, out):
+    editor = kitti(rec, labels=True, boxes=False)
+    known = hand_boxes(editor)
+    editor.timeline.slider.on_range(0, 0)
+    rec.pump(0.5)
+    show(editor, (-12, -12, -2.5), (16, 12, 2), (-0.8, -1.0, 0.9))
+    rec.start()
+    rec.say("Smart pick (W) against the hand labels of frame 0", 1.6)
+    rec.say("Protection off, so labelled points can be picked (the labels stay as they are)")
+    rec.glide(rec.in_window(editor.label_bar.protect), 10)
+    rec.ripple = 4
+    editor.label_bar.protect.click()
+    rec.hold(1.0)
+    rec.shortcut("W")
+    rec.scroll_panel_to(editor.smart_box)
+    editor.smart_box.setCurrentIndex(editor.smart_box.findData("object"))
+    for number, text in ((8, "One click: the car, without the road under it"),
+                         (1, "A pedestrian, without the ground under the feet"),
+                         (13, "A pole, cut off where it meets the ground")):
+        zoom(editor, known[number], 5.0)
+        rec.say(text)
+        rec.hold(0.6)
+        rec.vtk_click(rec.project(spot(editor, known[number], 0)), 12)
+        rec.hold(1.6)
+        rec.shortcut("Escape")
+    show(editor, (-12, -10, -2.5), (8, 10, 2), (-0.7, -1.0, 0.75))
+    rec.say("Flat surface: the road with one click")
+    rec.glide(rec.in_window(editor.smart_box), 8)
+    editor.smart_box.setCurrentIndex(editor.smart_box.findData("plane"))
+    editor.reach.setValue(25.0)
+    editor.flatness.setValue(0.08)
+    rec.ripple = 4
+    rec.hold(0.6)
+    pose = editor.sequence.poses[0]
+    rec.vtk_click(rec.project(spot(editor, {"center": list(pose[:3, :3] @ [4.0, 0.0, -1.73] + pose[:3, 3]),
+                                            "size": [1.0, 1.0, 0.4], "yaw": 0.0}, 0)), 12)
+    rec.hold(1.8)
+    rec.shortcut("Escape")
+    rec.write_gif(out)
+
+
+def demo_boxes(rec, out):
+    editor = kitti(rec, labels=True, boxes=False)
+    known = hand_boxes(editor)
+    editor.timeline.slider.on_range(0, 0)
+    rec.pump(0.5)
+    show(editor, (-12, -12, -2.5), (16, 10, 2), (-0.8, -1.0, 0.9))
+    rec.start()
+    rec.say("Frame 0 labelled by hand: cars, a bus, pedestrians, poles", 1.8)
+    for name in ("car", "person"):
+        editor.set_active(KITTI_CLASSES[name])
+        rec.scroll_panel_to(editor.class_boxes)
+        rec.say(f"Auto 3D boxes: every {name} is split off and gets an upright box")
+        rec.click_widget(editor.class_boxes)
+        rec.hold(1.6)
+    rec.scroll_panel_to(editor.box_list)
+    rec.say("Every box is listed with its size; pick one to edit it")
+    item = editor.box_list.topLevelItem(0)
+    rec.glide(tree_item(rec, editor.box_list, item), 10)
+    rec.ripple = 4
+    editor.box_list.setCurrentItem(item)
+    rec.hold(1.4)
+    rec.say("Edit centre, size and yaw in the fields")
+    yaw = editor.box_fields[6]
+    rec.glide(rec.in_window(yaw), 10)
+    start = yaw.value()
+    for value in np.linspace(start, start + 25, 6):
+        yaw.setValue(float(value))
+        rec.frame(2)
+    rec.hold(0.8)
+    rec.say("Refit to its points")
+    rec.click_widget(rec.panel_button("Refit to its points"))
+    rec.hold(1.4)
+    rec.write_gif(out)
+
+
+def demo_tracking(rec, out):
+    editor = kitti(rec, labels=True, boxes=True)
+    known = hand_boxes(editor)
+    last = len(editor.sequence) - 1
+    editor.timeline.slider.on_range(0, 0)
+    rec.pump(0.5)
+    low, high = around(list(known.values()), 6.0)
+    show(editor, low, high, (-0.8, -1.0, 1.0))
+    rec.start(crop=editor.timeline.parentWidget())
+    rec.say("Frame 0 labelled by hand, with its 3D boxes", 1.6)
+    rec.say(f"Set the timeline to the whole drive: frames 0–{last}")
+    rec.glide(rec.in_window(editor.timeline.slider), 10)
+    editor.timeline.slider.on_range(0, last)
+    rec.pump(0.5)
+    show(editor, *editor.data_bounds, (-0.6, -1.0, 1.4))
+    rec.hold(1.4)
+    forward = rec.panel_button(editor.tr("track"))
+    rec.scroll_panel_to(forward)
+    rec.say("▶ Auto 3D box tracking forwards in time")
+    rec.click_widget(forward)
+    rec.hold(1.4)
+    rec.say(f"The result, scan by scan from frame 0 to {last}, with the view fixed to the LiDAR")
+    editor.timeline.anchor.setCurrentIndex(editor.timeline.anchor.findData("lidar"))
+    editor.timeline.slider.on_range(0, 0)
+    rec.pump(0.3)
+    pose = editor.sequence.poses[0]
+    centre = pose[:3, 3]
+    show(editor, centre - [22, 22, 3], centre + [22, 22, 3], (-0.5, -1.0, 1.1))
+    rec.hold(0.6)
+    for frame in range(1, last + 1):
+        editor.timeline.slider.on_range(frame, frame)
+        rec.pump(0.05)
+        rec.caption = f"Auto 3D box tracking from the hand-labelled frame 0 — frame {frame} / {last}"
+        rec.frame()
+    rec.hold(1.2)
+    rec.write_gif(out, width=720)
+
+
 def main(out_dir):
+    global KITTI
     from mapbarber.app import launch
     os.makedirs(out_dir, exist_ok=True)
     workdir = tempfile.mkdtemp(prefix="mapbarber_demo_")
@@ -502,15 +748,21 @@ def main(out_dir):
     recorder = Recorder(app, window, workdir)
     recorder.pump(1.0)
     demos = (("overview.gif", demo_overview), ("voxel.gif", demo_voxels), ("cloud.gif", demo_cloud),
-             ("grid.gif", demo_grid))
-    selected = sys.argv[2:] or [name for name, _ in demos]
+             ("grid.gif", demo_grid), ("labelling.gif", demo_labelling), ("smart_pick.gif", demo_smart_pick),
+             ("boxes.gif", demo_boxes), ("tracking.webp", demo_tracking))
+    KITTI_DEMOS = {"labelling.gif", "smart_pick.gif", "boxes.gif", "tracking.webp"}
+    options = [arg for arg in sys.argv[2:] if arg.startswith("--kitti=")]
+    KITTI = options[0].split("=", 1)[1] if options else None
+    selected = [arg for arg in sys.argv[2:] if not arg.startswith("--")] or [name for name, _ in demos]
+    if KITTI is None:
+        selected = [name for name in selected if name not in KITTI_DEMOS]
     for name, demo in demos:
         if name in selected:
             window.close_all(ask=False)
             recorder.pump(0.3)
             demo(recorder, os.path.join(out_dir, name))
     for editor in window.documents:
-        editor.map.mark_saved() if hasattr(editor, "map") else editor.cloud.mark_saved()
+        editor.mark_saved()
     window.close()
     shutil.rmtree(workdir)
     return 0

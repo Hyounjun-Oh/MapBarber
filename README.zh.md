@@ -9,173 +9,63 @@
   <a href="README.md">English</a> · <a href="README.ko.md">한국어</a> · <a href="README.ja.md">日本語</a> · <b>简体中文</b> · <a href="README.de.md">Deutsch</a> · <a href="README.es.md">Español</a>
 </p>
 
-**机器人地图的理发店。** 修剪噪声传感器留下的多余体素、点和像素，并补上缺失的部分。在一个窗口中编辑 OctoMap 八叉树、点云和 ROS 二维占据栅格。
+**机器人地图的理发店。** 清理和编辑 OctoMap 体素地图、点云和 ROS 二维占据栅格；从 1.1 起还能标注 LiDAR 点云和扫描序列。全部离线，在一个窗口中完成。
 
-[![tests](https://github.com/Hyounjun-Oh/mapbarber/actions/workflows/tests.yml/badge.svg)](https://github.com/Hyounjun-Oh/mapbarber/actions/workflows/tests.yml)
+[![tests](https://github.com/Hyounjun-Oh/MapBarber/actions/workflows/tests.yml/badge.svg)](https://github.com/Hyounjun-Oh/MapBarber/actions/workflows/tests.yml)
 ![python](https://img.shields.io/badge/python-3.10%2B-blue)
 ![license](https://img.shields.io/badge/license-MIT-green)
+![version](https://img.shields.io/badge/version-1.1.0-orange)
 
-![在标签页中打开三种地图、把体素地图转换为二维栅格并切换语言](docs/overview.gif)
+![在标签页中打开三种地图，把体素地图转换为二维栅格，并切换语言](docs/overview.gif)
 
-打开或拖入文件后，MapBarber 会识别每个文件的内容，并用对应的编辑器在单独的标签页中打开：八叉树用体素编辑器，点云用点云编辑器，二维占据栅格用绘图式编辑器。三种格式之间可以互相转换，保存之前的每一步编辑都可以撤销。
+## 1.1 新功能：LiDAR 标注
+
+### 点云标注
+类别、标注画笔、已标注点保护、检查工具、物体，以及导出为 SemanticKITTI、KITTI 和 OpenPCDet 格式。
+
+![点云标注](docs/labelling.gif)
+
+### 智能选取
+点击一次即可选中整辆车、行人或杆子而不带地面，或选中整个平面。
+
+![智能选取](docs/smart_pick.gif)
+
+### 3D 包围盒
+把类别拆分为物体并为每个物体生成包围盒；少数标错的点不会撑大包围盒。
+
+![3D 包围盒](docs/boxes.gif)
+
+### 自动 3D 包围盒跟踪
+按时间顺序或倒序在整段行驶中跟踪包围盒。示例：从一帧手动标注跟踪到全部 154 帧扫描。
+
+![自动 3D 包围盒跟踪](docs/tracking.webp)
+
+<sub>标注动画：[KITTI raw dataset](https://www.cvlibs.net/datasets/kitti/raw_data.php)，行驶 2011_09_26_0005 (Geiger et al., CC BY-NC-SA 3.0)，第 0 帧为手动标注。</sub>
+
+## 编辑器
+
+| 体素地图 | 点云 | 二维占据栅格 |
+|---|---|---|
+| ![体素地图](docs/voxel.gif) | ![点云](docs/cloud.gif) | ![二维占据栅格](docs/grid.gif) |
+| OctoMap `.bt` / `.ot`：擦除、添加、孤立块、包围框、切片、尺子 | PCD、PLY、LAS/LAZ、文本、`.bin`：噪声过滤、抽稀、按字段着色 | map_server YAML + PGM/PNG：画笔、直线、填充、去斑点、裁剪边缘 |
+
+三种地图之间可无损转换，保存前的所有编辑都可撤销。
 
 ## 快速开始
 
 ```bash
-git clone https://github.com/Hyounjun-Oh/mapbarber.git
-cd mapbarber
-./mapbarber.sh                                      # 空窗口 — 把地图拖进来
-./mapbarber.sh demo/office_octomap.bt demo/warehouse_map.yaml   # 或直接打开文件 (每个文件一个标签页)
+git clone https://github.com/Hyounjun-Oh/MapBarber.git
+cd MapBarber
+./mapbarber.sh                                  # 空窗口 — 把地图拖进来
+./mapbarber.sh demo/office_octomap.bt           # 或直接打开文件（每个文件一个标签页）
 ```
 
-首次运行时会在 `.venv/` 中创建专用虚拟环境并安装 NumPy、SciPy、VTK 和 PySide6 (约 500 MB)，之后会立即启动。需要 Python 3.10 或更高版本以及桌面环境。支持 X11；在 Wayland 下脚本会自动选择 XWayland。
+首次运行会在 `.venv/` 中安装 NumPy、SciPy、VTK 和 PySide6（约 500 MB）；需要 Python 3.10+ 和桌面环境。也可以 `pip install .`（`pip install ".[las]"` 增加 LAS/LAZ 支持）。[`demo/`](demo/README.md) 提供带已知缺陷的地图和检查清单。
 
-更喜欢 pip？`pip install .` 会安装功能相同的 `mapbarber` 命令。
+## 文档
 
-**用逼真的数据试一试：** [`demo/`](demo/README.md) 中有通过模拟传感器生成的地图，缺陷和真实尺寸都是已知的，还附有分步检查清单。
-
-## 支持的格式
-
-| 地图类型 | 文件 | 打开方式 |
-|---|---|---|
-| 体素地图 | OctoMap `.bt` (二进制)、`.ot` (`OcTree`、`OcTreeStamped`、`ColorOcTree`)、体素 `.npz` | 体素编辑器 |
-| 点云 | `.pcd` (ascii、binary、有序)、`.ply` (ascii、binary)、`.xyz` / `.txt` / `.csv` (可带 RGB 列)、`.npy`、`.npz` | 点云编辑器 |
-| 点云（更多） | `.las` / `.laz`（需先 `pip install "laspy[lazrs]"`），LiDAR `.bin` 扫描 (x y z intensity) | 点云编辑器 |
-| 帧序列 | 带位姿的扫描**文件夹**：KITTI odometry (`velodyne/` + `poses.txt`)、KITTI raw (`velodyne_points/` + `oxts/`)，或任意包含 `.pcd` / `.ply` / `.las` / `.bin` 的文件夹 + 位姿文件（TUM、3×4 或 4×4 矩阵、带表头的 CSV） | 点云编辑器（标注模式） |
-| 二维占据栅格 | map_server 的 `.yaml` + `.pgm` / `.png` / `.bmp`，或仅图像 | 栅格编辑器 |
-
-先看扩展名，再看文件签名，所以像 `map.bt.bak_20240101` 这样的备份也能作为八叉树打开。只打开 `.pgm` 时，如果旁边有指向该图像的 `.yaml`，也会一并读取。损坏或无关的文件会被拒绝，并给出简短原因。
-
-## 体素地图编辑器
-
-![删除漂浮噪点和残影、补洞并添加体素](docs/voxel.gif)
-
-- **工具：** 浏览 `H`、选择 `V`、擦除 `E`、添加 `B`、测量 `I`。画笔是 1–31 格的立方体，用 `[` 和 `]` 调整大小。添加会在点击的面外侧增加一层，或把体素放在水平工作平面上。
-- **选择：** `Shift`+拖动选择屏幕矩形内的内容 (*仅最前一层* 会跳过被遮挡的体素)。右键单击取消选择光标下的内容，`Shift`+右键拖动按矩形取消选择。
-- **选择孤立块** 会找出不与其他体素相连的小块，也就是深度相机产生的漂浮噪点。它只做选择，确认后再按 `Delete`。
-- **方框：** 在三维视图中拖动彩色箭头可沿 x、y、z 移动，拖动面上的圆点可调整大小 (也可以输入数值)。然后可以选择、擦除或填充内部。
-- **切片：** 用 x、y 或 z 方向的平面切开空间，只编辑一侧；另一侧会被隐藏并受到保护。拖动平面上的箭头移动位置，可切换到另一侧，完成后点击 *恢复视图*。
-- **标尺：** 点击两个体素即可读出距离、Δx/Δy/Δz 以及以体素计的长度。按住 `Shift` 锁定到坐标轴，勾选 *吸附到体素中心* 可测量中心间距离。
-- 上次保存后添加的体素显示为白色，已选内容显示为粉色。
-
-## 点云编辑器
-
-![选择离群点、擦除条纹噪声、按 intensity 着色并抽稀](docs/cloud.gif)
-
-- **工具：** 浏览 `H`、选择 `V`、擦除 `E`、测量 `I`。以点击点为中心的球形画笔 (`[` / `]` 调整半径)、矩形选择和右键取消选择。
-- **噪声过滤** 可选择统计离群点 (到邻居的平均距离明显偏大) 或稀疏点 (半径内邻居过少)。
-- **抽稀** 在每个立方格只保留一个点。**方框** 和 **切片** 与体素编辑器相同，方框还可以擦除外部的所有点。
-- **着色依据** 可选高度、存储的 RGB，或 `intensity`、`ring` 等任意数值字段。
-- **标尺** 测量两个选中点之间的实际距离。
-- 点只会被删除，因此保存为 PCD 时保留下来的点的所有字段都不会丢失，保存为 PLY 时所有标量字段都不会丢失。
-
-## 标注
-
-在点云或体素编辑器中点击工具栏的**标注模式**（`Ctrl+L`）。工具和面板切换为标注用，关闭后编辑模式按原样恢复。全部功能离线在 CPU 上运行，原始点不会被移动或丢弃。
-
-- **类别：** 包含编号、名称、颜色以及在地图中的含义（障碍物、可通行表面、忽略）的列表。提供室内机器人、SemanticKITTI 和 LAS 代码预设，可载入或保存 `labels.yaml`。眼睛隐藏类别，锁冻结类别；点击表头的眼睛或锁可一次应用到所有类别。
-- **标注：** 用任意工具选择后按 `Enter`（*标签映射*）或 `Ctrl+1`…`Ctrl+9`，或用标注画笔 `B` 涂抹。`Ctrl`+拖动在视图固定时涂抹，`Ctrl`+右键拖动撤回。
-- **保护已标注的点**（视图右上角的开关，或 `P`）：已标注的点不会被选中，标签也不会改变。大范围选择墙面或地面时，会跳过之前标注的物体。
-- **智能选取 `W`：** 点击查找*相连物体*、*平面*或*光滑表面*。相连物体在地面（离地间隙）处停止，在稠密数据上还会在朝向不同的大面处停止；`[` / `]` 放宽或收紧上一次选取。**地面滤波**可选中地面或地面上的所有物体。
-- **检查：** 进度条、*下一个未标注*（`N`）、可疑标签、小孤岛，以及*为空隙建议标签*；建议在确认前以淡色显示。
-- **物体与 3D 包围盒：** 选择类别并点击 *自动3D包围盒: …*：该类别的点被拆分为单个物体，每个物体获得一个可编辑、可重新拟合、可删除的直立包围盒。*取消物体拆分 (保留类别)* 把实例还原为普通类别。 少数标错的点不会破坏包围盒：远离物体主体的点团和空隙之外的细尾不参与拟合，包围盒的朝向对齐物体的表面。包围盒列表显示每个盒排除的点数，*选择跑出包围盒的已标注点* 可选中它们以便查看或清除标签（关闭 *拟合包围盒时忽略离群点* 则包住所有已标注的点）。
-- **帧：** 打开扫描文件夹。视图下方的时间轴设定显示的起止帧；各帧按位姿合并，而每个标签仍保存在自己的帧中。可把标签作为建议传到其他帧，也可列出帧间冲突。 同一条上的*视图固定于*可选择切换帧时保持不动的基准：世界、LiDAR，或包围盒列表中所选的包围盒。
-- **跟踪：** 先为某一帧的物体生成3D包围盒，设定帧范围，然后点击 *自动3D包围盒跟踪 ▶ 按时间顺序* 或 *◀ 按时间倒序*。所有手动创建或修正的框都是起点，所以在中间帧标注的物体也能向两个方向跟踪，遇到同一物体下一个手动创建或修正的框就停下。每一帧只依据它前面的一两帧，用包围盒重叠（IoU）和点配准（ICP）找到物体，框也只包住这些帧中看到的部分，所以误入的点会在两帧内离开框。起始帧是基准：该帧中在物体旁边但不属于它的点之后也不会被纳入，形状会变的物体（人）不会大于标注时的大小。低于确认分数的帧只纳入配准能解释的点，以带 `?` 的建议出现，也不用来判断下一帧。如果跟踪在中途出错，在某一帧中修正框（移动、旋转、改尺寸或重新拟合）并点击 *从修正的框重新跟踪*。*选择包围盒旁的未标注点* 可查看仍挂在物体上的点，*把这些点并入包围盒* 可把它们纳入。
-- **体素：** 点云转为体素后，每个体素取其中多数点的类别。转回点云时每个点恢复自己的标签；只有你重新标注过的体素才把类别传给其中的点。
-- **文件：** 格式允许时标签保存在文件内（PCD、PLY 的 `label` / `instance` 字段，LAS 的 `classification`），`.bin` 序列保存为 `.label` 文件，否则保存在文件旁（`name.labels.npz`）。*以标准格式导出* 可写出 SemanticKITTI 序列、KITTI object 标签和 OpenPCDet 包围盒。
-- `Ctrl+Z` 可撤销标签、类别、包围盒和跟踪。标注模式下 `Delete` 不会删除点：它清除标签，或删除最后点击的包围盒或物体。
-
-## 二维占据栅格编辑器
-
-![清除噪点、封住门口、绘制障碍物、补洞并裁剪边框](docs/grid.gif)
-
-- **工具：** 浏览 `H`、画笔 `B`、直线 `L`、矩形 `R`、填充 `G`、测量 `I`。用 `O`、`F`、`U` 绘制 *占据*、*空闲*、*未知*，用 `[` / `]` 调整画笔粗细。
-- **与 PowerPoint 相同的约束：** 按住 `Shift` 可把直线 (和标尺) 锁定为 0°、45° 或 90°，并把矩形变为正方形；`Alt` 从中心绘制矩形；画笔下 `Shift`+点击会从上一个点画直线。
-- **清除噪点** 把孤立的小块占据区域变为空闲。
-- **裁掉未知边框** 裁掉未探索的边距，并移动原点使地图上的内容位置不变。
-- **地图信息** 可编辑分辨率和原点 (x、y、yaw)。红色和绿色箭头表示地图原点。
-- **标尺** 以米和像素显示距离，并以地图坐标系给出 Δx/Δy (包括旋转的原点)。
-- 缩小时细墙依然可见：占据优先于未知，未知优先于空闲。
-- 保存时会并排写出图像和 map_server YAML (`trinary`、`scale`、`raw` 模式及 `negate`)。
-
-## 同时编辑多张地图
-
-每个文件在单独的标签页中打开，再次打开已打开的文件会切换到它的标签页。`Ctrl+Tab` / `Ctrl+Shift+Tab` 切换标签页，`Ctrl+W` 关闭 (有未保存的更改时会先询问)。也可以一次拖入多个文件。
-
-**转换** 菜单会把当前地图转换为另一种类型并在新标签页中打开，原地图保持不变：
-
-| 源 \ 目标 | 体素地图 | 点云 | 二维栅格 |
-|---|---|---|---|
-| 体素地图 | — | 体素中心 | 投影一个高度范围 |
-| 点云 | 按指定尺寸体素化 | — | 体素化后投影 |
-| 二维栅格 | 按高度拉伸墙体 | — | — |
-
-## 命令行
-
-不带 `--output` 或 `--info` 时会打开编辑器。带上它们时不显示窗口，直接在终端中处理：
-
-```bash
-./mapbarber.sh room.bt --info
-./mapbarber.sh room.bt --remove-islands 20 -o room_clean.bt
-./mapbarber.sh room.bt --z-band 0.1 1.8 -o floor.yaml          # 八叉树 -> ROS 地图
-./mapbarber.sh floor.yaml --clear-speckles 4 -o floor_clean.yaml
-./mapbarber.sh floor.yaml --wall-height 2.0 -o walls.bt        # ROS 地图 -> 八叉树
-./mapbarber.sh scan.pcd --remove-outliers 16 2.0 -o scan_clean.pcd
-./mapbarber.sh scan.pcd -r 0.05 -o scan.bt                     # 点云 -> 八叉树
-```
-
-输出文件的扩展名决定输出类型。
-
-## 键盘快捷键
-
-快捷键遵循常见的桌面惯例：工具和约束参照 Photoshop、Figma 和 PowerPoint，文件和编辑参照操作系统标准。在 macOS 上 `Ctrl` 为 `⌘`。
-
-| 按键 | 操作 |
-|---|---|
-| `Ctrl+O` / `Ctrl+S` / `Ctrl+Shift+S` | 打开 / 保存 / 另存为或导出 |
-| `Ctrl+N` / `Ctrl+Shift+N` | 新建体素地图 / 新建二维栅格 |
-| `Ctrl+W` / `Ctrl+Tab` / `Ctrl+Shift+Tab` | 关闭标签页 / 下一个 / 上一个标签页 |
-| `Ctrl+Z` / `Ctrl+Shift+Z` 或 `Ctrl+Y` | 撤销 / 重做 |
-| `H` `V` `E` `B` `L` `R` `G` `I` | 浏览、选择、擦除、添加·画笔、直线、矩形、填充、测量 |
-| `[` / `]` | 缩小 / 放大画笔 |
-| `Delete` / `Backspace` | 删除所选 / 撤销上一步选择 |
-| `Ctrl+A` / `Ctrl+Shift+I` / `Esc` 或 `Ctrl+D` | 选择全部可见项 / 反选 / 取消选择 |
-| 左键拖动 / 中键拖动或 `Space`+拖动 / 滚轮 | 旋转 / 平移 / 缩放 (二维：浏览工具下左键拖动平移) |
-| `Shift`+拖动 / `Shift`+右键拖动 / 右键单击 | 矩形选择 / 矩形取消选择 / 取消选择 |
-| `Ctrl`+拖动 | 视图不动，用画笔连续涂抹 (选择或擦除) |
-| 绘制时按 `Shift` / `Alt` | 锁定 0°·45°·90° 或正方形 / 从中心绘制 |
-| `1` `3` `7` / `0` 或 `Home` | 前视、侧视、俯视 / 等轴测视图 (小键盘也可) |
-| `Ctrl+=` / `Ctrl+-` / `Ctrl+0` | 放大 / 缩小 / 适应窗口 (二维) |
-| `F11` / `F1` | 全屏 / 当前编辑器的操作说明 |
-| `Ctrl+L` | 开启 / 关闭标注模式 |
-| `B` / `W`（标注模式） | 标注画笔 / 智能选取 |
-| `Enter` / `Ctrl+1`…`Ctrl+9` / `Ctrl+0` 或 `Delete` | 用当前类别 / 第 n 个类别标注所选点 / 清除标签 |
-| `P` / `N` / `Alt`+点击 | 保护已标注的点 / 下一个未标注区域 / 取光标下的类别 |
-| `Ctrl`+右键拖动 | 视图固定，用画笔撤回（取消选择或清除标签） |
-| `,` / `.`  ·  点击时间轴后按 `←` / `→` | 上一帧 / 下一帧  ·  帧范围按自身宽度滑动（`Shift`：每次一帧） |
-
-## 语言
-
-界面支持 English、한국어、日本語、简体中文、Deutsch 和 Español，可在 **语言** 菜单中切换，选择会被记住。如需添加语言，复制 `mapbarber/locales/en.json` 并翻译其中的值，在 `mapbarber/i18n.py` 的 `LANGUAGES` 中加入语言代码，然后运行测试——测试会检查每个键和占位符是否齐全。
-
-## 文件说明
-
-- **八叉树文件保留原有信息。** 从 `.bt`、`.ot` 读入的空闲空间会原样写回，只在添加体素的位置被切开。`.ot` 还保留每个单元的占用概率值以及 `ColorOcTree` 的颜色。新添加的体素取 log-odds 3.5 (p ≈ 0.97) 和白色，擦除的体素变为 *未知* 而不是空闲。
-- **格式存不下的信息会在写入前说明。** 把 `.ot` 地图存为 `.bt` 时，数值只剩占用/空闲且颜色丢失；把八叉树存为点云时空闲空间丢失。对话框会准确列出将被舍弃的内容（命令行输出到 stderr），在你同意之前不会写入任何内容。
-- **PCD** 保留每个点的全部字段、`VIEWPOINT`，并且在没有删除点时保留有序的 `WIDTH`/`HEIGHT`。**PLY** 保留所有标量字段；向量字段和 64 位整数无法存储并会提示，源文件中的 face 等非顶点元素同样会提示。`.xyz`/`.csv` 保存坐标（六位小数）以及 RGB（如有），`.npy` 只保存坐标。不支持压缩二进制 PCD。*抽稀* 保留每个格子中最先读入的点。
-- **栅格** 遵循 map_server 规则：`trinary`、`scale`、`raw` 模式，`negate`，以及 YAML 中的占用/空闲阈值。编辑器使用三种状态，但未改动的单元按原像素值保存，因此带灰度的 `scale`/`raw` 地图在编辑其他位置后保持不变。
-- **备份：** 覆盖文件时会把原文件保留为 `name.bak_YYYYmmdd_HHMMSS`。可在文件菜单中关闭。
-
-## 实现原理
-
-MapBarber 是根据公开的文件结构独立编写的实现，没有使用 OctoMap、PCL 或 map_server 的源代码，也不是由它们派生而来。
-
-- 八叉树文件以 *线性八叉树* 的方式读写。占据的格子组成一个已排序的 Morton 码数组，树的每个节点都是该数组中的一段连续区间，通过二分查找定位，不构建指针树。
-- 编辑在已排序的压缩格子键数组上通过集合运算完成，撤销和重做也采用同样的方式。
-- 连通分量 (孤立块、噪点) 和邻域查询使用 SciPy，渲染使用 Qt 窗口中的 VTK 字形。
+完整指南见 **[Wiki](https://github.com/Hyounjun-Oh/MapBarber/wiki)**（英文、韩文）： [入门](https://github.com/Hyounjun-Oh/MapBarber/wiki/Getting-Started) · [标注](https://github.com/Hyounjun-Oh/MapBarber/wiki/Labelling) · [智能选取](https://github.com/Hyounjun-Oh/MapBarber/wiki/Smart-Pick) · [3D 包围盒](https://github.com/Hyounjun-Oh/MapBarber/wiki/3D-Boxes) · [自动 3D 包围盒跟踪](https://github.com/Hyounjun-Oh/MapBarber/wiki/Auto-3D-Box-Tracking) · [帧序列](https://github.com/Hyounjun-Oh/MapBarber/wiki/Frame-Sequences) · [快捷键](https://github.com/Hyounjun-Oh/MapBarber/wiki/Keyboard-Shortcuts) · [文件格式](https://github.com/Hyounjun-Oh/MapBarber/wiki/Files-and-Formats) · [命令行](https://github.com/Hyounjun-Oh/MapBarber/wiki/Command-Line) · [FAQ](https://github.com/Hyounjun-Oh/MapBarber/wiki/FAQ)
 
 ## 许可证
 
-采用 [MIT](LICENSE) 许可证。可以自由使用、修改和再分发 (包括商业用途)，只需在副本中保留版权声明和许可证全文。代码、翻译、标志、图标以及示例和演示地图均在此范围内，且全部为本项目原创。
-
-所依赖的库遵循各自的许可证：PySide6 (LGPL-3.0)、VTK、NumPy 和 SciPy (BSD-3-Clause)。从源码运行或用 pip 安装时无需额外处理；如果要再分发包含这些库的打包版本，请参阅 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。贡献内容按相同许可证接受 ([CONTRIBUTING.md](CONTRIBUTING.md))。
+[MIT](LICENSE) — 可自由使用、修改和再分发，包括商业用途。依赖库遵循各自的许可证（PySide6 LGPL-3.0；VTK、NumPy、SciPy BSD-3-Clause），包括标注动画中使用的 KITTI 数据，详见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。[更新日志](CHANGELOG.md) · [贡献](CONTRIBUTING.md) · [安全](SECURITY.md)
