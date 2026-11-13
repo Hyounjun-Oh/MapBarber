@@ -10,8 +10,8 @@ EDGES = ((0, 1), (1, 2), (2, 3), (3, 0), (4, 5), (5, 6), (6, 7), (7, 4), (0, 4),
 
 
 TAIL_SHARE = 0.02
-GROUP_SHARE = 0.05
-OUTSIDE_SHARE = 0.10
+GROUP_SHARE = 0.02
+OUTSIDE_SHARE = 0.05
 FEW = 3
 TAIL_LEAST = 20
 
@@ -56,13 +56,12 @@ def body(points, gap):
     Two kinds of points are left out, both judged against how far apart the object's own points lie, so a
     thinly scanned object is not taken apart:
     - small groups standing apart from the main body: further than `gap` (or three times the usual point
-      spacing), each under a twentieth of the body or of three points at most, together a tenth of all
-      points at most, smallest first;
+      spacing), each of at most 2 % of the points (or three), together 5 % at most, smallest first;
     - seen along each side of the box, a thin tail: at most 2 % of the points (or three) lying beyond an
       empty stretch of half a `gap` that is also three times wider than any inside the body. Objects of
       fewer than 20 points are too thin to judge this way.
-    Both together never take more than that tenth; an object with more loose points than that is ragged,
-    not spoiled. These are typically slips of the brush or points of a neighbour.
+    Both together never take more than those 5 %; an object with more loose points than that is ragged, or
+    has parts the scan saw only thinly, and is left whole. These are typically slips of the brush or points of a neighbour.
     """
     points = np.asarray(points, np.float64)
     keep = np.ones(len(points), bool)
@@ -72,7 +71,7 @@ def body(points, gap):
     sizes = np.bincount(group)
     budget = max(OUTSIDE_SHARE * len(points), FEW)
     for number in np.argsort(sizes, kind="stable"):
-        if sizes[number] > max(GROUP_SHARE * sizes.max(), FEW) or sizes[number] > budget or sizes[number] == sizes.max():
+        if sizes[number] > max(GROUP_SHARE * len(points), FEW) or sizes[number] > budget or sizes[number] == sizes.max():
             break
         budget -= sizes[number]
         keep[group == number] = False

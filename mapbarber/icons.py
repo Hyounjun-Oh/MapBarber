@@ -759,7 +759,22 @@ def _i_mixed(p, c, a):
     p.restore()
 
 
+def _i_slice_flip(p, c, a):
+    p.setPen(QtGui.QPen(c, 2, Qt.DashLine))
+    p.drawLine(L(2, 12, 22, 12))
+    _arrow(p, a, 8, 10, 8, 3, 3)
+    _arrow(p, a, 16, 14, 16, 21, 3)
+
+
+def _i_slice_restore(p, c, a):
+    p.drawRect(R(3, 3, 18, 18))
+    p.setPen(QtGui.QPen(a, 2))
+    p.drawArc(R(7, 7, 10, 10), 90 * 16, 270 * 16)
+    _arrow(p, a, 12, 7, 15, 7, 2.5, 1.8)
+
+
 _BUTTONS = {
+    "slice_flip": (_i_slice_flip, VIOLET), "slice_restore": (_i_slice_restore, VIOLET),
     "clear_selection": (_i_clear_selection, PINK), "box_fit": (_i_box_fit, AMBER), "box_select": (_i_box_select, PINK),
     "box_erase_in": (_i_box_erase_in, RED), "box_erase_out": (_i_box_erase_out, RED), "box_fill": (_i_box_fill, GREEN),
     "ruler_clear": (_i_ruler_clear, GOLD), "show_all": (_i_show_all, TEAL), "ground_select": (_i_ground_select, PINK),

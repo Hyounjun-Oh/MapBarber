@@ -743,9 +743,9 @@ def test_arrow_keys_slide_the_frame_range_by_its_width(session):
 
 
 def test_tracking_keeps_up_with_a_changing_view(session):
-    """A car drives past: first only its front is seen, then its side, then its back. The box must end up the
-    size of the whole car as far as any frame shows it, turned with the car, in every frame, and no frame may
-    keep car points unlabelled. The far side never shows, so the box stays short of it."""
+    """A car drives past: first only its front is seen, then its side, then its back. In every frame the box
+    holds what that frame and the two before it show of the car, keeps the car's heading, and no frame may keep
+    car points unlabelled."""
     folder = session.folder / "passing"
     (folder / "velodyne").mkdir(parents=True)
     rng = np.random.default_rng(9)
@@ -757,13 +757,13 @@ def test_tracking_keeps_up_with_a_changing_view(session):
         local[side == axis, axis] = half * sign[side == axis]
         normals[side == axis, axis] = sign[side == axis]
     road = np.column_stack([rng.uniform(-25, 25, 9000), rng.uniform(0, 18, 9000), np.full(9000, -1.2)])
-    centres, counts, shown = [], [], np.zeros(4000, bool)
+    centres, counts, views = [], [], []
     for index in range(13):
         centre = np.array([-9.0 + 1.5 * index, 9.0, -1.2 + 0.35 + 0.75])
         world = local + centre
         away = -world / np.linalg.norm(world, axis=1, keepdims=True)
         visible = np.einsum("ij,ij->i", normals, away) > 0.6
-        shown |= visible
+        views.append(local[visible])
         seen = world[visible]
         scan = np.vstack([road, seen])
         np.column_stack([scan, np.zeros(len(scan))]).astype("<f4").tofile(str(folder / "velodyne" / f"{index:06d}.bin"))
@@ -784,24 +784,20 @@ def test_tracking_keeps_up_with_a_changing_view(session):
 
     session.step("all frames", lambda: editor.timeline.slider.on_range(0, 12), undoable=False)
     session.step("track", lambda: editor.track_boxes())
-    sizes = []
-    width = np.ptp(local[shown, 1])
-    assert width < 1.5, "the far part of the car never shows"
-    for index in range(13):
+    for index in range(1, 13):
         boxes = [box for box in editor.box_store[index] if box["instance"] == number]
         assert len(boxes) == 1, f"frame {index}: {len(boxes)} boxes"
         box = boxes[0]
-        sizes.append(box["size"])
-        assert np.allclose(box["size"], [4.0, width, 1.5], atol=[0.15, 0.15, 0.2]), (index, box["size"], width)
+        seen = np.vstack([views[k] for k in range(max(0, index - 2), index + 1)])
+        low, high = seen.min(axis=0), seen.max(axis=0)
+        assert np.allclose(box["size"], high - low, atol=0.25), (index, box["size"], high - low)
         assert abs(np.sin(box["yaw"])) < np.sin(np.radians(3.0)), (index, np.degrees(box["yaw"]))
-        assert abs(box["center"][0] - centres[index][0]) < 0.35, (index, box["center"], centres[index])
-        assert abs(box["center"][1] - centres[index][1]) < 0.6, "the far side is never seen, so the box sits nearer"
+        assert np.allclose(box["center"][:2], (centres[index] + (low + high) / 2.0)[:2], atol=0.25), (index, box["center"])
         start = int(editor.frame_starts[index])
         cls = editor.labels.cls[start:start + counts[index]]
         inst = editor.labels.inst[start:start + counts[index]]
         assert (cls[9000:] == 10).mean() > 0.97, f"frame {index}: {(cls[9000:] != 10).sum()} car points left unlabelled"
         assert (inst[9000:] == number).mean() > 0.97 and not cls[:9000].any()
-    assert np.ptp(np.array(sizes), axis=0).max() < 1e-6, "one box size for the object in every frame"
     session.step("look for points left outside", lambda: editor.select_leftovers(), undoable=False)
     assert editor.selected.sum() < 40
     editor.clear_selection()
@@ -1015,6 +1011,63 @@ def test_a_corrected_box_is_tracked_again_up_to_the_corrected_boxes(session):
     corrected = copy.deepcopy(box_of(8))
     session.step("track everything again", lambda: editor.track_boxes())
     assert box_of(8) == corrected, "a full track leaves corrected boxes alone"
+    final = session.snapshot()
+    session.walk_history()
+    assert session.same(final, session.snapshot()) is None
+
+
+def test_an_object_labelled_in_a_middle_frame_is_tracked_backwards_and_forwards(session):
+    """Labels added in the middle of a sequence: the object is followed back to the first frame with one button
+    and on to the last with the other; the box made by hand stays, and each direction leaves the other side alone."""
+    folder = session.folder / "middle"
+    (folder / "velodyne").mkdir(parents=True)
+    rng = np.random.default_rng(17)
+    side = rng.integers(0, 3, 1500)
+    local = rng.uniform([-2, -0.9, -0.75], [2, 0.9, 0.75], (1500, 3))
+    for axis, half in enumerate((2.0, 0.9, 0.75)):
+        local[side == axis, axis] = half * rng.choice([-1.0, 1.0], (side == axis).sum())
+    road = np.column_stack([rng.uniform(-25, 25, 6000), rng.uniform(0, 20, 6000), np.full(6000, -1.2)])
+    centres = [np.array([-7.5 + 1.5 * index, 9.0, -1.2 + 0.35 + 0.75]) for index in range(11)]
+    for index, centre in enumerate(centres):
+        scan = np.vstack([road, local + centre])
+        np.column_stack([scan, np.zeros(len(scan))]).astype("<f4").tofile(str(folder / "velodyne" / f"{index:06d}.bin"))
+    (folder / "poses.txt").write_text("1 0 0 0 0 1 0 0 0 0 1 0\n" * 11)
+    assert session.window.open(str(folder))
+    session.pump(0.3)
+    editor = session.editor
+    session.step("open", undoable=False)
+    session.step("all frames", lambda: editor.timeline.slider.on_range(0, 10), undoable=False)
+    middle = int(editor.frame_starts[5])
+    editor.select(np.arange(middle + 6000, middle + 7500), "replace")
+    editor.set_active(10)
+    session.step("label the car in frame 5", lambda: session.trigger("Return"))
+    session.step("box it", lambda: editor.class_boxes.click())
+    made = [box for box in editor.box_store[5] if box.get("instance")]
+    assert len(made) == 1 and made[0]["key"] and not any(editor.box_store.get(index) for index in range(11) if index != 5)
+    number = made[0]["instance"]
+
+    def box_of(frame):
+        found = [box for box in editor.box_store.get(frame, []) if box.get("instance") == number]
+        return found[0] if found else None
+
+    def car_labelled(frame):
+        start = int(editor.frame_starts[frame])
+        return (editor.labels.inst[start + 6000:start + 7500] == number).mean()
+
+    session.step("track backwards", lambda: editor.track_back())
+    assert "◀" in editor.tr("track_back") and all(box_of(frame) is not None for frame in range(5))
+    assert all(box_of(frame) is None for frame in range(6, 11)), "tracking backwards leaves the later frames alone"
+    assert all(car_labelled(frame) > 0.97 for frame in range(6)) and car_labelled(7) == 0
+    for frame in range(5):
+        assert np.allclose(box_of(frame)["center"][:2], centres[frame][:2], atol=0.3), frame
+    hand_made = copy.deepcopy(box_of(5))
+    session.step("track forwards", lambda: editor.track_boxes(1))
+    assert all(box_of(frame) is not None for frame in range(11))
+    assert all(car_labelled(frame) > 0.97 for frame in range(11))
+    assert box_of(5)["center"] == hand_made["center"] and box_of(5)["size"] == hand_made["size"], "the hand-made box stays"
+    for frame in range(6, 11):
+        assert np.allclose(box_of(frame)["center"][:2], centres[frame][:2], atol=0.3), frame
+        assert np.cos(box_of(frame)["yaw"]) > 0.99, "the boxes point the way the car drives"
     final = session.snapshot()
     session.walk_history()
     assert session.same(final, session.snapshot()) is None

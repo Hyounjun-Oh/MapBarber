@@ -57,14 +57,14 @@ wall. Tick *Snap to voxel centres* for centre-to-centre readings.
 1. **Slice** ▸ *Slice the space*, axis Z, position 2.9 m, keep *below*. The ceiling disappears and the
    status bar reports how many voxels are hidden and protected. Drag the blue arrow on the plane to
    move the cut.
-2. **Islands** ▸ *Select islands* (max 20). About 1,550 floating groups (≈2,190 voxels) turn pink.
+2. **Islands** ▸ *Select small isolated clusters* (max 20). About 1,550 floating groups (≈2,190 voxels) turn pink.
    Press `Delete`.
 3. The ghost person still stands east of the desk (x 5.2–5.5, y 4.0–4.3). Press `V`, then
    `Shift`-drag around it and press `Delete`. Right-click any voxel you selected by mistake to deselect it.
 4. Measure: press `I`, click the west wall, then hold `Shift` and click the east wall. The ruler locks
    to the x axis and shows about 8.00 m. Measure the desk top height (0.75 m) the same way along z.
 5. **Box**: tick *Show box*, drag the coloured arrows to move it over the black monitor
-   (x 2.6–3.0, y 3.6–3.65, z 0.75–1.1) and the dots to resize it, then press *Fill*. The monitor's
+   (x 2.6–3.0, y 3.6–3.65, z 0.75–1.1) and the dots to resize it, then press *Fill the box*. The monitor's
    holes close; new voxels are white until you save.
 6. *Restore view*. The ceiling is back, untouched: voxels in the hidden half were never edited.
 7. `Ctrl+Z` steps back through every edit, `Ctrl+Shift+Z` forward again. `Ctrl+Shift+S` and save as
@@ -143,12 +143,13 @@ extrude the warehouse map to 2 m walls.
 3. Press `W` and click a parked car: only the car is picked, without the road under it. Choose
    *parked car* and press `Enter`. With *Protect labelled points* on, a rectangle over the whole street
    now selects only what is still unlabelled.
-4. With *parked car* active press *Box every object of: parked car*. Each car becomes its own object with
+4. With *parked car* active press *Auto 3D boxes: parked car*. Each car becomes its own object with
    a box; turn or resize one in the box list.
-5. *Track boxes through the frames on screen* carries the boxes and object numbers from the first frame
-   to the others; the score of each step is shown in the box list.
+5. *Auto 3D box tracking ▶ forwards in time* carries the boxes and object numbers from the first frame
+   to the later ones (◀ goes back to earlier frames, for objects labelled in a middle frame); the score of
+   each step is shown in the box list.
 6. *Load labels…* ▸ pick `drive/predictions`: the model's guesses arrive as pale suggestions on the points
-   that are still unlabelled. *Select doubtful labels* shows its mistakes along the kerb.
+   that are still unlabelled. *Select labels unlike their neighbours* shows its mistakes along the kerb.
 7. `Ctrl+S` writes `labels/*.label` and `boxes/*.json`; *Export in standard formats…* writes a
    SemanticKITTI sequence with KITTI and OpenPCDet boxes. Every step can be undone with `Ctrl+Z`.
 

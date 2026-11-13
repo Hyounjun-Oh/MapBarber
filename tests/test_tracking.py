@@ -85,29 +85,57 @@ def test_follow_a_moving_object_and_lose_one_that_left():
     assert tracking.Track(box, first).follow(track.first, np.vstack([other, clutter])) is None
 
 
-def test_the_box_grows_to_the_whole_object_as_the_view_changes():
-    """A car drives past the sensor: first only its front is seen, then its side, then its back."""
-    rng = np.random.default_rng(3)
+def drive_by(rng, count=21, sensor=(0.0, -9.0, 1.2)):
+    """A car driving past the sensor: first only its front is seen, then its side, then its back."""
     local, normals = shell(rng)
-    sensor = np.array([0.0, -9.0, 1.2])
-    centres = [np.array([-15.0 + 1.5 * k, 0.0, 0.75]) for k in range(21)]
-    frames = {}
+    sensor = np.asarray(sensor)
+    centres = [np.array([-15.0 + 1.5 * k, 0.0, 0.75]) for k in range(count)]
+    frames, seen = {}, {}
     for index, centre in enumerate(centres):
         world = local + centre
-        visible = world[seen_from(world, normals, sensor, limit=0.6)]
-        frames[index] = visible + rng.normal(0, 0.01, visible.shape)
-    first_box = boxes.fit(frames[0], cls=10, instance=7)
+        visible = seen_from(world, normals, sensor, limit=0.6)
+        frames[index] = world[visible] + rng.normal(0, 0.01, (int(visible.sum()), 3))
+        seen[index] = local[visible]
+    return frames, seen, centres
+
+
+def test_the_box_holds_what_this_frame_and_the_two_before_show():
+    """Box and fit come from the frame and the one or two before it, never from the whole track."""
+    rng = np.random.default_rng(3)
+    frames, seen, centres = drive_by(rng)
+    first_box = boxes.fit(frames[0], cls=10, instance=7, gap=0.5)
     assert min(first_box["size"][:2]) < 1.0, "the first view shows only one face"
-    track = tracking.Track(first_box, frames[0])
+    track = tracking.Track(first_box, frames[0], gap=0.5)
     track.run(list(frames), 0, lambda frame: (np.arange(len(frames[frame])), frames[frame]), reach=2.0, gap=0.5)
-    assert sorted(track.results) == list(frames), "every frame, the first included, is fitted against the finished model"
-    for index, centre in enumerate(centres):
+    assert sorted(track.results) == list(frames)[1:], "every later frame is found; the start frame is the reference"
+    for index, centre in enumerate(centres[1:], 1):
         box = track.box_in(index)
-        assert np.allclose(box["size"], [4.0, 1.8, 1.5], atol=0.35), (index, box["size"])
-        assert np.allclose(box["center"], centre, atol=0.3), (index, box["center"], centre)
-        assert abs(np.sin(box["yaw"])) < 0.12 and np.cos(box["yaw"]) > 0, "the box points the way the car drives"
+        shown = np.vstack([seen[k] for k in range(max(0, index - 2), index + 1)])
+        low, high = shown.min(axis=0), shown.max(axis=0)
+        assert np.allclose(box["size"], high - low, atol=0.25), (index, box["size"], high - low)
+        assert abs(np.sin(box["yaw"])) < 0.05 and np.cos(box["yaw"]) > 0, "the box points the way the car drives"
+        assert np.allclose(box["center"], centre + (low + high) / 2.0, atol=0.25), (index, box["center"])
         assert len(track.results[index]["ids"]) >= 0.98 * len(frames[index]), f"frame {index}: points left unlabelled"
         assert track.results[index]["score"] > 0.5
+    assert max(track.box_in(10)["size"][:2]) > 3.6, "the side seen in the last frames gives the length"
+
+
+def test_a_wrong_point_leaves_the_box_within_two_frames_and_neighbours_stay_out():
+    rng = np.random.default_rng(16)
+    local, _ = shell(rng, 3000)
+    bush = rng.uniform([2.1, -0.5, 0.0], [2.5, 0.5, 1.2], (150, 3))
+    frames = {index: np.vstack([local + [0.0, 0.0, 0.75], bush]) for index in range(6)}
+    frames[2] = np.vstack([frames[2], [[0.0, 0.0, 2.2], [0.1, 0.0, 2.25], [0.0, 0.1, 2.3]]])
+    start = boxes.fit(local + [0, 0, 0.75], cls=10, instance=1, gap=0.3)
+    track = tracking.Track(start, local + [0, 0, 0.75], gap=0.3, aside=bush)
+    track.run(list(frames), 0, lambda frame: (np.arange(len(frames[frame])), frames[frame]), gap=0.3)
+    assert sorted(track.results) == [1, 2, 3, 4, 5]
+    for index in range(1, 6):
+        taken = track.results[index]["ids"]
+        assert not np.isin(np.arange(3000, 3150), taken).any(), f"frame {index}: the bush beside the car in the start frame was taken"
+        assert np.isin(np.arange(3000), taken).mean() > 0.98
+    heights = [track.box_in(index)["size"][2] for index in range(6)]
+    assert heights[5] < 1.6 and heights[4] < 1.6, f"the stray points of frame 2 still shape the box later: {np.round(heights, 2)}"
 
 
 def test_an_object_that_changes_shape_gets_a_box_per_frame():
@@ -118,12 +146,13 @@ def test_an_object_that_changes_shape_gets_a_box_per_frame():
         frames[index] = rng.uniform([-spread, -0.25, 0.0], [spread, 0.25, 1.7], (300, 3)) + [3.0 + 0.4 * index, 1.0, 0.0]
     track = tracking.Track(boxes.fit(frames[0], cls=30, instance=2), frames[0], rigid=False)
     track.run(list(frames), 0, lambda frame: (np.arange(300), frames[frame]), gap=0.3)
-    assert sorted(track.results) == list(frames)
+    assert sorted(track.results) == list(frames)[1:]
     widths = [max(track.box_in(index)["size"][:2]) for index in frames]
     assert max(widths) - min(widths) > 0.2, "the box follows the changing shape"
     for index in frames:
         assert np.allclose(track.box_in(index)["center"][:2], [3.0 + 0.4 * index, 1.0], atol=0.15)
-        assert len(track.results[index]["ids"]) == 300
+        if index:
+            assert len(track.results[index]["ids"]) >= 0.98 * 300, "a lone point merely inside the box is not taken"
 
 
 def test_a_wall_beside_the_object_is_not_swallowed():
@@ -149,13 +178,14 @@ def test_tracking_from_a_middle_frame_reaches_both_ends():
     for index in range(15):
         world = local + [-10.5 + 1.5 * index, 0.0, 0.75]
         frames[index] = world[seen_from(world, normals, sensor, limit=0.6)]
-    track = tracking.Track(boxes.fit(frames[7], cls=10, instance=3), frames[7])
+    track = tracking.Track(boxes.fit(frames[7], cls=10, instance=3, gap=0.5), frames[7], gap=0.5)
     track.run(list(frames), 7, lambda frame: (np.arange(len(frames[frame])), frames[frame]), reach=2.0, gap=0.5)
-    assert sorted(track.results) == list(frames)
-    sizes = np.array([track.box_in(index)["size"] for index in frames])
-    assert np.ptp(sizes, axis=0).max() < 1e-9 and np.allclose(sizes[0], [4.0, 1.8, 1.5], atol=0.35)
+    assert sorted(track.results) == [index for index in frames if index != 7]
     for index in frames:
-        assert np.allclose(track.box_in(index)["center"][:2], [-10.5 + 1.5 * index, 0.0], atol=0.3), index
+        box = track.box_in(index)
+        assert np.all(np.asarray(box["size"]) <= np.array([4.0, 1.8, 1.5]) + 0.25), (index, box["size"])
+        assert np.allclose(box["center"][0], -10.5 + 1.5 * index, atol=1.2), index
+        assert len(track.results.get(index, {"ids": frames[index]})["ids"]) >= 0.98 * len(frames[index]), index
 
 
 def test_a_few_wrong_points_do_not_spoil_the_box():
